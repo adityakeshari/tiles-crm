@@ -1,0 +1,17 @@
+{
+  "name": "tiles-crm",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "install:all": "npm --prefix backend install && npm --prefix frontend install",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev -- --host",
+    "build": "npm --prefix frontend run build",
+    "start": "npm --prefix backend run start",
+    "db:init": "psql -U postgres -d tiles_crm -f database.sql",
+    "create:admin": "npm --prefix backend run create-admin --",
+    "seed:demo": "npm --prefix backend run seed-demo",
+    "docker:up": "docker compose up --build",
+    "docker:down": "docker compose down"
+  }
+}
