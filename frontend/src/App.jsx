@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, getCsvExportUrl, getProjectInvoicePdfUrl, getQuotationPdfUrl } from "./api.js";
 
 const views = [
@@ -248,6 +248,18 @@ const adhesiveTokenValues = [
   { value: 40, label: "40" },
   { value: 50, label: "50" },
 ];
+const leadDrivenViews = new Set(["overview", "pipeline", "followups", "operations", "quotations"]);
+const DEFAULT_API_TIMEOUT_MS = 15000;
+const DEFAULT_LIST_LIMITS = {
+  leads: 40,
+  projects: 40,
+  complaints: 40,
+  products: 40,
+  dealers: 40,
+  claims: 40,
+  masons: 40,
+};
+const MAX_LIST_LIMIT = 300;
 
 const dealerCategories = ["A", "B", "C"];
 
@@ -1031,6 +1043,8 @@ export default function App() {
   const [pendingDelete, setPendingDelete] = useState(null);
   const [pendingAction, setPendingAction] = useState(null);
   const [toasts, setToasts] = useState([]);
+  const [listLimits, setListLimits] = useState(DEFAULT_LIST_LIMITS);
+  const dashboardLoadRef = useRef(0);
 
   const visibleViews = useMemo(() => {
     if (!user || isAdmin(user) || hasRole(user, "manager")) {
@@ -1123,6 +1137,21 @@ export default function App() {
     setToasts((current) => [...current, { id, tone, message }]);
   }
 
+  function isAbortLikeError(error) {
+    return error?.name === "AbortError" || error?.message === "Request was cancelled.";
+  }
+
+  function createRequestOptions(signal, timeoutMs = DEFAULT_API_TIMEOUT_MS) {
+    return { signal, timeoutMs };
+  }
+
+  function increaseListLimit(key, step = 100) {
+    setListLimits((current) => ({
+      ...current,
+      [key]: Math.min((current[key] || step) + step, MAX_LIST_LIMIT),
+    }));
+  }
+
   async function runBusyAction(actionKey, task, successMessage = "") {
     if (busyAction === actionKey) {
       return false;
@@ -1139,6 +1168,10 @@ export default function App() {
 
       return true;
     } catch (requestError) {
+      if (isAbortLikeError(requestError)) {
+        return false;
+      }
+
       setError(requestError.message);
       return false;
     } finally {
@@ -1297,7 +1330,7 @@ export default function App() {
   );
 
   const activeMasons = useMemo(
-    () => masons.filter((mason) => mason.status === "active"),
+    () => masons.filter((mason) => String(mason.status || "").toLowerCase() === "active"),
     [masons]
   );
 
@@ -1500,17 +1533,223 @@ export default function App() {
     hasAnyRole(user, ["admin", "manager", "sales"]) &&
     workspaceFilter !== "operations";
 
-  useEffect(() => {
-    if (token) {
-      loadDashboard();
+  function syncSelectedLeadState(nextLeads) {
+    if (!Array.isArray(nextLeads) || nextLeads.length === 0) {
+      setSelectedLead(null);
+      return;
     }
-  }, [token, user]);
+
+    setSelectedLead((current) => {
+      if (current) {
+        return nextLeads.find((lead) => lead.id === current.id) || nextLeads[0];
+      }
+
+      return nextLeads[0];
+    });
+  }
+
+  function syncSelectedProjectState(nextProjects) {
+    if (!Array.isArray(nextProjects) || nextProjects.length === 0) {
+      setSelectedProject(null);
+      return;
+    }
+
+    setSelectedProject((current) => {
+      if (current) {
+        return nextProjects.find((project) => project.id === current.id) || nextProjects[0];
+      }
+
+      return nextProjects[0];
+    });
+  }
+
+  async function loadNotifications(signal) {
+    try {
+      const notificationsData = await api.getNotifications(createRequestOptions(signal, 12000));
+      setNotifications(notificationsData || []);
+    } catch (requestError) {
+      if (!isAbortLikeError(requestError)) {
+        setError(requestError.message);
+      }
+    }
+  }
+
+  async function loadUsersForView(view, signal) {
+    if (!hasAnyRole(user, ["admin", "manager", "operations"])) {
+      return null;
+    }
+
+    if (!["overview", "operations", "complaints", "team"].includes(view)) {
+      return null;
+    }
+
+    const usersData = await api.getUsers(createRequestOptions(signal, 12000));
+    setUsers(usersData || []);
+    return usersData || [];
+  }
+
+  async function loadDashboard(options = {}) {
+    const { signal, forceView } = options;
+    const view = forceView || currentView;
+    const requestId = dashboardLoadRef.current + 1;
+    dashboardLoadRef.current = requestId;
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const requestOptions = createRequestOptions(signal);
+
+      if (view === "overview") {
+        const [statsData, leadsData] = await Promise.all([
+          api.getStats(requestOptions),
+          api.getLeads({ ...requestOptions, limit: listLimits.leads }),
+          loadUsersForView(view, signal),
+        ]);
+
+        setStats(statsData);
+        setLeads(leadsData);
+        syncSelectedLeadState(leadsData);
+      } else if (view === "pipeline") {
+        const leadsData = await api.getLeads({ ...requestOptions, limit: listLimits.leads });
+        setLeads(leadsData);
+        syncSelectedLeadState(leadsData);
+      } else if (view === "followups") {
+        const [followupData, leadsData] = await Promise.all([
+          api.getFollowupBoard(requestOptions),
+          api.getLeads({ ...requestOptions, limit: listLimits.leads }),
+        ]);
+
+        setFollowupBoard(followupData || []);
+        setLeads(leadsData);
+        syncSelectedLeadState(leadsData);
+      } else if (view === "operations") {
+        const [operationsData, leadsData] = await Promise.all([
+          api.getOperationsBoard(requestOptions),
+          api.getLeads({ ...requestOptions, limit: listLimits.leads }),
+          loadUsersForView(view, signal),
+        ]);
+
+        setOperationsBoard(operationsData || []);
+        setLeads(leadsData);
+        syncSelectedLeadState(leadsData);
+      } else if (view === "quotations") {
+        const [leadsData, inventoryData] = await Promise.all([
+          api.getLeads({ ...requestOptions, limit: listLimits.leads }),
+          api.getInventory({ ...requestOptions, limit: listLimits.products }),
+        ]);
+
+        setLeads(leadsData);
+        syncSelectedLeadState(leadsData);
+        setProducts(inventoryData.products || []);
+        setInventorySummary(inventoryData.summary || null);
+      } else if (view === "schemes") {
+        const [schemesData, projectsData] = await Promise.all([
+          api.getSchemesDashboard({ ...requestOptions, limit: listLimits.claims, mason_limit: listLimits.masons }),
+          api.getProjectsDashboard({ ...requestOptions, limit: listLimits.projects }).catch(() => ({ projects: [], summary: null })),
+        ]);
+
+        setSchemeTokens(schemesData.tokens || []);
+        setSchemeSummary(schemesData.summary || null);
+        setAdhesiveTokenReports(schemesData.reports || {});
+        setAdhesiveTokenActivities(schemesData.activities || []);
+        setMasons(schemesData.masons || []);
+        setMasonActivities(schemesData.masonActivities || []);
+        setProjects(projectsData.projects || []);
+        setProjectSummary(projectsData.summary || null);
+        syncSelectedProjectState(projectsData.projects || []);
+      } else if (view === "masons") {
+        const schemesData = await api.getSchemesDashboard({ ...requestOptions, limit: listLimits.claims, mason_limit: listLimits.masons });
+
+        setMasons(schemesData.masons || []);
+        setMasonActivities(schemesData.masonActivities || []);
+      } else if (view === "inventory") {
+        const inventoryData = await api.getInventory({ ...requestOptions, limit: listLimits.products });
+        setProducts(inventoryData.products || []);
+        setInventorySummary(inventoryData.summary || null);
+      } else if (view === "dealers") {
+        const dealersData = await api.getDealers({ ...requestOptions, limit: listLimits.dealers });
+        setDealers(dealersData || []);
+      } else if (view === "plumbing") {
+        const plumbingData = await api.getPlumbingDashboard(requestOptions);
+        setPlumbers(plumbingData.plumbers || []);
+        setPlumbingBoard(plumbingData.jobs || []);
+        setPlumbingSummary(plumbingData.summary || null);
+      } else if (view === "complaints") {
+        const complaintsData = await api.getComplaintsDashboard({ ...requestOptions, limit: listLimits.complaints });
+        await loadUsersForView(view, signal);
+        setComplaints(complaintsData.complaints || []);
+        setComplaintSummary(complaintsData.summary || null);
+      } else if (view === "projects") {
+        const [projectsData, leadsData] = await Promise.all([
+          api.getProjectsDashboard({ ...requestOptions, limit: listLimits.projects }).catch(() => ({ projects: [], summary: null })),
+          api.getLeads({ ...requestOptions, limit: listLimits.leads }),
+        ]);
+
+        setProjects(projectsData.projects || []);
+        setProjectSummary(projectsData.summary || null);
+        setLeads(leadsData);
+        syncSelectedLeadState(leadsData);
+        syncSelectedProjectState(projectsData.projects || []);
+      } else if (view === "expenses") {
+        const expensesData = await api.getExpensesDashboard(requestOptions).catch(() => ({ expenses: [], summary: null }));
+        setExpenses(expensesData.expenses || []);
+        setExpenseSummary(expensesData.summary || null);
+      } else if (view === "reports") {
+        const [statsData, projectsData, expensesData] = await Promise.all([
+          api.getStats(requestOptions),
+          api.getProjectsDashboard({ ...requestOptions, limit: listLimits.projects }).catch(() => ({ projects: [], summary: null })),
+          api.getExpensesDashboard(requestOptions).catch(() => ({ expenses: [], summary: null })),
+        ]);
+
+        setStats(statsData);
+        setProjects(projectsData.projects || []);
+        setProjectSummary(projectsData.summary || null);
+        setExpenses(expensesData.expenses || []);
+        setExpenseSummary(expensesData.summary || null);
+      } else if (view === "team") {
+        await loadUsersForView(view, signal);
+      }
+    } catch (requestError) {
+      if (!isAbortLikeError(requestError)) {
+        setError(requestError.message);
+      }
+    } finally {
+      if (dashboardLoadRef.current === requestId) {
+        setLoading(false);
+      }
+    }
+  }
 
   useEffect(() => {
-    if (token && selectedLead) {
-      loadLeadDetails(selectedLead.id);
+    if (!token || !user) {
+      return undefined;
     }
-  }, [token, selectedLead]);
+
+    const controller = new AbortController();
+    loadNotifications(controller.signal);
+    return () => controller.abort();
+  }, [token, user?.id]);
+
+  useEffect(() => {
+    if (!token || !user) {
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    loadDashboard({ signal: controller.signal });
+    return () => controller.abort();
+  }, [token, user?.id, currentView, listLimits]);
+
+  useEffect(() => {
+    if (!token || !selectedLead?.id || !leadDrivenViews.has(currentView)) {
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    loadLeadDetails(selectedLead.id, { signal: controller.signal });
+    return () => controller.abort();
+  }, [token, currentView, selectedLead?.id]);
 
   useEffect(() => {
     if (selectedLead) {
@@ -1567,83 +1806,17 @@ export default function App() {
     }
   }, [filteredProjects, selectedProject]);
 
-  async function loadDashboard() {
-    setLoading(true);
-    setError("");
+  async function loadLeadDetails(leadId, options = {}) {
+    const { signal } = options;
 
     try {
-      const [statsData, leadsData, followupData, operationsData, dealersData, inventoryData, schemesData, complaintsData, notificationsData, plumbingData, projectsData, expensesData] = await Promise.all([
-        api.getStats(),
-        api.getLeads(),
-        api.getFollowupBoard(),
-        api.getOperationsBoard(),
-        api.getDealers(),
-        api.getInventory(),
-        api.getSchemesDashboard(),
-        api.getComplaintsDashboard(),
-        api.getNotifications(),
-        api.getPlumbingDashboard(),
-        api.getProjectsDashboard().catch(() => ({ projects: [], summary: null })),
-        api.getExpensesDashboard().catch(() => ({ expenses: [], summary: null })),
-      ]);
-
-      setStats(statsData);
-      setLeads(leadsData);
-      setFollowupBoard(followupData);
-      setOperationsBoard(operationsData);
-      setDealers(dealersData);
-      setProducts(inventoryData.products || []);
-      setInventorySummary(inventoryData.summary || null);
-        setSchemeTokens(schemesData.tokens || []);
-        setSchemeSummary(schemesData.summary || null);
-        setAdhesiveTokenReports(schemesData.reports || {});
-        setAdhesiveTokenActivities(schemesData.activities || []);
-        setMasons(schemesData.masons || []);
-        setMasonActivities(schemesData.masonActivities || []);
-        setComplaints(complaintsData.complaints || []);
-      setComplaintSummary(complaintsData.summary || null);
-      setNotifications(notificationsData || []);
-      setPlumbers(plumbingData.plumbers || []);
-      setPlumbingBoard(plumbingData.jobs || []);
-      setPlumbingSummary(plumbingData.summary || null);
-      setProjects(projectsData.projects || []);
-      setProjectSummary(projectsData.summary || null);
-      setExpenses(expensesData.expenses || []);
-      setExpenseSummary(expensesData.summary || null);
-
-      if (hasAnyRole(user, ["admin", "manager", "operations"])) {
-        const usersData = await api.getUsers();
-        setUsers(usersData);
-      }
-
-      if (selectedLead) {
-        const refreshedLead = leadsData.find((lead) => lead.id === selectedLead.id);
-        setSelectedLead(refreshedLead || leadsData[0] || null);
-      } else if (leadsData.length > 0) {
-        setSelectedLead(leadsData[0]);
-      }
-
-      if (selectedProject) {
-        const refreshedProject = (projectsData.projects || []).find((project) => project.id === selectedProject.id);
-        setSelectedProject(refreshedProject || projectsData.projects?.[0] || null);
-      } else if ((projectsData.projects || []).length > 0) {
-        setSelectedProject(projectsData.projects[0]);
-      }
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function loadLeadDetails(leadId) {
-    try {
+      const requestOptions = createRequestOptions(signal, 12000);
       const [followupData, paymentData, quotationData, operationsTaskData, plumbingJobData] = await Promise.all([
-        api.getFollowups(leadId),
-        api.getPayments(leadId),
-        api.getQuotations(leadId),
-        api.getOperationsTasks(leadId),
-        api.getLeadPlumbingJobs(leadId),
+        api.getFollowups(leadId, requestOptions),
+        api.getPayments(leadId, requestOptions),
+        api.getQuotations(leadId, requestOptions),
+        api.getOperationsTasks(leadId, requestOptions),
+        api.getLeadPlumbingJobs(leadId, requestOptions),
       ]);
       setFollowups(followupData);
       setPayments(paymentData);
@@ -1651,7 +1824,9 @@ export default function App() {
       setOperationsTasks(operationsTaskData);
       setLeadPlumbingJobs(plumbingJobData);
     } catch (requestError) {
-      setError(requestError.message);
+      if (!isAbortLikeError(requestError)) {
+        setError(requestError.message);
+      }
     }
   }
 
@@ -2104,7 +2279,7 @@ export default function App() {
       return;
     }
 
-    if (!selectedRegisteredMason || selectedRegisteredMason.status !== "active") {
+    if (!selectedRegisteredMason || String(selectedRegisteredMason.status || "").toLowerCase() !== "active") {
       setError("Mason is not active for token redemption.");
       return;
     }
@@ -2371,7 +2546,6 @@ export default function App() {
   async function createComplaintOperationsTask(complaint) {
     await runBusyAction("create-complaint-ops-task", async () => {
       await api.createComplaintOperationsTask(complaint.id);
-      await loadDashboard();
       setCurrentView("operations");
     }, "Operations task created from complaint.");
   }
@@ -2379,7 +2553,16 @@ export default function App() {
   async function handleMarkNotificationRead(notification) {
     await runBusyAction("mark-notification-read", async () => {
       await api.markNotificationRead(notification.id);
-      await loadDashboard();
+      setNotifications((current) =>
+        current.map((item) =>
+          item.id === notification.id
+            ? {
+                ...item,
+                read_at: item.read_at || new Date().toISOString(),
+              }
+            : item
+        )
+      );
 
       if (notification.link_type === "complaint") {
         setCurrentView("complaints");
@@ -2477,7 +2660,14 @@ export default function App() {
       return;
     }
 
-    await runBusyAction("save-mason", async () => {
+    if (busyAction === "save-mason") {
+      return;
+    }
+
+    setBusyAction("save-mason");
+    setError("");
+
+    try {
       if (editingMasonId) {
         await api.updateMason(editingMasonId, masonForm);
       } else {
@@ -2487,8 +2677,28 @@ export default function App() {
       setMasonForm(emptyMason);
       setMasonWorkingAreaInput("");
       setEditingMasonId(null);
-      await loadDashboard();
-    }, editingMasonId ? "Registered mason updated." : "Registered mason saved.");
+
+      const refreshedMasons = await api.getMasons();
+      setMasons(refreshedMasons || []);
+
+      try {
+        await loadDashboard();
+      } catch (_dashboardError) {
+        // Mason save should still succeed even if another dashboard segment fails.
+      }
+
+      pushToast(editingMasonId ? "Registered mason updated." : "Registered mason saved.");
+    } catch (requestError) {
+      if (requestError.status === 409 && requestError.data?.mason) {
+        setMasons(await api.getMasons().catch(() => masons));
+        startEditingMason(requestError.data.mason);
+        setError("Mason already registered. Existing mason opened for edit.");
+      } else {
+        setError(requestError.message || "Unable to save mason.");
+      }
+    } finally {
+      setBusyAction("");
+    }
   }
 
   async function handleDeleteProduct(productId) {
@@ -3400,6 +3610,13 @@ export default function App() {
                 ))}
               </select>
             </div>
+            <ListLoadControls
+              label="Leads"
+              count={leads.length}
+              limit={listLimits.leads}
+              onLoadMore={() => increaseListLimit("leads")}
+              disabled={loading}
+            />
             <div className="list">
               {filteredLeads.slice(0, 8).map((lead) => (
                 <LeadCard
@@ -3472,6 +3689,13 @@ export default function App() {
             <h2>Sales pipeline</h2>
             <span>Move every inquiry through the showroom process</span>
           </div>
+          <ListLoadControls
+            label="Leads"
+            count={leads.length}
+            limit={listLimits.leads}
+            onLoadMore={() => increaseListLimit("leads")}
+            disabled={loading}
+          />
           {filteredLeads.length ? (
             <div className="pipeline-board">
               {pipelineColumns.map((column) => (
@@ -3709,6 +3933,13 @@ export default function App() {
                 </div>
               </form>
             ) : null}
+            <ListLoadControls
+              label="Projects"
+              count={projects.length}
+              limit={listLimits.projects}
+              onLoadMore={() => increaseListLimit("projects")}
+              disabled={loading}
+            />
             <div className="list">
               {filteredProjects.map((project) => (
                 <ProjectCard
@@ -4051,6 +4282,13 @@ export default function App() {
                 {complaintSummary?.plumbing_complaints ?? 0} plumbing | {complaintSummary?.tiles_complaints ?? 0} tiles
               </span>
             </div>
+            <ListLoadControls
+              label="Complaints"
+              count={complaints.length}
+              limit={listLimits.complaints}
+              onLoadMore={() => increaseListLimit("complaints")}
+              disabled={loading}
+            />
             <div className="tabs-row">
               <BadgeCard title="Open" count={complaintSummary?.open_complaints ?? 0} tone="accent" />
               <BadgeCard title="Urgent" count={complaintSummary?.urgent_complaints ?? 0} tone="danger" />
@@ -4643,10 +4881,10 @@ export default function App() {
                     disabled={
                       busyAction === "issue-token" ||
                       !selectedRegisteredMason ||
-                      selectedRegisteredMason.status !== "active"
+                      String(selectedRegisteredMason.status || "").toLowerCase() !== "active"
                     }
                   >
-                    {!selectedRegisteredMason || selectedRegisteredMason.status !== "active"
+                    {!selectedRegisteredMason || String(selectedRegisteredMason.status || "").toLowerCase() !== "active"
                       ? "Select Active Registered Mason"
                       : busyAction === "issue-token"
                       ? editingAdhesiveTokenId
@@ -4677,6 +4915,13 @@ export default function App() {
               <h2>Adhesive claim ledger</h2>
               <span>{filteredSchemeTokens.length} claims</span>
             </div>
+            <ListLoadControls
+              label="Claims"
+              count={schemeTokens.length}
+              limit={listLimits.claims}
+              onLoadMore={() => increaseListLimit("claims")}
+              disabled={loading}
+            />
 
             <div className="form-grid">
               <select
@@ -5164,6 +5409,13 @@ export default function App() {
               <h2>Mason directory</h2>
               <span>{activeMasons.length} active</span>
             </div>
+            <ListLoadControls
+              label="Masons"
+              count={masons.length}
+              limit={listLimits.masons}
+              onLoadMore={() => increaseListLimit("masons")}
+              disabled={loading}
+            />
             <div className="form-grid">
               <input
                 placeholder="Filter by current city"
@@ -5196,7 +5448,7 @@ export default function App() {
                       <h3>{mason.name}</h3>
                       <p className="muted">{mason.mobile}</p>
                     </div>
-                    <span className={`status-chip ${mason.status === "active" ? "unit-chip unit-plumbing" : "status-lost"}`}>
+                    <span className={`status-chip ${String(mason.status || "").toLowerCase() === "active" ? "unit-chip unit-plumbing" : "status-lost"}`}>
                       {labelize(mason.status)}
                     </span>
                   </div>
@@ -5335,6 +5587,13 @@ export default function App() {
               <h2>Stock visibility</h2>
               <span>{inventorySummary?.fast_moving_count ?? 0} fast moving</span>
             </div>
+            <ListLoadControls
+              label="Products"
+              count={products.length}
+              limit={listLimits.products}
+              onLoadMore={() => increaseListLimit("products")}
+              disabled={loading}
+            />
             <div className="list">
               {filteredProducts.map((product) => (
                 <article key={product.id} className="lead-card">
@@ -5479,6 +5738,13 @@ export default function App() {
               <h2>Dealer performance</h2>
               <span>{stats?.dealer_outstanding ?? 0} outstanding</span>
             </div>
+            <ListLoadControls
+              label="Dealers"
+              count={dealers.length}
+              limit={listLimits.dealers}
+              onLoadMore={() => increaseListLimit("dealers")}
+              disabled={loading}
+            />
             <div className="list">
               {dealers.map((dealer) => (
                 <article key={dealer.id} className="lead-card">
@@ -5707,6 +5973,18 @@ export default function App() {
           </div>
         </section>
       ) : null}
+    </div>
+  );
+}
+
+function ListLoadControls({ count, limit, onLoadMore, disabled = false }) {
+  return (
+    <div className="lead-actions">
+      <span className="muted">{count} loaded</span>
+      <span className="muted">Showing first {limit}</span>
+      <button type="button" className="secondary" onClick={onLoadMore} disabled={disabled || limit >= MAX_LIST_LIMIT}>
+        {limit >= MAX_LIST_LIMIT ? "Max Loaded" : `Load 100 More`}
+      </button>
     </div>
   );
 }

@@ -22,6 +22,17 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
 
 app.set("trust proxy", 1);
 
+app.use((req, res, next) => {
+  const startedAt = Date.now();
+
+  res.on("finish", () => {
+    const durationMs = Date.now() - startedAt;
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${durationMs}ms)`);
+  });
+
+  next();
+});
+
 app.use(
   cors({
     origin(origin, callback) {
@@ -53,6 +64,10 @@ app.use("/api/schemes", requireAuth, schemesRoutes);
 app.use("/api/users", requireAuth, usersRoutes);
 
 app.use((error, _req, res, _next) => {
+  if (res.headersSent) {
+    return;
+  }
+
   res.status(500).json({
     message: "Unexpected server error",
     error: process.env.NODE_ENV === "production" ? undefined : error.message,

@@ -9,8 +9,22 @@ import {
 } from "../utils/validation.js";
 import { requireRole } from "../middleware/auth.js";
 import { streamQuotationPdf } from "../utils/quotationPdf.js";
+import { getOrSetCache, invalidateCachePrefix } from "../utils/ttlCache.js";
 
 const router = express.Router();
+const DEFAULT_LIST_LIMIT = 100;
+const MAX_LIST_LIMIT = 300;
+const DASHBOARD_TTL_MS = 3000;
+
+function parseListLimit(value, fallback = DEFAULT_LIST_LIMIT) {
+  const parsed = Number.parseInt(value, 10);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return Math.min(parsed, MAX_LIST_LIMIT);
+}
 
 function normalizeFollowupRows(rows) {
   return rows.map((row) => ({
@@ -26,8 +40,9 @@ function normalizeFollowupRows(rows) {
 
 router.get("/dashboard/stats", async (_req, res) => {
   try {
-    const [overview, stageCounts, sourceCounts, followupSummary, staffPerformance, dealerSummary, operationsSummary] =
-      await Promise.all([
+    const data = await getOrSetCache("leads:dashboard:stats", DASHBOARD_TTL_MS, async () => {
+      const [overview, stageCounts, sourceCounts, followupSummary, staffPerformance, dealerSummary, operationsSummary] =
+        await Promise.all([
         query(
           `WITH payment_totals AS (
              SELECT lead_id, COALESCE(SUM(amount), 0)::int AS total_paid
@@ -113,17 +128,20 @@ router.get("/dashboard/stats", async (_req, res) => {
              (SELECT COUNT(*)::int FROM operations_tasks WHERE status = 'delayed') AS delayed_operations_tasks
            FROM leads`
         ),
-      ]);
+        ]);
 
-    return res.json({
-      ...overview.rows[0],
-      ...followupSummary.rows[0],
-      ...dealerSummary.rows[0],
-      ...operationsSummary.rows[0],
-      stage_counts: stageCounts.rows,
-      source_counts: sourceCounts.rows,
-      staff_performance: staffPerformance.rows,
+      return {
+        ...overview.rows[0],
+        ...followupSummary.rows[0],
+        ...dealerSummary.rows[0],
+        ...operationsSummary.rows[0],
+        stage_counts: stageCounts.rows,
+        source_counts: sourceCounts.rows,
+        staff_performance: staffPerformance.rows,
+      };
     });
+
+    return res.json(data);
   } catch (error) {
     return res.status(500).json({ message: "Unable to fetch stats", error: error.message });
   }
@@ -131,7 +149,8 @@ router.get("/dashboard/stats", async (_req, res) => {
 
 router.get("/dashboard/followups", async (_req, res) => {
   try {
-    const result = await query(
+    const data = await getOrSetCache("leads:dashboard:followups", DASHBOARD_TTL_MS, async () => {
+      const result = await query(
       `SELECT
          f.*,
          l.name AS lead_name,
@@ -147,9 +166,12 @@ router.get("/dashboard/followups", async (_req, res) => {
          END,
          f.followup_date ASC NULLS LAST,
          f.id DESC`
-    );
+      );
 
-    return res.json(normalizeFollowupRows(result.rows));
+      return normalizeFollowupRows(result.rows);
+    });
+
+    return res.json(data);
   } catch (error) {
     return res.status(500).json({ message: "Unable to fetch follow-ups", error: error.message });
   }
@@ -157,7 +179,8 @@ router.get("/dashboard/followups", async (_req, res) => {
 
 router.get("/dashboard/operations", async (_req, res) => {
   try {
-    const result = await query(
+    const data = await getOrSetCache("leads:dashboard:operations", DASHBOARD_TTL_MS, async () => {
+      const result = await query(
       `SELECT
          t.*,
          l.name AS lead_name,
@@ -176,15 +199,20 @@ router.get("/dashboard/operations", async (_req, res) => {
          END,
          t.scheduled_for ASC NULLS LAST,
          t.id DESC`
-    );
+      );
 
-    return res.json(result.rows);
+      return result.rows;
+    });
+
+    return res.json(data);
   } catch (error) {
     return res.status(500).json({ message: "Unable to fetch operations tasks", error: error.message });
   }
 });
 
-router.get("/", async (_req, res) => {
+router.get("/", async (req, res) => {
+  const limit = parseListLimit(req.query.limit);
+
   try {
     const result = await query(
       `SELECT
@@ -229,7 +257,9 @@ router.get("/", async (_req, res) => {
          FROM followups
          GROUP BY lead_id
        ) AS followup_summary ON followup_summary.lead_id = l.id
-       ORDER BY l.created_at DESC`
+       ORDER BY l.created_at DESC
+       LIMIT $1`,
+      [limit]
     );
 
     return res.json(result.rows);
@@ -276,6 +306,8 @@ router.post("/", async (req, res) => {
     return res.status(201).json(result.rows[0]);
   } catch (error) {
     return res.status(500).json({ message: "Unable to create lead", error: error.message });
+  } finally {
+    invalidateCachePrefix("leads:");
   }
 });
 
@@ -335,6 +367,8 @@ router.put("/:id", async (req, res) => {
     return res.json(result.rows[0]);
   } catch (error) {
     return res.status(500).json({ message: "Unable to update lead", error: error.message });
+  } finally {
+    invalidateCachePrefix("leads:");
   }
 });
 
@@ -351,6 +385,8 @@ router.delete("/:id", requireRole("admin"), async (req, res) => {
     return res.status(204).send();
   } catch (error) {
     return res.status(500).json({ message: "Unable to delete lead", error: error.message });
+  } finally {
+    invalidateCachePrefix("leads:");
   }
 });
 
@@ -406,6 +442,8 @@ router.post("/:id/followups", async (req, res) => {
     return res.status(201).json(result.rows[0]);
   } catch (error) {
     return res.status(500).json({ message: "Unable to add follow-up", error: error.message });
+  } finally {
+    invalidateCachePrefix("leads:");
   }
 });
 
@@ -454,6 +492,8 @@ router.put("/:leadId/followups/:followupId", async (req, res) => {
     return res.json(result.rows[0]);
   } catch (error) {
     return res.status(500).json({ message: "Unable to update follow-up", error: error.message });
+  } finally {
+    invalidateCachePrefix("leads:");
   }
 });
 
@@ -526,6 +566,8 @@ router.post("/:id/operations-tasks", async (req, res) => {
     return res.status(201).json(result.rows[0]);
   } catch (error) {
     return res.status(500).json({ message: "Unable to create operations task", error: error.message });
+  } finally {
+    invalidateCachePrefix("leads:");
   }
 });
 
@@ -572,6 +614,8 @@ router.put("/:leadId/operations-tasks/:taskId", async (req, res) => {
     return res.json(result.rows[0]);
   } catch (error) {
     return res.status(500).json({ message: "Unable to update operations task", error: error.message });
+  } finally {
+    invalidateCachePrefix("leads:");
   }
 });
 
@@ -596,6 +640,8 @@ router.post("/:id/payments", async (req, res) => {
     return res.status(201).json(result.rows[0]);
   } catch (error) {
     return res.status(500).json({ message: "Unable to add payment", error: error.message });
+  } finally {
+    invalidateCachePrefix("leads:");
   }
 });
 
@@ -742,6 +788,7 @@ router.post("/:id/quotations", async (req, res) => {
     await client.query("ROLLBACK");
     return res.status(500).json({ message: "Unable to create quotation", error: error.message });
   } finally {
+    invalidateCachePrefix("leads:");
     client.release();
   }
 });

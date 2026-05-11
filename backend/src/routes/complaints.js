@@ -2,8 +2,22 @@ import express from "express";
 import { query } from "../db.js";
 import { requireRole } from "../middleware/auth.js";
 import { validateComplaintPayload } from "../utils/validation.js";
+import { getOrSetCache, invalidateCachePrefix } from "../utils/ttlCache.js";
 
 const router = express.Router();
+const DEFAULT_LIST_LIMIT = 100;
+const MAX_LIST_LIMIT = 300;
+const DASHBOARD_TTL_MS = 3000;
+
+function parseListLimit(value, fallback = DEFAULT_LIST_LIMIT) {
+  const parsed = Number.parseInt(value, 10);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return Math.min(parsed, MAX_LIST_LIMIT);
+}
 
 async function createUserNotification(userId, { title, message, link_type, link_id }) {
   if (!userId) {
@@ -17,9 +31,12 @@ async function createUserNotification(userId, { title, message, link_type, link_
   );
 }
 
-router.get("/", async (_req, res) => {
+router.get("/", async (req, res) => {
+  const limit = parseListLimit(req.query.limit);
+
   try {
-    const [complaintsResult, summaryResult] = await Promise.all([
+    const data = await getOrSetCache(`complaints:list:${limit}`, DASHBOARD_TTL_MS, async () => {
+      const [complaintsResult, summaryResult] = await Promise.all([
       query(
         `SELECT
            c.*,
@@ -39,7 +56,9 @@ router.get("/", async (_req, res) => {
              ELSE 4
            END,
            c.created_at DESC,
-           c.id DESC`
+           c.id DESC
+         LIMIT $1`,
+        [limit]
       ),
       query(
         `SELECT
@@ -51,12 +70,15 @@ router.get("/", async (_req, res) => {
            COUNT(*) FILTER (WHERE status IN ('resolved', 'closed'))::int AS closed_complaints
          FROM complaints`
       ),
-    ]);
+      ]);
 
-    return res.json({
-      complaints: complaintsResult.rows,
-      summary: summaryResult.rows[0],
+      return {
+        complaints: complaintsResult.rows,
+        summary: summaryResult.rows[0],
+      };
     });
+
+    return res.json(data);
   } catch (error) {
     return res.status(500).json({ message: "Unable to fetch complaints", error: error.message });
   }
@@ -114,6 +136,8 @@ router.post("/", async (req, res) => {
     return res.status(201).json(createdComplaint);
   } catch (error) {
     return res.status(500).json({ message: "Unable to create complaint", error: error.message });
+  } finally {
+    invalidateCachePrefix("complaints:");
   }
 });
 
@@ -189,6 +213,8 @@ router.put("/:id", async (req, res) => {
     return res.json(updatedComplaint);
   } catch (error) {
     return res.status(500).json({ message: "Unable to update complaint", error: error.message });
+  } finally {
+    invalidateCachePrefix("complaints:");
   }
 });
 
@@ -269,6 +295,8 @@ router.post("/:id/create-operations-task", async (req, res) => {
       message: "Unable to create operations task from complaint",
       error: error.message,
     });
+  } finally {
+    invalidateCachePrefix("complaints:");
   }
 });
 
@@ -285,6 +313,8 @@ router.delete("/:id", requireRole("admin"), async (req, res) => {
     return res.status(204).send();
   } catch (error) {
     return res.status(500).json({ message: "Unable to delete complaint", error: error.message });
+  } finally {
+    invalidateCachePrefix("complaints:");
   }
 });
 

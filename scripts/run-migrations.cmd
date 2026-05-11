@@ -51,7 +51,11 @@ call :run "011_plumbing_services.sql"
 call :run "012_owner_projects_finance.sql"
 call :run "013_adhesive_token_redemption.sql"
 call :run "014_adhesive_token_claims.sql"
-call :run "015_registered_masons_token_enforcement.sql"
+call :run "015_multi_role_users.sql"
+call :run "016_token_claim_user_tracking.sql"
+call :run "017_complete_mason_token_repair.sql"
+call :run "018_registered_mason_working_profile.sql"
+call :run "019_dashboard_scaling_indexes.sql"
 
 if errorlevel 1 exit /b 1
 

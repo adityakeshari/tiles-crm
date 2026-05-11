@@ -4,8 +4,22 @@ import { requireRole } from "../middleware/auth.js";
 import { validateProductPayload } from "../utils/validation.js";
 
 const router = express.Router();
+const DEFAULT_LIST_LIMIT = 100;
+const MAX_LIST_LIMIT = 300;
 
-router.get("/", async (_req, res) => {
+function parseListLimit(value, fallback = DEFAULT_LIST_LIMIT) {
+  const parsed = Number.parseInt(value, 10);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return Math.min(parsed, MAX_LIST_LIMIT);
+}
+
+router.get("/", async (req, res) => {
+  const limit = parseListLimit(req.query.limit);
+
   try {
     const [productsResult, summaryResult] = await Promise.all([
       query(
@@ -13,7 +27,9 @@ router.get("/", async (_req, res) => {
          FROM products
          ORDER BY
            CASE status WHEN 'fast_moving' THEN 1 WHEN 'active' THEN 2 ELSE 3 END,
-           name ASC`
+           name ASC
+         LIMIT $1`,
+        [limit]
       ),
       query(
         `SELECT

@@ -8,8 +8,41 @@ import {
   validateAdhesiveTokenPayload,
   validateAdhesiveTokenStatusPayload,
 } from "../utils/validation.js";
+import { getOrSetCache, invalidateCachePrefix } from "../utils/ttlCache.js";
 
 const router = express.Router();
+const DEFAULT_CLAIMS_LIMIT = 100;
+const DEFAULT_MASONS_LIMIT = 120;
+const MAX_LIST_LIMIT = 300;
+const DASHBOARD_TTL_MS = 3000;
+
+function parseListLimit(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return Math.min(parsed, MAX_LIST_LIMIT);
+}
+
+const masonSelectClause = `
+  SELECT
+    id,
+    name,
+    mobile,
+    area,
+    current_address,
+    current_address_city,
+    permanent_address,
+    permanent_address_city,
+    working_areas,
+    working_distance_upto_km,
+    status,
+    registered_at,
+    created_by
+  FROM masons
+`;
 
 async function logAdhesiveClaimActivity(db, claimId, action, note, userId) {
   const run = typeof db === "function" ? db : db.query.bind(db);
@@ -32,14 +65,25 @@ async function logMasonActivity(db, masonId, claimId, action, note, userId) {
 async function getMasonById(db, masonId) {
   const run = typeof db === "function" ? db : db.query.bind(db);
   const result = await run(
-    `SELECT *
-     FROM masons
+    `${masonSelectClause}
      WHERE id = $1
      LIMIT 1`,
     [masonId]
   );
 
   return result.rows[0] || null;
+}
+
+async function listMasons(db, limit = DEFAULT_MASONS_LIMIT) {
+  const run = typeof db === "function" ? db : db.query.bind(db);
+  const result = await run(
+    `${masonSelectClause}
+     ORDER BY name ASC, id ASC
+     LIMIT $1`,
+    [limit]
+  );
+
+  return result.rows;
 }
 
 async function getProjectVerificationContext(db, projectId) {
@@ -134,9 +178,13 @@ async function loadClaimDetail(db, claimId) {
   };
 }
 
-router.get("/", async (_req, res) => {
+router.get("/", async (req, res) => {
+  const claimsLimit = parseListLimit(req.query.limit, DEFAULT_CLAIMS_LIMIT);
+  const masonLimit = parseListLimit(req.query.mason_limit, DEFAULT_MASONS_LIMIT);
+
   try {
-    const [claimsResult, summaryResult, reportsResult, activityResult] = await Promise.all([
+    const data = await getOrSetCache(`schemes:dashboard:${claimsLimit}:${masonLimit}`, DASHBOARD_TTL_MS, async () => {
+      const [claimsResult, summaryResult, reportsResult, activityResult] = await Promise.all([
       query(
         `SELECT
            c.*,
@@ -165,7 +213,9 @@ router.get("/", async (_req, res) => {
          LEFT JOIN users payer ON payer.id = c.paid_by
          LEFT JOIN adhesive_token_items i ON i.claim_id = c.id
          GROUP BY c.id, m.name, m.mobile, m.area, m.status, p.project_name, p.project_code, l.name, l.phone, creator.name, verifier.name, approver.name, rejecter.name, payer.name
-         ORDER BY c.created_at DESC, c.id DESC`
+         ORDER BY c.created_at DESC, c.id DESC
+         LIMIT $1`,
+        [claimsLimit]
       ),
       query(
         `SELECT
@@ -281,22 +331,16 @@ router.get("/", async (_req, res) => {
          ORDER BY a.created_at DESC, a.id DESC
          LIMIT 40`
       ),
-    ]);
+      ]);
 
-    return res.json({
-      tokens: claimsResult.rows,
-      summary: summaryResult.rows[0],
-      reports: reportsResult.rows[0]?.reports || {},
-      activities: activityResult.rows,
-      masons: (
-        await query(
-          `SELECT id, name, mobile, area, current_address, current_address_city, permanent_address, permanent_address_city, working_areas, working_distance_upto_km, status, registered_at, created_by
-           FROM masons
-           ORDER BY name ASC, id ASC`
-        )
-      ).rows,
-      masonActivities: (
-        await query(
+      return {
+        tokens: claimsResult.rows,
+        summary: summaryResult.rows[0],
+        reports: reportsResult.rows[0]?.reports || {},
+        activities: activityResult.rows,
+        masons: await listMasons(query, masonLimit),
+        masonActivities: (
+          await query(
           `SELECT
              l.*,
              m.name AS mason_name,
@@ -306,12 +350,25 @@ router.get("/", async (_req, res) => {
            LEFT JOIN masons m ON m.id = l.mason_id
            LEFT JOIN users u ON u.id = l.created_by
            ORDER BY l.created_at DESC, l.id DESC
-           LIMIT 40`
-        )
-      ).rows,
+          LIMIT 40`
+          )
+        ).rows,
+      };
     });
+
+    return res.json(data);
   } catch (error) {
     return res.status(500).json({ message: "Unable to fetch adhesive token dashboard", error: error.message });
+  }
+});
+
+router.get("/masons", async (req, res) => {
+  const limit = parseListLimit(req.query.limit, DEFAULT_MASONS_LIMIT);
+
+  try {
+    return res.json(await listMasons(query, limit));
+  } catch (error) {
+    return res.status(500).json({ message: "Unable to fetch registered masons", error: error.message });
   }
 });
 
@@ -326,15 +383,17 @@ router.post("/masons", requireRole("admin", "manager"), async (req, res) => {
 
   try {
     const existing = await query(
-      `SELECT id
-       FROM masons
+      `${masonSelectClause}
        WHERE mobile = $1
        LIMIT 1`,
       [mason.mobile]
     );
 
     if (existing.rowCount > 0) {
-      return res.status(400).json({ message: "A mason with this mobile already exists" });
+      return res.status(409).json({
+        message: "Mason already registered",
+        mason: existing.rows[0],
+      });
     }
 
     const result = await query(
@@ -372,6 +431,8 @@ router.post("/masons", requireRole("admin", "manager"), async (req, res) => {
     return res.status(201).json(created);
   } catch (error) {
     return res.status(500).json({ message: "Unable to register mason", error: error.message });
+  } finally {
+    invalidateCachePrefix("schemes:");
   }
 });
 
@@ -400,8 +461,7 @@ router.put("/masons/:id", requireRole("admin", "manager"), async (req, res) => {
     }
 
     const existing = await query(
-      `SELECT id
-       FROM masons
+      `${masonSelectClause}
        WHERE mobile = $1
          AND id <> $2
        LIMIT 1`,
@@ -409,7 +469,10 @@ router.put("/masons/:id", requireRole("admin", "manager"), async (req, res) => {
     );
 
     if (existing.rowCount > 0) {
-      return res.status(400).json({ message: "Another mason already uses this mobile" });
+      return res.status(409).json({
+        message: "Mason already registered",
+        mason: existing.rows[0],
+      });
     }
 
     const result = await query(
@@ -475,6 +538,8 @@ router.put("/masons/:id", requireRole("admin", "manager"), async (req, res) => {
     return res.json(result.rows[0]);
   } catch (error) {
     return res.status(500).json({ message: "Unable to update mason", error: error.message });
+  } finally {
+    invalidateCachePrefix("schemes:");
   }
 });
 
@@ -577,6 +642,7 @@ router.post("/claims", requireRole("admin", "manager", "operations", "sales"), a
     await client.query("ROLLBACK");
     return res.status(500).json({ message: "Unable to create adhesive token claim", error: error.message });
   } finally {
+    invalidateCachePrefix("schemes:");
     client.release();
   }
 });
@@ -727,6 +793,7 @@ router.put("/claims/:id", requireRole("admin", "manager", "operations", "sales")
     await client.query("ROLLBACK");
     return res.status(500).json({ message: "Unable to update adhesive token claim", error: error.message });
   } finally {
+    invalidateCachePrefix("schemes:");
     client.release();
   }
 });
@@ -786,6 +853,8 @@ router.put("/claims/:id/verify", requireRole("admin", "manager", "operations", "
     return res.json(detail);
   } catch (error) {
     return res.status(500).json({ message: "Unable to verify adhesive token claim", error: error.message });
+  } finally {
+    invalidateCachePrefix("schemes:");
   }
 });
 
@@ -842,6 +911,8 @@ router.put("/claims/:id/approval", requireRole("admin", "manager"), async (req, 
     return res.json(detail);
   } catch (error) {
     return res.status(500).json({ message: "Unable to update claim approval", error: error.message });
+  } finally {
+    invalidateCachePrefix("schemes:");
   }
 });
 
@@ -896,6 +967,8 @@ router.put("/claims/:id/reopen", requireRole("admin"), async (req, res) => {
     return res.json(detail);
   } catch (error) {
     return res.status(500).json({ message: "Unable to reopen adhesive token claim", error: error.message });
+  } finally {
+    invalidateCachePrefix("schemes:");
   }
 });
 
@@ -967,6 +1040,8 @@ router.put("/claims/:id/payment", requireRole("admin", "manager", "accounts"), a
     return res.json(detail);
   } catch (error) {
     return res.status(500).json({ message: "Unable to mark claim as paid", error: error.message });
+  } finally {
+    invalidateCachePrefix("schemes:");
   }
 });
 
@@ -992,6 +1067,8 @@ router.delete("/claims/:id", requireRole("admin"), async (req, res) => {
     return res.status(204).send();
   } catch (error) {
     return res.status(500).json({ message: "Unable to delete adhesive token claim", error: error.message });
+  } finally {
+    invalidateCachePrefix("schemes:");
   }
 });
 

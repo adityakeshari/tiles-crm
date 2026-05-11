@@ -53,6 +53,33 @@ if exist "%PROJECT_DIR%\backend\migrations\016_token_claim_user_tracking.sql" (
   )
 )
 
+if exist "%PROJECT_DIR%\backend\migrations\017_complete_mason_token_repair.sql" (
+  echo Applying 017_complete_mason_token_repair.sql
+  psql -U %DB_USER% -d %DB_NAME% -f "%PROJECT_DIR%\backend\migrations\017_complete_mason_token_repair.sql"
+  if errorlevel 1 (
+    echo ERROR: Migration 017_complete_mason_token_repair.sql failed.
+    exit /b 1
+  )
+)
+
+if exist "%PROJECT_DIR%\backend\migrations\018_registered_mason_working_profile.sql" (
+  echo Applying 018_registered_mason_working_profile.sql
+  psql -U %DB_USER% -d %DB_NAME% -f "%PROJECT_DIR%\backend\migrations\018_registered_mason_working_profile.sql"
+  if errorlevel 1 (
+    echo ERROR: Migration 018_registered_mason_working_profile.sql failed.
+    exit /b 1
+  )
+)
+
+if exist "%PROJECT_DIR%\backend\migrations\019_dashboard_scaling_indexes.sql" (
+  echo Applying 019_dashboard_scaling_indexes.sql
+  psql -U %DB_USER% -d %DB_NAME% -f "%PROJECT_DIR%\backend\migrations\019_dashboard_scaling_indexes.sql"
+  if errorlevel 1 (
+    echo ERROR: Migration 019_dashboard_scaling_indexes.sql failed.
+    exit /b 1
+  )
+)
+
 echo.
 echo [4/8] Building production assets...
 call "%PROJECT_DIR%\scripts\build-production.cmd"

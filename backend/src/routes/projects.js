@@ -6,8 +6,22 @@ import {
   validateProjectPayload,
 } from "../utils/validation.js";
 import { streamProjectInvoicePdf } from "../utils/invoicePdf.js";
+import { getOrSetCache, invalidateCachePrefix } from "../utils/ttlCache.js";
 
 const router = express.Router();
+const DEFAULT_LIST_LIMIT = 80;
+const MAX_LIST_LIMIT = 250;
+const DASHBOARD_TTL_MS = 3000;
+
+function parseListLimit(value, fallback = DEFAULT_LIST_LIMIT) {
+  const parsed = Number.parseInt(value, 10);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return Math.min(parsed, MAX_LIST_LIMIT);
+}
 
 const projectMetricsCte = `
   WITH quotation_totals AS (
@@ -119,12 +133,17 @@ const projectSelect = `
   LEFT JOIN plumbing_job_summary pjs ON pjs.lead_id = p.lead_id
 `;
 
-router.get("/", requireRole("admin", "manager", "operations", "accounts"), async (_req, res) => {
+router.get("/", requireRole("admin", "manager", "operations", "accounts"), async (req, res) => {
+  const limit = parseListLimit(req.query.limit);
+
   try {
-    const [projectsResult, dispatchesResult, claimsResult, claimItemsResult, summaryResult] = await Promise.all([
+    const data = await getOrSetCache(`projects:list:${limit}`, DASHBOARD_TTL_MS, async () => {
+      const [projectsResult, dispatchesResult, claimsResult, claimItemsResult, summaryResult] = await Promise.all([
       query(
         `${projectSelect}
-         ORDER BY p.created_at DESC, p.id DESC`
+         ORDER BY p.created_at DESC, p.id DESC
+         LIMIT $1`,
+        [limit]
       ),
       query(
         `SELECT *
@@ -173,38 +192,41 @@ router.get("/", requireRole("admin", "manager", "operations", "accounts"), async
          LEFT JOIN dispatch_summary ds ON ds.project_id = p.id
          LEFT JOIN plumbing_job_summary pjs ON pjs.lead_id = p.lead_id`
       ),
-    ]);
+      ]);
 
-    const dispatchesByProject = dispatchesResult.rows.reduce((map, item) => {
-      const current = map.get(item.project_id) || [];
-      current.push(item);
-      map.set(item.project_id, current);
-      return map;
-    }, new Map());
-    const claimItemsByClaim = claimItemsResult.rows.reduce((map, item) => {
-      const current = map.get(item.claim_id) || [];
-      current.push(item);
-      map.set(item.claim_id, current);
-      return map;
-    }, new Map());
-    const tokensByProject = claimsResult.rows.reduce((map, item) => {
-      const current = map.get(item.project_id) || [];
-      current.push({
-        ...item,
-        items: claimItemsByClaim.get(item.id) || [],
-      });
-      map.set(item.project_id, current);
-      return map;
-    }, new Map());
+      const dispatchesByProject = dispatchesResult.rows.reduce((map, item) => {
+        const current = map.get(item.project_id) || [];
+        current.push(item);
+        map.set(item.project_id, current);
+        return map;
+      }, new Map());
+      const claimItemsByClaim = claimItemsResult.rows.reduce((map, item) => {
+        const current = map.get(item.claim_id) || [];
+        current.push(item);
+        map.set(item.claim_id, current);
+        return map;
+      }, new Map());
+      const tokensByProject = claimsResult.rows.reduce((map, item) => {
+        const current = map.get(item.project_id) || [];
+        current.push({
+          ...item,
+          items: claimItemsByClaim.get(item.id) || [],
+        });
+        map.set(item.project_id, current);
+        return map;
+      }, new Map());
 
-    return res.json({
-      projects: projectsResult.rows.map((project) => ({
-        ...project,
-        dispatches: dispatchesByProject.get(project.id) || [],
-        adhesive_tokens: tokensByProject.get(project.id) || [],
-      })),
-      summary: summaryResult.rows[0],
+      return {
+        projects: projectsResult.rows.map((project) => ({
+          ...project,
+          dispatches: dispatchesByProject.get(project.id) || [],
+          adhesive_tokens: tokensByProject.get(project.id) || [],
+        })),
+        summary: summaryResult.rows[0],
+      };
     });
+
+    return res.json(data);
   } catch (error) {
     return res.status(500).json({ message: "Unable to fetch projects", error: error.message });
   }
@@ -305,6 +327,8 @@ router.post("/", requireRole("admin", "manager", "operations"), async (req, res)
     return res.status(201).json(result.rows[0]);
   } catch (error) {
     return res.status(500).json({ message: "Unable to create project", error: error.message });
+  } finally {
+    invalidateCachePrefix("projects:");
   }
 });
 
@@ -350,6 +374,8 @@ router.put("/:id", requireRole("admin", "manager", "operations"), async (req, re
     return res.json(result.rows[0]);
   } catch (error) {
     return res.status(500).json({ message: "Unable to update project", error: error.message });
+  } finally {
+    invalidateCachePrefix("projects:");
   }
 });
 
@@ -390,6 +416,8 @@ router.post("/:id/dispatches", requireRole("admin", "manager", "operations"), as
     return res.status(201).json(result.rows[0]);
   } catch (error) {
     return res.status(500).json({ message: "Unable to create dispatch", error: error.message });
+  } finally {
+    invalidateCachePrefix("projects:");
   }
 });
 
@@ -438,6 +466,8 @@ router.put("/:projectId/dispatches/:dispatchId", requireRole("admin", "manager",
     return res.json(result.rows[0]);
   } catch (error) {
     return res.status(500).json({ message: "Unable to update dispatch", error: error.message });
+  } finally {
+    invalidateCachePrefix("projects:");
   }
 });
 

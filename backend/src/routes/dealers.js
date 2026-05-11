@@ -4,8 +4,22 @@ import { requireRole } from "../middleware/auth.js";
 import { validateDealerPayload } from "../utils/validation.js";
 
 const router = express.Router();
+const DEFAULT_LIST_LIMIT = 100;
+const MAX_LIST_LIMIT = 300;
 
-router.get("/", async (_req, res) => {
+function parseListLimit(value, fallback = DEFAULT_LIST_LIMIT) {
+  const parsed = Number.parseInt(value, 10);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return Math.min(parsed, MAX_LIST_LIMIT);
+}
+
+router.get("/", async (req, res) => {
+  const limit = parseListLimit(req.query.limit);
+
   try {
     const result = await query(
       `SELECT *
@@ -13,7 +27,9 @@ router.get("/", async (_req, res) => {
        ORDER BY
          CASE category WHEN 'A' THEN 1 WHEN 'B' THEN 2 ELSE 3 END,
          monthly_purchase DESC,
-         name ASC`
+         name ASC
+       LIMIT $1`,
+      [limit]
     );
 
     return res.json(result.rows);
