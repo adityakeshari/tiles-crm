@@ -425,7 +425,14 @@ export function validatePlumbingJobPayload(payload) {
 export function validateMasonPayload(payload) {
   const name = normalizeString(payload.name);
   const mobile = normalizeString(payload.mobile);
-  const area = normalizeOptionalString(payload.area);
+  const current_address = normalizeString(payload.current_address);
+  const current_address_city = normalizeString(payload.current_address_city);
+  const permanent_address = normalizeOptionalString(payload.permanent_address);
+  const permanent_address_city = normalizeOptionalString(payload.permanent_address_city);
+  const working_areas = [...new Set((Array.isArray(payload.working_areas) ? payload.working_areas : [])
+    .map((item) => normalizeString(item))
+    .filter(Boolean))];
+  const working_distance_upto_km = toInteger(payload.working_distance_upto_km, 0);
   const status = normalizeString(payload.status || "active");
 
   if (!name) {
@@ -434,6 +441,22 @@ export function validateMasonPayload(payload) {
 
   if (!isPhoneValid(mobile)) {
     return { ok: false, message: "Mason mobile must be 7 to 15 characters" };
+  }
+
+  if (!current_address) {
+    return { ok: false, message: "Current address is required" };
+  }
+
+  if (!current_address_city) {
+    return { ok: false, message: "Current address city is required" };
+  }
+
+  if (!working_areas.length) {
+    return { ok: false, message: "At least one working area is required" };
+  }
+
+  if (!Number.isFinite(working_distance_upto_km) || working_distance_upto_km <= 0) {
+    return { ok: false, message: "Working distance must be greater than zero" };
   }
 
   if (!masonStatuses.has(status)) {
@@ -445,7 +468,13 @@ export function validateMasonPayload(payload) {
     value: {
       name,
       mobile,
-      area,
+      area: working_areas[0] || current_address_city || "",
+      current_address,
+      current_address_city,
+      permanent_address,
+      permanent_address_city,
+      working_areas,
+      working_distance_upto_km,
       status,
     },
   };

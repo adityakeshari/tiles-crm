@@ -341,6 +341,10 @@ const emptySchemeToken = {
   mason_id: "",
   mason_area: "",
   mason_mobile: "",
+  mason_current_address_city: "",
+  mason_permanent_address_city: "",
+  mason_working_areas: [],
+  mason_working_distance_upto_km: "",
   adhesive_company: "",
   adhesive_type: "",
   sold_bag_quantity: "",
@@ -358,7 +362,12 @@ const emptySchemeToken = {
 const emptyMason = {
   name: "",
   mobile: "",
-  area: "",
+  current_address: "",
+  current_address_city: "",
+  permanent_address: "",
+  permanent_address_city: "",
+  working_areas: [],
+  working_distance_upto_km: "",
   status: "active",
 };
 
@@ -711,6 +720,22 @@ function validateMasonForm(form) {
     return "Mason mobile must be 7 to 15 characters.";
   }
 
+  if (!normalizeText(form.current_address)) {
+    return "Current address is required.";
+  }
+
+  if (!normalizeText(form.current_address_city)) {
+    return "Current address city is required.";
+  }
+
+  if (!Array.isArray(form.working_areas) || form.working_areas.filter((item) => normalizeText(item)).length === 0) {
+    return "At least one working area is required.";
+  }
+
+  if (!isPositiveNumber(form.working_distance_upto_km)) {
+    return "Working distance must be greater than zero.";
+  }
+
   if (!normalizeText(form.status) || !masonStatuses.some((item) => item.value === form.status)) {
     return "Mason status is invalid.";
   }
@@ -985,6 +1010,11 @@ export default function App() {
   const [editingProductId, setEditingProductId] = useState(null);
   const [masonForm, setMasonForm] = useState(emptyMason);
   const [editingMasonId, setEditingMasonId] = useState(null);
+  const [masonWorkingAreaInput, setMasonWorkingAreaInput] = useState("");
+  const [masonCurrentCityFilter, setMasonCurrentCityFilter] = useState("");
+  const [masonPermanentCityFilter, setMasonPermanentCityFilter] = useState("");
+  const [masonWorkingAreaFilter, setMasonWorkingAreaFilter] = useState("");
+  const [masonWorkingDistanceFilter, setMasonWorkingDistanceFilter] = useState("");
   const [plumberForm, setPlumberForm] = useState(emptyPlumber);
   const [editingPlumberId, setEditingPlumberId] = useState(null);
   const [plumbingJobForm, setPlumbingJobForm] = useState(emptyPlumbingJob);
@@ -1269,6 +1299,28 @@ export default function App() {
   const activeMasons = useMemo(
     () => masons.filter((mason) => mason.status === "active"),
     [masons]
+  );
+
+  const filteredMasons = useMemo(
+    () =>
+      masons.filter((mason) => {
+        const workingAreas = Array.isArray(mason.working_areas) ? mason.working_areas : [];
+        const matchesCurrentCity =
+          !masonCurrentCityFilter ||
+          String(mason.current_address_city || "").toLowerCase().includes(masonCurrentCityFilter.toLowerCase());
+        const matchesPermanentCity =
+          !masonPermanentCityFilter ||
+          String(mason.permanent_address_city || "").toLowerCase().includes(masonPermanentCityFilter.toLowerCase());
+        const matchesWorkingArea =
+          !masonWorkingAreaFilter ||
+          workingAreas.some((area) => String(area || "").toLowerCase().includes(masonWorkingAreaFilter.toLowerCase()));
+        const matchesDistance =
+          !masonWorkingDistanceFilter ||
+          Number(mason.working_distance_upto_km || 0) >= Number(masonWorkingDistanceFilter || 0);
+
+        return matchesCurrentCity && matchesPermanentCity && matchesWorkingArea && matchesDistance;
+      }),
+    [masons, masonCurrentCityFilter, masonPermanentCityFilter, masonWorkingAreaFilter, masonWorkingDistanceFilter]
   );
 
   const selectedRegisteredMason = useMemo(
@@ -2089,6 +2141,30 @@ export default function App() {
       mason_id: masonIdValue,
       mason_mobile: mason?.mobile || "",
       mason_area: mason?.area || "",
+      mason_current_address_city: mason?.current_address_city || "",
+      mason_permanent_address_city: mason?.permanent_address_city || "",
+      mason_working_areas: Array.isArray(mason?.working_areas) ? mason.working_areas : [],
+      mason_working_distance_upto_km: mason?.working_distance_upto_km || "",
+    }));
+  }
+
+  function addMasonWorkingArea() {
+    const nextArea = normalizeText(masonWorkingAreaInput);
+    if (!nextArea) {
+      return;
+    }
+
+    setMasonForm((current) => ({
+      ...current,
+      working_areas: [...new Set([...(current.working_areas || []), nextArea])],
+    }));
+    setMasonWorkingAreaInput("");
+  }
+
+  function removeMasonWorkingArea(areaToRemove) {
+    setMasonForm((current) => ({
+      ...current,
+      working_areas: (current.working_areas || []).filter((area) => area !== areaToRemove),
     }));
   }
 
@@ -2409,6 +2485,7 @@ export default function App() {
       }
 
       setMasonForm(emptyMason);
+      setMasonWorkingAreaInput("");
       setEditingMasonId(null);
       await loadDashboard();
     }, editingMasonId ? "Registered mason updated." : "Registered mason saved.");
@@ -2610,9 +2687,15 @@ export default function App() {
     setMasonForm({
       name: mason.name || "",
       mobile: mason.mobile || "",
-      area: mason.area || "",
+      current_address: mason.current_address || "",
+      current_address_city: mason.current_address_city || "",
+      permanent_address: mason.permanent_address || "",
+      permanent_address_city: mason.permanent_address_city || "",
+      working_areas: Array.isArray(mason.working_areas) ? mason.working_areas : [],
+      working_distance_upto_km: mason.working_distance_upto_km || "",
       status: mason.status || "active",
     });
+    setMasonWorkingAreaInput("");
     setCurrentView("masons");
   }
 
@@ -2808,6 +2891,7 @@ export default function App() {
     setUserForm(emptyUser);
     setEditingUserId(null);
     setMasonForm(emptyMason);
+    setMasonWorkingAreaInput("");
     setEditingMasonId(null);
   }
 
@@ -4349,7 +4433,18 @@ export default function App() {
                 Verify Invoice
               </button>
               <input placeholder="Registered mason mobile" value={schemeTokenForm.mason_mobile} readOnly />
-              <input placeholder="Registered mason area" value={schemeTokenForm.mason_area} readOnly />
+              <input placeholder="Current address city" value={schemeTokenForm.mason_current_address_city} readOnly />
+              <input placeholder="Permanent address city" value={schemeTokenForm.mason_permanent_address_city} readOnly />
+              <input
+                placeholder="Working areas"
+                value={(schemeTokenForm.mason_working_areas || []).join(", ")}
+                readOnly
+              />
+              <input
+                placeholder="Working distance upto (KM)"
+                value={schemeTokenForm.mason_working_distance_upto_km}
+                readOnly
+              />
               <input
                 placeholder="Adhesive type"
                 value={schemeTokenForm.adhesive_type}
@@ -4517,6 +4612,11 @@ export default function App() {
                     {selectedRegisteredMason ? `Registered Mason: ${selectedRegisteredMason.name}` : "Select active registered mason"}
                   </span>
                 </div>
+                {selectedRegisteredMason ? (
+                  <p className="muted">
+                    {selectedRegisteredMason.current_address_city || "No current city"} | {selectedRegisteredMason.permanent_address_city || "No permanent city"} | {(selectedRegisteredMason.working_areas || []).join(", ") || "No working areas"} | {selectedRegisteredMason.working_distance_upto_km || 0} KM
+                  </p>
+                ) : null}
                 <HighlightRow label="Claimed Bag Quantity" value={adhesiveClaimTotals.claimed_bag_quantity} />
                 <HighlightRow label="Sold Bag Quantity" value={schemeTokenForm.sold_bag_quantity || 0} />
                 <HighlightRow
@@ -4955,9 +5055,36 @@ export default function App() {
                   onChange={(event) => setMasonForm({ ...masonForm, mobile: event.target.value })}
                 />
                 <input
-                  placeholder="Area"
-                  value={masonForm.area}
-                  onChange={(event) => setMasonForm({ ...masonForm, area: event.target.value })}
+                  placeholder="Current address"
+                  value={masonForm.current_address}
+                  onChange={(event) => setMasonForm({ ...masonForm, current_address: event.target.value })}
+                />
+                <input
+                  placeholder="Current address city"
+                  value={masonForm.current_address_city}
+                  onChange={(event) => setMasonForm({ ...masonForm, current_address_city: event.target.value })}
+                />
+                <input
+                  placeholder="Permanent address"
+                  value={masonForm.permanent_address}
+                  onChange={(event) => setMasonForm({ ...masonForm, permanent_address: event.target.value })}
+                />
+                <input
+                  placeholder="Permanent address city"
+                  value={masonForm.permanent_address_city}
+                  onChange={(event) => setMasonForm({ ...masonForm, permanent_address_city: event.target.value })}
+                />
+                <input
+                  type="number"
+                  min="1"
+                  placeholder="Working distance upto (KM)"
+                  value={masonForm.working_distance_upto_km}
+                  onChange={(event) =>
+                    setMasonForm({
+                      ...masonForm,
+                      working_distance_upto_km: sanitizePositiveIntegerInput(event.target.value, ""),
+                    })
+                  }
                 />
                 <select
                   value={masonForm.status}
@@ -4969,6 +5096,35 @@ export default function App() {
                     </option>
                   ))}
                 </select>
+                <div className="full-span detail-card stack">
+                  <div className="section-head">
+                    <h3>Working areas</h3>
+                    <button type="button" className="secondary" onClick={addMasonWorkingArea}>
+                      Add Area
+                    </button>
+                  </div>
+                  <div className="quote-row">
+                    <input
+                      placeholder="Working area"
+                      value={masonWorkingAreaInput}
+                      onChange={(event) => setMasonWorkingAreaInput(event.target.value)}
+                    />
+                  </div>
+                  <div className="chip-row">
+                    {(masonForm.working_areas || []).map((area) => (
+                      <button
+                        key={area}
+                        type="button"
+                        className="status-chip"
+                        onClick={() => removeMasonWorkingArea(area)}
+                        title="Remove working area"
+                      >
+                        {area} x
+                      </button>
+                    ))}
+                    {!(masonForm.working_areas || []).length ? <span className="muted">Add at least one working area.</span> : null}
+                  </div>
+                </div>
                 <div className="lead-actions full-span">
                   <button type="submit" disabled={busyAction === "save-mason"}>
                     {busyAction === "save-mason"
@@ -4986,6 +5142,7 @@ export default function App() {
                       onClick={() => {
                         setEditingMasonId(null);
                         setMasonForm(emptyMason);
+                        setMasonWorkingAreaInput("");
                       }}
                     >
                       Cancel
@@ -5007,8 +5164,32 @@ export default function App() {
               <h2>Mason directory</h2>
               <span>{activeMasons.length} active</span>
             </div>
+            <div className="form-grid">
+              <input
+                placeholder="Filter by current city"
+                value={masonCurrentCityFilter}
+                onChange={(event) => setMasonCurrentCityFilter(event.target.value)}
+              />
+              <input
+                placeholder="Filter by permanent city"
+                value={masonPermanentCityFilter}
+                onChange={(event) => setMasonPermanentCityFilter(event.target.value)}
+              />
+              <input
+                placeholder="Filter by working area"
+                value={masonWorkingAreaFilter}
+                onChange={(event) => setMasonWorkingAreaFilter(event.target.value)}
+              />
+              <input
+                type="number"
+                min="1"
+                placeholder="Minimum distance KM"
+                value={masonWorkingDistanceFilter}
+                onChange={(event) => setMasonWorkingDistanceFilter(event.target.value)}
+              />
+            </div>
             <div className="list">
-              {masons.map((mason) => (
+              {filteredMasons.map((mason) => (
                 <article key={mason.id} className="lead-card">
                   <div className="section-head">
                     <div>
@@ -5019,7 +5200,9 @@ export default function App() {
                       {labelize(mason.status)}
                     </span>
                   </div>
-                  <p>{mason.area || "No area mapped yet."}</p>
+                  <p>{mason.current_address_city || "No current city"} | {mason.permanent_address_city || "No permanent city"}</p>
+                  <p>{(mason.working_areas || []).join(", ") || "No working areas mapped yet."}</p>
+                  <p className="muted">Working distance upto {mason.working_distance_upto_km || 0} KM</p>
                   <p className="muted">Registered {formatDateTime(mason.registered_at)}</p>
                   {hasAnyRole(user, ["admin", "manager"]) ? (
                     <div className="lead-actions">
@@ -5030,7 +5213,7 @@ export default function App() {
                   ) : null}
                 </article>
               ))}
-              {masons.length === 0 ? (
+              {filteredMasons.length === 0 ? (
                 <EmptyState title="No registered masons yet" message="Register active masons here before creating adhesive token claims." />
               ) : null}
             </div>

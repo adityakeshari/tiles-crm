@@ -290,7 +290,7 @@ router.get("/", async (_req, res) => {
       activities: activityResult.rows,
       masons: (
         await query(
-          `SELECT id, name, mobile, area, status, registered_at, created_by
+          `SELECT id, name, mobile, area, current_address, current_address_city, permanent_address, permanent_address_city, working_areas, working_distance_upto_km, status, registered_at, created_by
            FROM masons
            ORDER BY name ASC, id ASC`
         )
@@ -338,14 +338,37 @@ router.post("/masons", requireRole("admin", "manager"), async (req, res) => {
     }
 
     const result = await query(
-      `INSERT INTO masons (name, mobile, area, status, created_by)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO masons (
+         name, mobile, area, current_address, current_address_city,
+         permanent_address, permanent_address_city, working_areas,
+         working_distance_upto_km, status, created_by
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11)
        RETURNING *`,
-      [mason.name, mason.mobile, mason.area, mason.status, req.user.id]
+      [
+        mason.name,
+        mason.mobile,
+        mason.area,
+        mason.current_address,
+        mason.current_address_city,
+        mason.permanent_address,
+        mason.permanent_address_city,
+        JSON.stringify(mason.working_areas),
+        mason.working_distance_upto_km,
+        mason.status,
+        req.user.id,
+      ]
     );
 
     const created = result.rows[0];
-    await logMasonActivity(query, created.id, null, "mason_registered", `Registered mason ${created.name}`, req.user.id);
+    await logMasonActivity(
+      query,
+      created.id,
+      null,
+      "mason_registered",
+      `Registered mason ${created.name} for ${created.current_address_city} with working areas ${mason.working_areas.join(", ")} and ${mason.working_distance_upto_km} KM distance`,
+      req.user.id
+    );
     return res.status(201).json(created);
   } catch (error) {
     return res.status(500).json({ message: "Unable to register mason", error: error.message });
@@ -391,11 +414,41 @@ router.put("/masons/:id", requireRole("admin", "manager"), async (req, res) => {
 
     const result = await query(
       `UPDATE masons
-       SET name = $1, mobile = $2, area = $3, status = $4
-       WHERE id = $5
+       SET name = $1,
+           mobile = $2,
+           area = $3,
+           current_address = $4,
+           current_address_city = $5,
+           permanent_address = $6,
+           permanent_address_city = $7,
+           working_areas = $8::jsonb,
+           working_distance_upto_km = $9,
+           status = $10
+       WHERE id = $11
        RETURNING *`,
-      [mason.name, mason.mobile, mason.area, mason.status, id]
+      [
+        mason.name,
+        mason.mobile,
+        mason.area,
+        mason.current_address,
+        mason.current_address_city,
+        mason.permanent_address,
+        mason.permanent_address_city,
+        JSON.stringify(mason.working_areas),
+        mason.working_distance_upto_km,
+        mason.status,
+        id,
+      ]
     );
+
+    const currentWorkingAreas = Array.isArray(current.working_areas) ? current.working_areas : [];
+    const workProfileChanged =
+      current.current_address !== mason.current_address ||
+      current.current_address_city !== mason.current_address_city ||
+      current.permanent_address !== mason.permanent_address ||
+      current.permanent_address_city !== mason.permanent_address_city ||
+      JSON.stringify(currentWorkingAreas) !== JSON.stringify(mason.working_areas) ||
+      Number(current.working_distance_upto_km || 0) !== Number(mason.working_distance_upto_km || 0);
 
     if (current.status !== mason.status) {
       await logMasonActivity(
@@ -404,6 +457,17 @@ router.put("/masons/:id", requireRole("admin", "manager"), async (req, res) => {
         null,
         mason.status === "active" ? "mason_activated" : "mason_inactivated",
         mason.status === "active" ? `Activated mason ${mason.name}` : `Inactivated mason ${mason.name}`,
+        req.user.id
+      );
+    }
+
+    if (workProfileChanged) {
+      await logMasonActivity(
+        query,
+        Number(id),
+        null,
+        "mason_work_profile_updated",
+        `Updated mason working areas to ${mason.working_areas.join(", ")} and distance to ${mason.working_distance_upto_km} KM`,
         req.user.id
       );
     }

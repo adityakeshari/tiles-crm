@@ -108,6 +108,12 @@ CREATE TABLE masons (
   name VARCHAR(100) NOT NULL,
   mobile VARCHAR(15) NOT NULL UNIQUE,
   area VARCHAR(120) NOT NULL DEFAULT '',
+  current_address TEXT NOT NULL DEFAULT '',
+  current_address_city VARCHAR(100) NOT NULL DEFAULT '',
+  permanent_address TEXT NOT NULL DEFAULT '',
+  permanent_address_city VARCHAR(100) NOT NULL DEFAULT '',
+  working_areas JSONB NOT NULL DEFAULT '[]'::jsonb,
+  working_distance_upto_km INT NOT NULL DEFAULT 0 CHECK (working_distance_upto_km >= 0),
   status VARCHAR(20) NOT NULL DEFAULT 'active'
     CHECK (status IN ('active', 'inactive')),
   registered_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -299,6 +305,7 @@ CREATE TABLE mason_activity_logs (
     'mason_registered',
     'mason_activated',
     'mason_inactivated',
+    'mason_work_profile_updated',
     'token_claim_created',
     'blocked_inactive_mason',
     'blocked_unregistered_mason'
