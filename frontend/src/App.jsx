@@ -1,5 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { api, getCsvExportUrl, getProjectInvoicePdfUrl, getQuotationPdfUrl } from "./api.js";
+
+const AdhesiveTokensSection = lazy(() => import("./sections/AdhesiveTokensSection.jsx"));
+const RegisteredMasonsSection = lazy(() => import("./sections/RegisteredMasonsSection.jsx"));
+const ProjectsSection = lazy(() => import("./sections/ProjectsSection.jsx"));
+const LeadWorkspaceSection = lazy(() => import("./sections/LeadWorkspaceSection.jsx"));
 
 const views = [
   { id: "overview", label: "Overview" },
@@ -14,6 +19,7 @@ const views = [
   { id: "masons", label: "Registered Masons" },
   { id: "inventory", label: "Inventory" },
   { id: "dealers", label: "Dealers" },
+  { id: "purchases", label: "Purchase Entry" },
   { id: "expenses", label: "Expenses" },
   { id: "reports", label: "Reports" },
   { id: "team", label: "Team" },
@@ -67,6 +73,10 @@ const viewMeta = {
   dealers: {
     title: "Dealer Network",
     description: "Monitor partner performance, outstanding value, and relationship health.",
+  },
+  purchases: {
+    title: "Purchase Entry",
+    description: "Daily purchase entries for showroom stock and supplies — supplier, invoice, amount, GST and remarks.",
   },
   expenses: {
     title: "Expense Management",
@@ -258,6 +268,7 @@ const DEFAULT_LIST_LIMITS = {
   dealers: 40,
   claims: 40,
   masons: 40,
+  purchases: 50,
 };
 const MAX_LIST_LIMIT = 300;
 
@@ -374,6 +385,7 @@ const emptySchemeToken = {
 const emptyMason = {
   name: "",
   mobile: "",
+  alt_mobile: "",
   current_address: "",
   current_address_city: "",
   permanent_address: "",
@@ -381,7 +393,46 @@ const emptyMason = {
   working_areas: [],
   working_distance_upto_km: "",
   status: "active",
+  remarks: "",
 };
+
+const emptyPurchase = {
+  supplier_name: "",
+  supplier_phone: "",
+  invoice_number: "",
+  purchase_date: "",
+  business_unit: "tiles",
+  category: "tiles",
+  item_name: "",
+  quantity: "",
+  unit: "pcs",
+  amount: "",
+  gst_amount: "",
+  total_amount: "",
+  payment_status: "pending",
+  remarks: "",
+};
+
+const purchasePaymentStatuses = [
+  { value: "pending", label: "Pending" },
+  { value: "partial", label: "Partial" },
+  { value: "paid", label: "Paid" },
+];
+
+const purchaseBusinessUnitOptions = [
+  { value: "tiles", label: "Tiles" },
+  { value: "plumbing", label: "Plumbing" },
+  { value: "both", label: "Tiles + Plumbing" },
+];
+
+const expensePaymentModes = [
+  { value: "cash", label: "Cash" },
+  { value: "bank", label: "Bank" },
+  { value: "upi", label: "UPI" },
+  { value: "cheque", label: "Cheque" },
+  { value: "card", label: "Card" },
+  { value: "other", label: "Other" },
+];
 
 const emptyComplaint = {
   lead_id: "",
@@ -447,6 +498,7 @@ const emptyExpense = {
   expense_date: "",
   amount: "",
   note: "",
+  paid_by: "cash",
 };
 
 function normalizeText(value) {
@@ -660,6 +712,37 @@ function validateExpenseForm(form) {
 
   if (!isValidDateInput(form.expense_date)) {
     return "Expense date is invalid.";
+  }
+
+  return "";
+}
+
+function validatePurchaseForm(form) {
+  if (!normalizeText(form.supplier_name)) {
+    return "Supplier name is required.";
+  }
+
+  if (form.supplier_phone && !isPhoneLike(form.supplier_phone)) {
+    return "Supplier phone must be 7 to 15 digits.";
+  }
+
+  if (!isValidDateInput(form.purchase_date)) {
+    return "Purchase date is invalid.";
+  }
+
+  const qty = Number(form.quantity || 0);
+  if (!Number.isFinite(qty) || qty < 0) {
+    return "Quantity must be a non-negative number.";
+  }
+
+  const amt = Number(form.amount || 0);
+  if (!Number.isFinite(amt) || amt < 0) {
+    return "Amount must be a non-negative number.";
+  }
+
+  const gst = Number(form.gst_amount || 0);
+  if (!Number.isFinite(gst) || gst < 0) {
+    return "GST amount must be a non-negative number.";
   }
 
   return "";
@@ -1036,6 +1119,18 @@ export default function App() {
   const [dispatchDrafts, setDispatchDrafts] = useState({});
   const [expenseForm, setExpenseForm] = useState(emptyExpense);
   const [editingExpenseId, setEditingExpenseId] = useState(null);
+  const [purchases, setPurchases] = useState([]);
+  const [purchaseSummary, setPurchaseSummary] = useState(null);
+  const [purchaseForm, setPurchaseForm] = useState(emptyPurchase);
+  const [editingPurchaseId, setEditingPurchaseId] = useState(null);
+  const [purchaseSearch, setPurchaseSearch] = useState("");
+  const [purchaseFromFilter, setPurchaseFromFilter] = useState("");
+  const [purchaseToFilter, setPurchaseToFilter] = useState("");
+  const [purchasePaymentFilter, setPurchasePaymentFilter] = useState("all");
+  const [dashboardSummary, setDashboardSummary] = useState(null);
+  const [dailyReport, setDailyReport] = useState(null);
+  const [dailyReportDate, setDailyReportDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [reportsView, setReportsView] = useState("overview");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [isSavingComplaint, setIsSavingComplaint] = useState(false);
@@ -1060,7 +1155,9 @@ export default function App() {
     }
 
     if (hasRole(user, "operations")) {
-      ["operations", "projects", "plumbing", "complaints"].forEach((item) => allowedViews.add(item));
+      ["operations", "projects", "plumbing", "complaints", "purchases"].forEach((item) =>
+        allowedViews.add(item)
+      );
     }
 
     if (hasRole(user, "token")) {
@@ -1072,11 +1169,15 @@ export default function App() {
     }
 
     if (hasRole(user, "accounts")) {
-      ["projects", "expenses"].forEach((item) => allowedViews.add(item));
+      ["projects", "expenses", "purchases"].forEach((item) => allowedViews.add(item));
+    }
+
+    if (hasRole(user, "operator")) {
+      ["overview", "purchases", "expenses", "masons"].forEach((item) => allowedViews.add(item));
     }
 
     if (hasRole(user, "reports")) {
-      allowedViews.add("reports");
+      ["reports", "purchases", "expenses"].forEach((item) => allowedViews.add(item));
     }
 
     return views.filter((item) => allowedViews.has(item.id));
@@ -1510,7 +1611,33 @@ export default function App() {
       ];
     }
 
+    const summaryCardsExtra = dashboardSummary
+      ? [
+          {
+            label: "Today Sales",
+            value: `Rs ${Number(dashboardSummary.sales_today?.amount || 0).toLocaleString("en-IN")}`,
+          },
+          {
+            label: "Today Collection",
+            value: `Rs ${Number(dashboardSummary.collection_today?.amount || 0).toLocaleString(
+              "en-IN"
+            )}`,
+          },
+          {
+            label: "Pending Payments",
+            value: `Rs ${Number(dashboardSummary.pending_payments?.amount || 0).toLocaleString(
+              "en-IN"
+            )}`,
+          },
+          {
+            label: "Token Claims Pending",
+            value: dashboardSummary.token_pending?.count ?? 0,
+          },
+        ]
+      : [];
+
     return [
+      ...summaryCardsExtra,
       { label: "Pending Follow-ups", value: focusStats.pendingFollowups },
       { label: "Overdue Follow-ups", value: focusStats.overdueFollowups },
       { label: "Monthly Revenue", value: `Rs ${stats?.monthly_revenue ?? 0}` },
@@ -1519,7 +1646,7 @@ export default function App() {
       { label: "Open Ops Tasks", value: focusStats.openOpsTasks },
       ...baseCards,
     ];
-  }, [focusStats, workspaceFilter, stats?.monthly_revenue]);
+  }, [focusStats, workspaceFilter, stats?.monthly_revenue, dashboardSummary]);
 
   const overviewTitle =
     workspaceFilter === "operations" ? "Operations handoff board" : "Lead funnel snapshot";
@@ -1601,14 +1728,16 @@ export default function App() {
       const requestOptions = createRequestOptions(signal);
 
       if (view === "overview") {
-        const [statsData, leadsData] = await Promise.all([
+        const [statsData, leadsData, summaryData] = await Promise.all([
           api.getStats(requestOptions),
           api.getLeads({ ...requestOptions, limit: listLimits.leads }),
+          api.getDashboardSummary(requestOptions).catch(() => null),
           loadUsersForView(view, signal),
         ]);
 
         setStats(statsData);
         setLeads(leadsData);
+        setDashboardSummary(summaryData);
         syncSelectedLeadState(leadsData);
       } else if (view === "pipeline") {
         const leadsData = await api.getLeads({ ...requestOptions, limit: listLimits.leads });
@@ -1695,11 +1824,26 @@ export default function App() {
         const expensesData = await api.getExpensesDashboard(requestOptions).catch(() => ({ expenses: [], summary: null }));
         setExpenses(expensesData.expenses || []);
         setExpenseSummary(expensesData.summary || null);
+      } else if (view === "purchases") {
+        const purchasesData = await api
+          .getPurchases({
+            ...requestOptions,
+            limit: listLimits.purchases,
+            search: purchaseSearch,
+            from: purchaseFromFilter,
+            to: purchaseToFilter,
+            payment_status: purchasePaymentFilter === "all" ? "" : purchasePaymentFilter,
+          })
+          .catch(() => ({ purchases: [], summary: null }));
+        setPurchases(purchasesData.purchases || []);
+        setPurchaseSummary(purchasesData.summary || null);
       } else if (view === "reports") {
-        const [statsData, projectsData, expensesData] = await Promise.all([
+        const [statsData, projectsData, expensesData, summaryData, dailyData] = await Promise.all([
           api.getStats(requestOptions),
           api.getProjectsDashboard({ ...requestOptions, limit: listLimits.projects }).catch(() => ({ projects: [], summary: null })),
           api.getExpensesDashboard(requestOptions).catch(() => ({ expenses: [], summary: null })),
+          api.getDashboardSummary(requestOptions).catch(() => null),
+          api.getDailyReport({ date: dailyReportDate }, requestOptions).catch(() => null),
         ]);
 
         setStats(statsData);
@@ -1707,6 +1851,8 @@ export default function App() {
         setProjectSummary(projectsData.summary || null);
         setExpenses(expensesData.expenses || []);
         setExpenseSummary(expensesData.summary || null);
+        setDashboardSummary(summaryData);
+        setDailyReport(dailyData);
       } else if (view === "team") {
         await loadUsersForView(view, signal);
       }
@@ -1739,7 +1885,17 @@ export default function App() {
     const controller = new AbortController();
     loadDashboard({ signal: controller.signal });
     return () => controller.abort();
-  }, [token, user?.id, currentView, listLimits]);
+  }, [
+    token,
+    user?.id,
+    currentView,
+    listLimits,
+    purchaseSearch,
+    purchaseFromFilter,
+    purchaseToFilter,
+    purchasePaymentFilter,
+    dailyReportDate,
+  ]);
 
   useEffect(() => {
     if (!token || !selectedLead?.id || !leadDrivenViews.has(currentView)) {
@@ -2271,6 +2427,83 @@ export default function App() {
     }, editingExpenseId ? "Expense updated." : "Expense saved.");
   }
 
+  function handleEditPurchase(record) {
+    setEditingPurchaseId(record.id);
+    setPurchaseForm({
+      supplier_name: record.supplier_name || "",
+      supplier_phone: record.supplier_phone || "",
+      invoice_number: record.invoice_number || "",
+      purchase_date: record.purchase_date ? String(record.purchase_date).slice(0, 10) : "",
+      business_unit: record.business_unit || "tiles",
+      category: record.category || "tiles",
+      item_name: record.item_name || "",
+      quantity: record.quantity != null ? String(record.quantity) : "",
+      unit: record.unit || "pcs",
+      amount: record.amount != null ? String(record.amount) : "",
+      gst_amount: record.gst_amount != null ? String(record.gst_amount) : "",
+      total_amount: record.total_amount != null ? String(record.total_amount) : "",
+      payment_status: record.payment_status || "pending",
+      remarks: record.remarks || "",
+    });
+  }
+
+  function handleCancelEditPurchase() {
+    setEditingPurchaseId(null);
+    setPurchaseForm(emptyPurchase);
+  }
+
+  async function handleSavePurchase(event) {
+    event.preventDefault();
+    const validationError = validatePurchaseForm(purchaseForm);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    await runBusyAction("save-purchase", async () => {
+      const amount = Number(purchaseForm.amount || 0);
+      const gst = Number(purchaseForm.gst_amount || 0);
+      const computedTotal = amount + gst;
+      const payload = {
+        ...purchaseForm,
+        quantity: Number(purchaseForm.quantity || 0),
+        amount,
+        gst_amount: gst,
+        total_amount: purchaseForm.total_amount === "" ? computedTotal : Number(purchaseForm.total_amount),
+      };
+
+      try {
+        if (editingPurchaseId) {
+          await api.updatePurchase(editingPurchaseId, payload);
+        } else {
+          await api.createPurchase(payload);
+        }
+      } catch (err) {
+        if (err && err.status === 409) {
+          setError(err.message || "Duplicate purchase entry");
+          return;
+        }
+        throw err;
+      }
+
+      setPurchaseForm(emptyPurchase);
+      setEditingPurchaseId(null);
+      await loadDashboard();
+    }, editingPurchaseId ? "Purchase updated." : "Purchase saved.");
+  }
+
+  async function handleDeletePurchase(id) {
+    if (!id) return;
+    await runBusyAction(`delete-purchase-${id}`, async () => {
+      await api.deletePurchase(id);
+      if (editingPurchaseId === id) {
+        setEditingPurchaseId(null);
+        setPurchaseForm(emptyPurchase);
+      }
+      await loadDashboard();
+    }, "Purchase deleted.");
+  }
+
   async function handleIssueSchemeToken(event) {
     event.preventDefault();
     const validationError = validateSchemeTokenForm(schemeTokenForm);
@@ -2522,6 +2755,10 @@ export default function App() {
 
     if (pendingDelete.type === "expense") {
       await handleDeleteExpense(pendingDelete.id);
+    }
+
+    if (pendingDelete.type === "purchase") {
+      await handleDeletePurchase(pendingDelete.id);
     }
 
     if (pendingDelete.type === "user") {
@@ -2897,6 +3134,7 @@ export default function App() {
     setMasonForm({
       name: mason.name || "",
       mobile: mason.mobile || "",
+      alt_mobile: mason.alt_mobile || "",
       current_address: mason.current_address || "",
       current_address_city: mason.current_address_city || "",
       permanent_address: mason.permanent_address || "",
@@ -2904,6 +3142,7 @@ export default function App() {
       working_areas: Array.isArray(mason.working_areas) ? mason.working_areas : [],
       working_distance_upto_km: mason.working_distance_upto_km || "",
       status: mason.status || "active",
+      remarks: mason.remarks || "",
     });
     setMasonWorkingAreaInput("");
     setCurrentView("masons");
@@ -2976,6 +3215,7 @@ export default function App() {
       expense_date: expense.expense_date ? formatDateInput(expense.expense_date) : "",
       amount: expense.amount || "",
       note: expense.note || "",
+      paid_by: expense.paid_by || "cash",
     });
     setCurrentView("expenses");
   }
@@ -3585,66 +3825,31 @@ export default function App() {
         </section>
       </main>
 
-      {currentView === "overview" ? (
-        <section className="content-grid">
-          <section className="panel">
-            <div className="section-head">
-              <h2>{overviewTitle}</h2>
-              <span>{overviewSubtitle}</span>
-            </div>
-            <div className="filter-row">
-              <input
-                placeholder="Search name, phone, area, source"
-                value={leadSearch}
-                onChange={(event) => setLeadSearch(event.target.value)}
-              />
-              <select
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value)}
-              >
-                <option value="all">All statuses</option>
-                {leadStatuses.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <ListLoadControls
-              label="Leads"
-              count={leads.length}
-              limit={listLimits.leads}
-              onLoadMore={() => increaseListLimit("leads")}
-              disabled={loading}
-            />
-            <div className="list">
-              {filteredLeads.slice(0, 8).map((lead) => (
-                <LeadCard
-                  key={lead.id}
-                  lead={lead}
-                  selected={selectedLead?.id === lead.id}
-                  onSelect={() => setSelectedLead(lead)}
-                  canDelete={isAdmin(user)}
-                  onDelete={() =>
-                    setPendingDelete({
-                      type: "lead",
-                      id: lead.id,
-                      entityLabel: "Lead",
-                      message: `This will permanently remove lead ${lead.name}.`,
-                      subtext: `${lead.phone} | ${lead.location || "No area"}`,
-                    })
-                  }
-                />
-              ))}
-              {filteredLeads.length === 0 ? (
-                <EmptyState title="No leads match these filters" message="Clear the filters or add a new lead to start the showroom funnel." />
-              ) : null}
-            </div>
-          </section>
-
-          <LeadDetailsPanel
+      {["overview", "pipeline", "followups", "operations"].includes(currentView) ? (
+        <Suspense fallback={<LazySectionFallback label="lead workspace" />}>
+          <LeadWorkspaceSection
+            currentView={currentView}
+            overviewTitle={overviewTitle}
+            overviewSubtitle={overviewSubtitle}
+            leadSearch={leadSearch}
+            setLeadSearch={setLeadSearch}
+            statusFilter={statusFilter}
+            setStatusFilter={setStatusFilter}
+            leadStatuses={leadStatuses}
+            ListLoadControls={ListLoadControls}
+            leads={leads}
+            listLimits={listLimits}
+            increaseListLimit={increaseListLimit}
+            loading={loading}
+            filteredLeads={filteredLeads}
             selectedLead={selectedLead}
-            userRoles={normalizeUserRoles(user)}
+            setSelectedLead={setSelectedLead}
+            setCurrentView={setCurrentView}
+            isAdmin={isAdmin}
+            user={user}
+            setPendingDelete={setPendingDelete}
+            EmptyState={EmptyState}
+            normalizeUserRoles={normalizeUserRoles}
             editingLead={editingLead}
             setEditingLead={setEditingLead}
             users={users}
@@ -3658,7 +3863,7 @@ export default function App() {
             payments={payments}
             quotations={quotations}
             operationsTasks={operationsTasks}
-            plumbingJobs={leadPlumbingJobs}
+            leadPlumbingJobs={leadPlumbingJobs}
             plumbers={plumbers}
             plumbingJobForm={plumbingJobForm}
             setPlumbingJobForm={setPlumbingJobForm}
@@ -3671,7 +3876,7 @@ export default function App() {
             handleCreateOperationsTask={handleCreateOperationsTask}
             handleCreateQuotation={handleCreateQuotation}
             handleCreatePlumbingJob={handleCreatePlumbingJob}
-            handleUpdatePlumbingJobStatus={requestPlumbingJobComplete}
+            requestPlumbingJobComplete={requestPlumbingJobComplete}
             handleAddPlumbingMaterial={handleAddPlumbingMaterial}
             operationsTaskForm={operationsTaskForm}
             setOperationsTaskForm={setOperationsTaskForm}
@@ -3679,294 +3884,68 @@ export default function App() {
             addQuotationItem={addQuotationItem}
             addInventoryProductToQuote={addInventoryProductToQuote}
             busyAction={busyAction}
+            focusedFollowupBoard={focusedFollowupBoard}
+            overdueFollowups={overdueFollowups}
+            todaysFollowups={todaysFollowups}
+            BadgeCard={BadgeCard}
+            formatDateTime={formatDateTime}
+            labelize={labelize}
+            requestMarkFollowupDone={requestMarkFollowupDone}
+            focusedOperationsBoard={focusedOperationsBoard}
+            focusStats={focusStats}
+            requestMarkOperationsTaskDone={requestMarkOperationsTaskDone}
+            pipelineColumns={pipelineColumns}
+            shareOnWhatsApp={shareOnWhatsApp}
+            buildFollowupWhatsAppMessage={buildFollowupWhatsAppMessage}
+            buildVisitReminderMessage={buildVisitReminderMessage}
+            buildQuotationWhatsAppMessage={buildQuotationWhatsAppMessage}
+            getQuotationPdfUrl={getQuotationPdfUrl}
+            followupTypes={followupTypes}
+            paymentTypes={paymentTypes}
+            plumbingWorkTypes={plumbingWorkTypes}
+            plumbingJobStatuses={plumbingJobStatuses}
           />
-        </section>
-      ) : null}
-
-      {currentView === "pipeline" ? (
-        <section className="panel">
-          <div className="section-head">
-            <h2>Sales pipeline</h2>
-            <span>Move every inquiry through the showroom process</span>
-          </div>
-          <ListLoadControls
-            label="Leads"
-            count={leads.length}
-            limit={listLimits.leads}
-            onLoadMore={() => increaseListLimit("leads")}
-            disabled={loading}
-          />
-          {filteredLeads.length ? (
-            <div className="pipeline-board">
-              {pipelineColumns.map((column) => (
-                <section key={column.value} className="pipeline-column">
-                  <div className="pipeline-header">
-                    <h3>{column.label}</h3>
-                    <span>{column.leads.length}</span>
-                  </div>
-                  <div className="stack">
-                    {column.leads.map((lead) => (
-                      <article
-                        key={lead.id}
-                        className="lead-card compact-card"
-                        onClick={() => setSelectedLead(lead)}
-                      >
-                        <strong>{lead.name}</strong>
-                        <span>{labelize(lead.customer_type)}</span>
-                        <small>{lead.location || "No area"}</small>
-                        <small>Rs {lead.latest_quote_amount || lead.budget || 0}</small>
-                      </article>
-                    ))}
-                  </div>
-                </section>
-              ))}
-            </div>
-          ) : (
-            <EmptyState title="No leads in the pipeline" message="Create a lead or change the filters to see the funnel columns fill up." />
-          )}
-        </section>
-      ) : null}
-
-      {currentView === "followups" ? (
-        <section className="content-grid">
-          <section className="panel">
-            <div className="section-head">
-              <h2>Follow-up board</h2>
-              <span>Calls, WhatsApp, visits, reminders</span>
-            </div>
-            <div className="tabs-row">
-              <BadgeCard title="Overdue" count={overdueFollowups.length} tone="danger" />
-              <BadgeCard title="Today" count={todaysFollowups.length} tone="accent" />
-              <BadgeCard
-                title="Upcoming"
-                count={focusedFollowupBoard.filter((item) => item.computed_status === "pending").length}
-              />
-            </div>
-            <div className="list">
-              {focusedFollowupBoard.map((item) => (
-                <article key={item.id} className="lead-card">
-                  <div className="section-head">
-                    <div>
-                      <h3>{item.lead_name}</h3>
-                      <p className="muted">{item.lead_phone}</p>
-                    </div>
-                    <span className={`status-chip status-${item.computed_status}`}>
-                      {labelize(item.computed_status)}
-                    </span>
-                  </div>
-                  <p>{item.note}</p>
-                  <p className="muted">
-                    {labelize(item.followup_type)} | {formatDateTime(item.followup_date)}
-                  </p>
-                  <div className="lead-actions">
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => {
-                        const target = leads.find((lead) => lead.id === item.lead_id);
-                        if (target) {
-                          setSelectedLead(target);
-                          setCurrentView("overview");
-                        }
-                      }}
-                    >
-                      Open Lead
-                    </button>
-                    {item.computed_status !== "completed" ? (
-                      <button type="button" onClick={() => requestMarkFollowupDone(item)} disabled={busyAction === "complete-followup"}>
-                        Mark Done
-                      </button>
-                    ) : null}
-                  </div>
-                </article>
-              ))}
-              {focusedFollowupBoard.length === 0 ? (
-                <EmptyState title="No follow-ups pending" message="Your calls, WhatsApp nudges, and reminders will appear here automatically." />
-              ) : null}
-            </div>
-          </section>
-        </section>
-      ) : null}
-
-      {currentView === "operations" ? (
-        <section className="content-grid">
-          <section className="panel">
-            <div className="section-head">
-              <h2>Operations board</h2>
-              <span>{focusStats.openOpsTasks} open tasks</span>
-            </div>
-            <div className="tabs-row">
-              <BadgeCard title="Delayed" count={focusStats.delayedOpsTasks} tone="danger" />
-              <BadgeCard title="Open" count={focusStats.openOpsTasks} tone="accent" />
-              <BadgeCard title="Ops Leads" count={focusStats.operationsLeads} />
-            </div>
-            <div className="list">
-              {focusedOperationsBoard.map((task) => (
-                <article key={task.id} className={`lead-card unit-${task.business_unit || "tiles"}`}>
-                  <div className="section-head">
-                    <div>
-                      <h3>{task.title}</h3>
-                      <p className="muted">{task.lead_name} | {task.lead_location || "No area"}</p>
-                    </div>
-                    <span className={`status-chip status-${task.status}`}>{labelize(task.status)}</span>
-                  </div>
-                  <p>{task.note || "No task note added."}</p>
-                  <p className="muted">
-                    {labelize(task.task_type)} | {formatDateTime(task.scheduled_for)} | {task.assigned_to_name || "Unassigned"}
-                  </p>
-                  <div className="lead-actions">
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => {
-                        const target = leads.find((lead) => lead.id === task.lead_id);
-                        if (target) {
-                          setSelectedLead(target);
-                          setCurrentView("overview");
-                        }
-                      }}
-                    >
-                      Open Lead
-                    </button>
-                    {task.status !== "completed" ? (
-                      <button type="button" onClick={() => requestMarkOperationsTaskDone(task)} disabled={busyAction === "complete-operations-task"}>
-                        Mark Done
-                      </button>
-                    ) : null}
-                  </div>
-                </article>
-              ))}
-              {focusedOperationsBoard.length === 0 ? (
-                <EmptyState title="No operations tasks yet" message="Site visits, delivery, and installation tasks will appear here once created." />
-              ) : null}
-            </div>
-          </section>
-        </section>
+        </Suspense>
       ) : null}
 
       {currentView === "projects" ? (
-        <section className="content-grid">
-          <section className="panel">
-            <div className="section-head">
-              <h2>Project control</h2>
-              <span>{projectSummary?.total_projects ?? 0} projects</span>
-            </div>
-            <div className="tabs-row">
-              <BadgeCard title="Active" count={projectSummary?.active_projects ?? 0} tone="accent" />
-              <BadgeCard title="Completed" count={projectSummary?.completed_projects ?? 0} />
-              <BadgeCard title="Pending Dispatch" count={projectSummary?.pending_dispatch_items ?? 0} tone="danger" />
-              <BadgeCard title="Pending Plumbing" count={projectSummary?.pending_plumbing_jobs ?? 0} />
-            </div>
-            {hasAnyRole(user, ["admin", "manager", "operations"]) ? (
-              <form className="form-grid" onSubmit={handleSaveProject}>
-                <select
-                  value={projectForm.lead_id}
-                  onChange={(event) => setProjectForm({ ...projectForm, lead_id: event.target.value })}
-                >
-                  <option value="">Select converted lead</option>
-                  {convertedLeadOptions.map((lead) => (
-                    <option key={lead.id} value={lead.id}>
-                      {lead.name} | {lead.phone}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  placeholder="Project name"
-                  value={projectForm.project_name}
-                  onChange={(event) => setProjectForm({ ...projectForm, project_name: event.target.value })}
-                />
-                <select
-                  value={projectForm.status}
-                  onChange={(event) => setProjectForm({ ...projectForm, status: event.target.value })}
-                >
-                  {projectStatuses.map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="date"
-                  value={projectForm.start_date}
-                  onChange={(event) => setProjectForm({ ...projectForm, start_date: event.target.value })}
-                />
-                <input
-                  type="date"
-                  value={projectForm.expected_delivery_date}
-                  onChange={(event) =>
-                    setProjectForm({ ...projectForm, expected_delivery_date: event.target.value })
-                  }
-                />
-                <input
-                  type="date"
-                  value={projectForm.completion_date}
-                  onChange={(event) => setProjectForm({ ...projectForm, completion_date: event.target.value })}
-                />
-                <textarea
-                  className="full-span"
-                  placeholder="Owner note"
-                  value={projectForm.owner_note}
-                  onChange={(event) => setProjectForm({ ...projectForm, owner_note: event.target.value })}
-                />
-                <div className="lead-actions full-span">
-                  <button type="submit" disabled={busyAction === "save-project"}>
-                    {busyAction === "save-project"
-                      ? editingProjectId
-                        ? "Updating Project..."
-                        : "Creating Project..."
-                      : editingProjectId
-                        ? "Update Project"
-                        : "Create Project"}
-                  </button>
-                  {editingProjectId ? (
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => {
-                        setEditingProjectId(null);
-                        setProjectForm(emptyProject);
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  ) : null}
-                </div>
-              </form>
-            ) : null}
-            <ListLoadControls
-              label="Projects"
-              count={projects.length}
-              limit={listLimits.projects}
-              onLoadMore={() => increaseListLimit("projects")}
-              disabled={loading}
-            />
-            <div className="list">
-              {filteredProjects.map((project) => (
-                <ProjectCard
-                  key={project.id}
-                  project={project}
-                  selected={selectedProject?.id === project.id}
-                  onSelect={() => setSelectedProject(project)}
-                  onEdit={() => startEditingProject(project)}
-                  canEdit={hasAnyRole(user, ["admin", "manager", "operations"])}
-                />
-              ))}
-              {filteredProjects.length === 0 ? (
-                <EmptyState title="No projects yet" message="Converted leads will show up here once a project is created." />
-              ) : null}
-            </div>
-          </section>
-
-          <ProjectDetailPanel
-            project={selectedProject}
-            dispatchDraft={dispatchDrafts[selectedProject?.id] || emptyDispatch}
+        <Suspense fallback={<LazySectionFallback label="projects" />}>
+          <ProjectsSection
+            projectSummary={projectSummary}
+            BadgeCard={BadgeCard}
+            user={user}
+            hasAnyRole={hasAnyRole}
+            projectForm={projectForm}
+            setProjectForm={setProjectForm}
+            handleSaveProject={handleSaveProject}
+            editingProjectId={editingProjectId}
+            setEditingProjectId={setEditingProjectId}
+            emptyProject={emptyProject}
+            projectStatuses={projectStatuses}
+            convertedLeadOptions={convertedLeadOptions}
+            ListLoadControls={ListLoadControls}
+            projects={projects}
+            listLimits={listLimits}
+            increaseListLimit={increaseListLimit}
+            loading={loading}
+            filteredProjects={filteredProjects}
+            selectedProject={selectedProject}
+            setSelectedProject={setSelectedProject}
+            startEditingProject={startEditingProject}
+            EmptyState={EmptyState}
+            dispatchDrafts={dispatchDrafts}
+            emptyDispatch={emptyDispatch}
             updateDispatchDraft={updateDispatchDraft}
             handleSaveDispatch={handleSaveDispatch}
-            handleUpdateDispatchStatus={requestDispatchStatusUpdate}
-            canManageDispatch={hasAnyRole(user, ["admin", "manager", "operations"])}
+            requestDispatchStatusUpdate={requestDispatchStatusUpdate}
             busyAction={busyAction}
+            labelize={labelize}
+            HighlightRow={HighlightRow}
+            formatDateTime={formatDateTime}
+            getProjectInvoicePdfUrl={getProjectInvoicePdfUrl}
+            dispatchStatuses={dispatchStatuses}
           />
-        </section>
+        </Suspense>
       ) : null}
 
       {currentView === "plumbing" ? (
@@ -4195,6 +4174,16 @@ export default function App() {
                 value={expenseForm.amount}
                 onChange={(event) => setExpenseForm({ ...expenseForm, amount: event.target.value })}
               />
+              <select
+                value={expenseForm.paid_by}
+                onChange={(event) => setExpenseForm({ ...expenseForm, paid_by: event.target.value })}
+              >
+                {expensePaymentModes.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    Paid by: {item.label}
+                  </option>
+                ))}
+              </select>
               <textarea
                 className="full-span"
                 placeholder="Expense note"
@@ -4268,6 +4257,295 @@ export default function App() {
               {expenses.length === 0 ? (
                 <EmptyState title="No expenses logged yet" message="Monthly costs like rent, salary, and transport will appear here." />
               ) : null}
+            </div>
+          </section>
+        </section>
+      ) : null}
+
+      {currentView === "purchases" ? (
+        <section className="content-grid">
+          <section className="panel">
+            <div className="section-head">
+              <h2>Purchase entry</h2>
+              <span>
+                {purchaseSummary
+                  ? `${purchaseSummary.total_count || 0} entries | Total Rs ${Number(purchaseSummary.total_amount || 0).toLocaleString("en-IN")}`
+                  : "Daily showroom purchase log"}
+              </span>
+            </div>
+            <div className="tabs-row">
+              <BadgeCard
+                title="Total Value"
+                count={`Rs ${Number(purchaseSummary?.total_amount || 0).toLocaleString("en-IN")}`}
+                tone="accent"
+              />
+              <BadgeCard
+                title="Pending Payment"
+                count={`Rs ${Number(purchaseSummary?.pending_amount || 0).toLocaleString("en-IN")}`}
+              />
+              <BadgeCard
+                title="Paid"
+                count={`Rs ${Number(purchaseSummary?.paid_amount || 0).toLocaleString("en-IN")}`}
+                tone="accent"
+              />
+              <BadgeCard
+                title="GST"
+                count={`Rs ${Number(purchaseSummary?.gst_amount || 0).toLocaleString("en-IN")}`}
+              />
+            </div>
+
+            <form className="form-grid" onSubmit={handleSavePurchase}>
+              <input
+                placeholder="Supplier name"
+                value={purchaseForm.supplier_name}
+                onChange={(event) =>
+                  setPurchaseForm({ ...purchaseForm, supplier_name: event.target.value })
+                }
+              />
+              <input
+                placeholder="Supplier phone"
+                value={purchaseForm.supplier_phone}
+                onChange={(event) =>
+                  setPurchaseForm({ ...purchaseForm, supplier_phone: event.target.value })
+                }
+              />
+              <input
+                placeholder="Invoice number"
+                value={purchaseForm.invoice_number}
+                onChange={(event) =>
+                  setPurchaseForm({ ...purchaseForm, invoice_number: event.target.value })
+                }
+              />
+              <input
+                type="date"
+                value={purchaseForm.purchase_date}
+                onChange={(event) =>
+                  setPurchaseForm({ ...purchaseForm, purchase_date: event.target.value })
+                }
+              />
+              <select
+                value={purchaseForm.business_unit}
+                onChange={(event) =>
+                  setPurchaseForm({ ...purchaseForm, business_unit: event.target.value })
+                }
+              >
+                {purchaseBusinessUnitOptions.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+              <input
+                placeholder="Category (e.g. tiles, adhesive, plumbing)"
+                value={purchaseForm.category}
+                onChange={(event) =>
+                  setPurchaseForm({ ...purchaseForm, category: event.target.value })
+                }
+              />
+              <input
+                placeholder="Item / product name"
+                value={purchaseForm.item_name}
+                onChange={(event) =>
+                  setPurchaseForm({ ...purchaseForm, item_name: event.target.value })
+                }
+              />
+              <input
+                type="number"
+                step="0.01"
+                placeholder="Quantity"
+                value={purchaseForm.quantity}
+                onChange={(event) =>
+                  setPurchaseForm({ ...purchaseForm, quantity: event.target.value })
+                }
+              />
+              <input
+                placeholder="Unit (pcs / box / sqft)"
+                value={purchaseForm.unit}
+                onChange={(event) =>
+                  setPurchaseForm({ ...purchaseForm, unit: event.target.value })
+                }
+              />
+              <input
+                type="number"
+                step="0.01"
+                placeholder="Net amount"
+                value={purchaseForm.amount}
+                onChange={(event) =>
+                  setPurchaseForm({ ...purchaseForm, amount: event.target.value })
+                }
+              />
+              <input
+                type="number"
+                step="0.01"
+                placeholder="GST amount"
+                value={purchaseForm.gst_amount}
+                onChange={(event) =>
+                  setPurchaseForm({ ...purchaseForm, gst_amount: event.target.value })
+                }
+              />
+              <input
+                type="number"
+                step="0.01"
+                placeholder="Total amount (auto = net + GST if blank)"
+                value={purchaseForm.total_amount}
+                onChange={(event) =>
+                  setPurchaseForm({ ...purchaseForm, total_amount: event.target.value })
+                }
+              />
+              <select
+                value={purchaseForm.payment_status}
+                onChange={(event) =>
+                  setPurchaseForm({ ...purchaseForm, payment_status: event.target.value })
+                }
+              >
+                {purchasePaymentStatuses.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+              <textarea
+                className="full-span"
+                placeholder="Remarks (optional)"
+                value={purchaseForm.remarks}
+                onChange={(event) =>
+                  setPurchaseForm({ ...purchaseForm, remarks: event.target.value })
+                }
+              />
+              <div className="lead-actions full-span">
+                <button type="submit" disabled={busyAction === "save-purchase"}>
+                  {busyAction === "save-purchase"
+                    ? editingPurchaseId
+                      ? "Updating Purchase..."
+                      : "Saving Purchase..."
+                    : editingPurchaseId
+                      ? "Update Purchase"
+                      : "Add Purchase"}
+                </button>
+                {editingPurchaseId ? (
+                  <button type="button" className="secondary" onClick={handleCancelEditPurchase}>
+                    Cancel
+                  </button>
+                ) : null}
+              </div>
+            </form>
+          </section>
+
+          <section className="panel">
+            <div className="section-head">
+              <h2>Purchase ledger</h2>
+              <span>{purchases.length} entries shown</span>
+            </div>
+            <div className="filter-row">
+              <input
+                placeholder="Search supplier, invoice, item"
+                value={purchaseSearch}
+                onChange={(event) => setPurchaseSearch(event.target.value)}
+              />
+              <input
+                type="date"
+                value={purchaseFromFilter}
+                onChange={(event) => setPurchaseFromFilter(event.target.value)}
+              />
+              <input
+                type="date"
+                value={purchaseToFilter}
+                onChange={(event) => setPurchaseToFilter(event.target.value)}
+              />
+              <select
+                value={purchasePaymentFilter}
+                onChange={(event) => setPurchasePaymentFilter(event.target.value)}
+              >
+                <option value="all">All payment statuses</option>
+                {purchasePaymentStatuses.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="table-shell">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Supplier</th>
+                    <th>Invoice</th>
+                    <th>Item</th>
+                    <th>Qty</th>
+                    <th>Amount</th>
+                    <th>GST</th>
+                    <th>Total</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {purchases.map((record) => (
+                    <tr key={record.id}>
+                      <td>{formatDate(record.purchase_date)}</td>
+                      <td>
+                        <strong>{record.supplier_name}</strong>
+                        <div className="muted">{record.supplier_phone || ""}</div>
+                      </td>
+                      <td>{record.invoice_number || "-"}</td>
+                      <td>
+                        {record.item_name || "-"}
+                        <div className="muted">{record.category || ""}</div>
+                      </td>
+                      <td>
+                        {record.quantity} {record.unit}
+                      </td>
+                      <td>Rs {Number(record.amount || 0).toLocaleString("en-IN")}</td>
+                      <td>Rs {Number(record.gst_amount || 0).toLocaleString("en-IN")}</td>
+                      <td>
+                        <strong>Rs {Number(record.total_amount || 0).toLocaleString("en-IN")}</strong>
+                      </td>
+                      <td>
+                        <span className={`status-chip status-${record.payment_status}`}>
+                          {labelize(record.payment_status)}
+                        </span>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => handleEditPurchase(record)}
+                        >
+                          Edit
+                        </button>
+                        {isAdmin(user) ? (
+                          <button
+                            type="button"
+                            className="danger"
+                            onClick={() =>
+                              setPendingDelete({
+                                type: "purchase",
+                                id: record.id,
+                                entityLabel: "Purchase",
+                                message: `Remove purchase entry for supplier ${record.supplier_name}?`,
+                                subtext: `${formatDate(record.purchase_date)} | Rs ${record.total_amount}`,
+                              })
+                            }
+                          >
+                            Delete
+                          </button>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+                  {purchases.length === 0 ? (
+                    <tr>
+                      <td colSpan={10}>
+                        <EmptyState
+                          title="No purchase entries yet"
+                          message="Add a supplier invoice to start tracking purchases for the showroom."
+                        />
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
             </div>
           </section>
         </section>
@@ -4622,869 +4900,116 @@ export default function App() {
       ) : null}
 
       {currentView === "schemes" ? (
-        <section className="content-grid">
-          <section className="panel">
-            <div className="section-head">
-              <h2>Add adhesive token claim</h2>
-              <span>
-                Create one verified claim with multiple token line items
-              </span>
-            </div>
-
-            <div className="tabs-row">
-              <BadgeCard title="Pending Approved Payout" count={`Rs ${schemeSummary?.pending_token_payout ?? 0}`} tone="danger" />
-              <BadgeCard title="Paid Payout" count={`Rs ${schemeSummary?.paid_token_payout ?? 0}`} tone="accent" />
-              <BadgeCard title="Mismatch Claims" count={schemeSummary?.mismatch_claims ?? 0} />
-              <BadgeCard title="Rejected Claims" count={schemeSummary?.rejected_claims ?? 0} tone="danger" />
-            </div>
-
-            <form className="form-grid" onSubmit={handleIssueSchemeToken}>
-              <p className="full-span muted">
-                Token claim can be created with Site + Mason + Invoice. Project/customer linking is optional.
-              </p>
-              <input
-                placeholder="Site name"
-                value={schemeTokenForm.site_name}
-                onChange={(event) =>
-                  setSchemeTokenForm({ ...schemeTokenForm, site_name: event.target.value })
-                }
-              />
-              <input
-                placeholder="Invoice / bill number"
-                value={schemeTokenForm.invoice_number}
-                onChange={(event) =>
-                  setSchemeTokenForm({ ...schemeTokenForm, invoice_number: event.target.value })
-                }
-              />
-              <select
-                value={schemeTokenForm.mason_id}
-                onChange={(event) => handleRegisteredMasonChange(event.target.value)}
-              >
-                <option value="">Select registered mason</option>
-                {activeMasons.map((mason) => (
-                  <option key={mason.id} value={mason.id}>
-                    {mason.name} | {mason.mobile} | {mason.area || "No area"}
-                  </option>
-                ))}
-              </select>
-              <button type="button" className="secondary" onClick={handleVerifyAdhesiveInvoice}>
-                Verify Invoice
-              </button>
-              <input placeholder="Registered mason mobile" value={schemeTokenForm.mason_mobile} readOnly />
-              <input placeholder="Current address city" value={schemeTokenForm.mason_current_address_city} readOnly />
-              <input placeholder="Permanent address city" value={schemeTokenForm.mason_permanent_address_city} readOnly />
-              <input
-                placeholder="Working areas"
-                value={(schemeTokenForm.mason_working_areas || []).join(", ")}
-                readOnly
-              />
-              <input
-                placeholder="Working distance upto (KM)"
-                value={schemeTokenForm.mason_working_distance_upto_km}
-                readOnly
-              />
-              <input
-                placeholder="Adhesive type"
-                value={schemeTokenForm.adhesive_type}
-                onChange={(event) =>
-                  setSchemeTokenForm({ ...schemeTokenForm, adhesive_type: event.target.value })
-                }
-              />
-              <input
-                placeholder="Adhesive company"
-                value={schemeTokenForm.adhesive_company}
-                onChange={(event) =>
-                  setSchemeTokenForm({ ...schemeTokenForm, adhesive_company: event.target.value })
-                }
-              />
-              <input
-                type="number"
-                min="1"
-                placeholder="Sold bag quantity"
-                value={schemeTokenForm.sold_bag_quantity}
-                onChange={(event) =>
-                  setSchemeTokenForm({
-                    ...schemeTokenForm,
-                    sold_bag_quantity: sanitizePositiveIntegerInput(event.target.value, ""),
-                  })
-                }
-              />
-              <div className="full-span detail-card stack">
-                <div className="section-head">
-                  <h3>Token line items</h3>
-                  <button type="button" className="secondary" onClick={addAdhesiveTokenItemRow}>
-                    Add Row
-                  </button>
-                </div>
-                <div className="mini-list">
-                  {(schemeTokenForm.items || []).map((item, index) => {
-                    const isPresetValue = adhesiveTokenValues.some(
-                      (option) => Number(option.value) === Number(item.token_value)
-                    );
-                    return (
-                      <div key={`claim-item-${index}`} className="timeline-item">
-                        <div className="form-grid">
-                          <select
-                            value={isPresetValue ? String(item.token_value) : "custom"}
-                            onChange={(event) => {
-                              if (event.target.value === "custom") {
-                                handleAdhesiveTokenItemChange(index, "token_value", "");
-                                return;
-                              }
-                              handleAdhesiveTokenItemChange(index, "token_value", event.target.value);
-                            }}
-                          >
-                            {adhesiveTokenValues.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                Token Value Rs {option.label}
-                              </option>
-                            ))}
-                            <option value="custom">Custom</option>
-                          </select>
-                          {!isPresetValue ? (
-                            <input
-                              type="number"
-                              min="0"
-                              placeholder="Custom token value"
-                              value={item.token_value}
-                              onChange={(event) =>
-                                handleAdhesiveTokenItemChange(
-                                  index,
-                                  "token_value",
-                                  sanitizeNonNegativeIntegerInput(event.target.value, "")
-                                )
-                              }
-                            />
-                          ) : (
-                            <input
-                              type="number"
-                              min="1"
-                              placeholder="Quantity"
-                              value={item.quantity}
-                              onChange={(event) =>
-                                handleAdhesiveTokenItemChange(
-                                  index,
-                                  "quantity",
-                                  sanitizePositiveIntegerInput(event.target.value, 1)
-                                )
-                              }
-                            />
-                          )}
-                          {isPresetValue ? null : (
-                            <input
-                              type="number"
-                              min="1"
-                              placeholder="Quantity"
-                              value={item.quantity}
-                              onChange={(event) =>
-                                handleAdhesiveTokenItemChange(
-                                  index,
-                                  "quantity",
-                                  sanitizePositiveIntegerInput(event.target.value, 1)
-                                )
-                              }
-                            />
-                          )}
-                          <div className="mini-card">
-                            <strong>Line Total</strong>
-                            <span>Rs {Number(item.token_value || 0) * Number(item.quantity || 0)}</span>
-                          </div>
-                          <button
-                            type="button"
-                            className="secondary"
-                            onClick={() => removeAdhesiveTokenItemRow(index)}
-                            disabled={(schemeTokenForm.items || []).length === 1}
-                          >
-                            Remove Row
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-              <textarea
-                className="full-span"
-                placeholder="Remarks"
-                value={schemeTokenForm.remarks}
-                onChange={(event) =>
-                  setSchemeTokenForm({ ...schemeTokenForm, remarks: event.target.value })
-                }
-              />
-              <select
-                value={schemeTokenForm.project_id}
-                onChange={(event) => handleAdhesiveProjectChange(event.target.value)}
-              >
-                <option value="">Optional project link</option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.project_name} | {project.lead_name}
-                  </option>
-                ))}
-              </select>
-              <input
-                placeholder="Optional customer name"
-                value={schemeTokenForm.customer_name}
-                onChange={(event) =>
-                  setSchemeTokenForm({ ...schemeTokenForm, customer_name: event.target.value })
-                }
-              />
-              <input
-                type="date"
-                value={schemeTokenForm.sale_date}
-                onChange={(event) =>
-                  setSchemeTokenForm({ ...schemeTokenForm, sale_date: event.target.value })
-                }
-              />
-              <input
-                placeholder="Token / bag photo URL"
-                value={schemeTokenForm.token_photo_url}
-                onChange={(event) =>
-                  setSchemeTokenForm({ ...schemeTokenForm, token_photo_url: event.target.value })
-                }
-              />
-              <div className="detail-card stack full-span">
-                <div className="section-head">
-                  <strong>Registered Mason</strong>
-                  <span className={`status-chip ${selectedRegisteredMason ? "unit-chip unit-plumbing" : "status-pending"}`}>
-                    {selectedRegisteredMason ? `Registered Mason: ${selectedRegisteredMason.name}` : "Select active registered mason"}
-                  </span>
-                </div>
-                {selectedRegisteredMason ? (
-                  <p className="muted">
-                    {selectedRegisteredMason.current_address_city || "No current city"} | {selectedRegisteredMason.permanent_address_city || "No permanent city"} | {(selectedRegisteredMason.working_areas || []).join(", ") || "No working areas"} | {selectedRegisteredMason.working_distance_upto_km || 0} KM
-                  </p>
-                ) : null}
-                <HighlightRow label="Claimed Bag Quantity" value={adhesiveClaimTotals.claimed_bag_quantity} />
-                <HighlightRow label="Sold Bag Quantity" value={schemeTokenForm.sold_bag_quantity || 0} />
-                <HighlightRow
-                  label="Sold vs Claimed"
-                  value={`${schemeTokenForm.sold_bag_quantity || 0} sold / ${adhesiveClaimTotals.claimed_bag_quantity} claimed`}
-                />
-                <HighlightRow label="Total Token Amount" value={`Rs ${adhesiveClaimTotals.total_token_amount}`} tone="accent" />
-                <div className="section-head">
-                  <strong>Verification Badge</strong>
-                  <span className={`status-chip status-${getAdhesiveClaimPreviewStatus(schemeTokenForm, selectedAdhesiveProject)}`}>
-                    {labelize(getAdhesiveClaimPreviewStatus(schemeTokenForm, selectedAdhesiveProject))}
-                  </span>
-                </div>
-                {getAdhesiveClaimPreviewStatus(schemeTokenForm, selectedAdhesiveProject) === "mismatch" ? (
-                  <p className="muted">Warning: claimed bag quantity exceeds sold quantity or optional customer does not match the linked project.</p>
-                ) : null}
-                {getAdhesiveClaimPreviewStatus(schemeTokenForm, selectedAdhesiveProject) === "unverified" ? (
-                  <p className="muted">Invoice preview stays unverified until you optionally link a project and matching customer.</p>
-                ) : null}
-              </div>
-                <div className="full-span lead-actions">
-                  <button
-                    type="submit"
-                    disabled={
-                      busyAction === "issue-token" ||
-                      !selectedRegisteredMason ||
-                      String(selectedRegisteredMason.status || "").toLowerCase() !== "active"
-                    }
-                  >
-                    {!selectedRegisteredMason || String(selectedRegisteredMason.status || "").toLowerCase() !== "active"
-                      ? "Select Active Registered Mason"
-                      : busyAction === "issue-token"
-                      ? editingAdhesiveTokenId
-                        ? "Updating Adhesive Claim..."
-                        : "Saving Adhesive Claim..."
-                      : editingAdhesiveTokenId
-                        ? "Update Adhesive Claim"
-                        : "Save Adhesive Claim"}
-                  </button>
-                  {editingAdhesiveTokenId ? (
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => {
-                        setEditingAdhesiveTokenId(null);
-                        setSchemeTokenForm(emptySchemeToken);
-                      }}
-                    >
-                      Cancel Edit
-                    </button>
-                  ) : null}
-                </div>
-              </form>
-          </section>
-
-          <section className="panel">
-            <div className="section-head">
-              <h2>Adhesive claim ledger</h2>
-              <span>{filteredSchemeTokens.length} claims</span>
-            </div>
-            <ListLoadControls
-              label="Claims"
-              count={schemeTokens.length}
-              limit={listLimits.claims}
-              onLoadMore={() => increaseListLimit("claims")}
-              disabled={loading}
-            />
-
-            <div className="form-grid">
-              <select
-                value={adhesiveTokenStatusFilter}
-                onChange={(event) => setAdhesiveTokenStatusFilter(event.target.value)}
-              >
-                <option value="all">All statuses</option>
-                {adhesiveTokenStatuses.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-              <input
-                placeholder="Filter by mason or mobile"
-                value={adhesiveTokenMasonFilter}
-                onChange={(event) => setAdhesiveTokenMasonFilter(event.target.value)}
-              />
-              <input
-                placeholder="Filter by invoice number"
-                value={adhesiveTokenInvoiceFilter}
-                onChange={(event) => setAdhesiveTokenInvoiceFilter(event.target.value)}
-              />
-              <input
-                placeholder="Filter by site"
-                value={adhesiveTokenSiteFilter}
-                onChange={(event) => setAdhesiveTokenSiteFilter(event.target.value)}
-              />
-              <input
-                placeholder="Filter by created by"
-                value={adhesiveTokenCreatedByFilter}
-                onChange={(event) => setAdhesiveTokenCreatedByFilter(event.target.value)}
-              />
-              <input
-                placeholder="Filter by verified by"
-                value={adhesiveTokenVerifiedByFilter}
-                onChange={(event) => setAdhesiveTokenVerifiedByFilter(event.target.value)}
-              />
-              <input
-                type="date"
-                value={adhesiveTokenDateFromFilter}
-                onChange={(event) => setAdhesiveTokenDateFromFilter(event.target.value)}
-              />
-              <input
-                type="date"
-                value={adhesiveTokenDateToFilter}
-                onChange={(event) => setAdhesiveTokenDateToFilter(event.target.value)}
-              />
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => {
-                  setAdhesiveTokenStatusFilter("all");
-                  setAdhesiveTokenMasonFilter("");
-                  setAdhesiveTokenInvoiceFilter("");
-                  setAdhesiveTokenSiteFilter("");
-                  setAdhesiveTokenCreatedByFilter("");
-                  setAdhesiveTokenVerifiedByFilter("");
-                  setAdhesiveTokenDateFromFilter("");
-                  setAdhesiveTokenDateToFilter("");
-                }}
-              >
-                Clear Filters
-              </button>
-            </div>
-
-            <div className="report-grid">
-              <StatCard label="Mason-Wise" value={adhesiveTokenReports?.mason_wise?.length ?? 0} />
-              <StatCard label="Company-Wise" value={adhesiveTokenReports?.company_wise?.length ?? 0} />
-              <StatCard label="Site-Wise" value={adhesiveTokenReports?.site_wise?.length ?? 0} />
-              <StatCard label="Monthly Reports" value={adhesiveTokenReports?.monthly_payout?.length ?? 0} />
-            </div>
-
-            <div className="list">
-              {filteredSchemeTokens.map((claim) => {
-                const actionState = getAdhesiveClaimActionState(claim, user);
-
-                return (
-                  <article key={claim.id} className="lead-card adhesive-claim-card">
-                    <div className="section-head">
-                      <div>
-                        <h3>{claim.site_name}</h3>
-                        <p className="muted adhesive-claim-meta">
-                          {claim.mason_name} | {claim.mason_mobile || "No mobile"} | {claim.invoice_number}
-                        </p>
-                      </div>
-                      <span className={`status-chip status-${claim.verification_status}`}>{labelize(claim.verification_status)}</span>
-                    </div>
-                    <p className="adhesive-claim-line">
-                      {claim.adhesive_type || "No adhesive type"} | Rs {claim.total_token_amount} | {labelize(claim.status)}
-                    </p>
-                    <p className="muted adhesive-claim-line">
-                      Created by {claim.created_by_user_name || "Not available"} on {formatDateTime(claim.created_at)}
-                    </p>
-                    <p className="muted adhesive-claim-line">
-                      Verified by {claim.verified_by_user_name || "Not available"} on {formatDateTime(claim.verified_at)}
-                    </p>
-                    <p className="muted adhesive-claim-line">
-                      {claim.project_name ? `Project ${claim.project_name}` : "No linked project"}
-                      {claim.project_customer_name ? ` | Customer ${claim.project_customer_name}` : claim.customer_name ? ` | Customer ${claim.customer_name}` : ""}
-                      {" | "}
-                      {claim.approved_by_user_name ? `Approved by ${claim.approved_by_user_name}` : "Approval pending"}
-                    </p>
-                    <p className="adhesive-claim-remarks">{claim.remarks || "No remarks added."}</p>
-                    <div className="lead-actions adhesive-claim-actions">
-                      <button type="button" className="secondary" onClick={() => handleOpenAdhesiveTokenDetail(claim.id)}>
-                        View Detail
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary"
-                        onClick={() => requestVerifyAdhesiveToken(claim)}
-                        disabled={!actionState.canVerify}
-                        title={actionState.canVerify ? "Verify invoice" : actionState.verifyHint}
-                      >
-                        Verify Invoice
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary"
-                        onClick={() => startEditingAdhesiveToken(claim)}
-                        disabled={!actionState.canEdit}
-                        title={actionState.canEdit ? "Edit claim" : actionState.editHint}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => requestApproveAdhesiveToken(claim)}
-                        disabled={!actionState.canApprove}
-                        title={actionState.canApprove ? "Approve claim" : actionState.approveHint}
-                      >
-                        Approve Claim
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary"
-                        onClick={() => requestReopenAdhesiveToken(claim)}
-                        disabled={!actionState.canReopen}
-                        title={actionState.canReopen ? "Reopen approved claim" : actionState.reopenHint}
-                      >
-                        Reopen Claim
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => requestMarkAdhesiveTokenPaid(claim)}
-                        disabled={!actionState.canMarkPaid}
-                        title={actionState.canMarkPaid ? "Mark claim as paid" : actionState.payHint}
-                      >
-                        Mark Paid
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary"
-                        onClick={() => requestRejectAdhesiveToken(claim)}
-                        disabled={!actionState.canReject}
-                        title={actionState.canReject ? "Reject claim" : actionState.rejectHint}
-                      >
-                        Reject Claim
-                      </button>
-                      <button
-                        type="button"
-                        className="danger"
-                        onClick={() => requestDeleteAdhesiveToken(claim)}
-                        disabled={!actionState.canDelete}
-                        title={actionState.canDelete ? "Delete claim" : actionState.deleteHint}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </article>
-                );
-              })}
-                {filteredSchemeTokens.length === 0 ? (
-                  <p className="muted">No adhesive token claims found for the current filters.</p>
-                ) : null}
-              </div>
-
-            <div className="stack">
-              <h3>Selected claim detail</h3>
-                {selectedAdhesiveToken ? (
-                  <div className="detail-card stack">
-                    {(() => {
-                      const selectedClaimActionState = getAdhesiveClaimActionState(selectedAdhesiveToken, user);
-                      return (
-                        <div className="lead-actions">
-                          <button
-                            type="button"
-                            className="secondary"
-                            onClick={() => requestVerifyAdhesiveToken(selectedAdhesiveToken)}
-                            disabled={!selectedClaimActionState.canVerify}
-                            title={selectedClaimActionState.canVerify ? "Verify invoice" : selectedClaimActionState.verifyHint}
-                          >
-                            Verify Invoice
-                          </button>
-                          <button
-                            type="button"
-                            className="secondary"
-                            onClick={() => startEditingAdhesiveToken(selectedAdhesiveToken)}
-                            disabled={!selectedClaimActionState.canEdit}
-                            title={selectedClaimActionState.canEdit ? "Edit claim" : selectedClaimActionState.editHint}
-                          >
-                            Edit Claim
-                          </button>
-                          <button
-                            type="button"
-                            className="secondary"
-                            onClick={() => requestReopenAdhesiveToken(selectedAdhesiveToken)}
-                            disabled={!selectedClaimActionState.canReopen}
-                            title={selectedClaimActionState.canReopen ? "Reopen approved claim" : selectedClaimActionState.reopenHint}
-                          >
-                            Reopen Claim
-                          </button>
-                          <button
-                            type="button"
-                            className="danger"
-                            onClick={() => requestDeleteAdhesiveToken(selectedAdhesiveToken)}
-                            disabled={!selectedClaimActionState.canDelete}
-                            title={selectedClaimActionState.canDelete ? "Delete claim" : selectedClaimActionState.deleteHint}
-                          >
-                            Delete Claim
-                          </button>
-                        </div>
-                      );
-                    })()}
-                  <HighlightRow label="Site" value={selectedAdhesiveToken.site_name} />
-                  <HighlightRow label="Project" value={selectedAdhesiveToken.project_name || "No linked project"} />
-                  <HighlightRow label="Invoice Number" value={selectedAdhesiveToken.invoice_number} />
-                  <HighlightRow label="Sale Date" value={selectedAdhesiveToken.sale_date || "No sale date"} />
-                  <HighlightRow label="Customer" value={selectedAdhesiveToken.customer_name || "No linked customer"} />
-                  <HighlightRow label="Mason" value={`${selectedAdhesiveToken.mason_name} | ${selectedAdhesiveToken.mason_mobile}`} />
-                  <HighlightRow label="Adhesive" value={`${selectedAdhesiveToken.adhesive_company} | ${selectedAdhesiveToken.adhesive_type}`} />
-                  <HighlightRow label="Created By" value={selectedAdhesiveToken.created_by_user_name || "Not available"} />
-                  <HighlightRow label="Created At" value={formatDateTime(selectedAdhesiveToken.created_at)} />
-                  <HighlightRow label="Verified By" value={selectedAdhesiveToken.verified_by_user_name || "Not available"} />
-                  <HighlightRow label="Verified At" value={formatDateTime(selectedAdhesiveToken.verified_at)} />
-                  <HighlightRow label="Approved By" value={selectedAdhesiveToken.approved_by_user_name || "Not available"} />
-                  <HighlightRow label="Approved At" value={formatDateTime(selectedAdhesiveToken.approved_at)} />
-                  <HighlightRow label="Rejected By" value={selectedAdhesiveToken.rejected_by_user_name || "Not available"} />
-                  <HighlightRow label="Rejected At" value={formatDateTime(selectedAdhesiveToken.rejected_at)} />
-                  <HighlightRow label="Paid By" value={selectedAdhesiveToken.paid_by_user_name || "Not available"} />
-                  <HighlightRow label="Paid At" value={formatDateTime(selectedAdhesiveToken.paid_at)} />
-                  <HighlightRow label="Sold Bag Quantity" value={selectedAdhesiveToken.sold_bag_quantity} />
-                  <HighlightRow label="Claimed Bag Quantity" value={selectedAdhesiveToken.claimed_bag_quantity} />
-                  <HighlightRow label="Total Token Amount" value={`Rs ${selectedAdhesiveToken.total_token_amount}`} tone="accent" />
-                  <HighlightRow label="Status" value={labelize(selectedAdhesiveToken.status)} />
-                  <HighlightRow label="Verification" value={labelize(selectedAdhesiveToken.verification_status)} />
-                  <HighlightRow label="Payment Date" value={selectedAdhesiveToken.payment_date || "Not paid yet"} />
-                  <HighlightRow label="Remarks" value={selectedAdhesiveToken.remarks || "No remarks"} />
-                  <div className="mini-list">
-                    {(selectedAdhesiveToken.items || []).map((item) => (
-                      <div key={item.id} className="timeline-item">
-                        <strong>Token Value Rs {item.token_value}</strong>
-                        <p className="muted">Quantity {item.quantity}</p>
-                        <p>Line Total Rs {item.line_total}</p>
-                      </div>
-                    ))}
-                    {!selectedAdhesiveToken.items?.length ? (
-                      <p className="muted">No claim line items found.</p>
-                    ) : null}
-                  </div>
-                  {selectedAdhesiveToken.token_photo_url ? (
-                    <a href={selectedAdhesiveToken.token_photo_url} target="_blank" rel="noreferrer">
-                      Open token photo
-                    </a>
-                  ) : (
-                    <p className="muted">No token photo attached.</p>
-                  )}
-                  <div className="mini-list">
-                    <h4>User Activity Timeline</h4>
-                    {(selectedAdhesiveToken.activities || []).map((item) => (
-                      <div key={item.id} className="timeline-item">
-                        <strong>{labelize(item.action)}</strong>
-                        <p className="muted">{item.action_by_user_name || "System"} | {formatDateTime(item.created_at)}</p>
-                        <p>{item.details || item.note || "No activity note."}</p>
-                      </div>
-                    ))}
-                    {!selectedAdhesiveToken.activities?.length ? (
-                      <p className="muted">No activity logged yet.</p>
-                    ) : null}
-                  </div>
-                </div>
-              ) : (
-                <p className="muted">Open any adhesive token entry to see full detail and activity history.</p>
-              )}
-            </div>
-
-            <div className="stack">
-              <h3>Report snapshot</h3>
-              <div className="mini-list">
-                {(adhesiveTokenReports?.mason_wise || []).slice(0, 5).map((item) => (
-                  <div key={`mason-${item.mason_mobile}-${item.mason_name}`} className="timeline-item">
-                    <strong>{item.mason_name}</strong>
-                    <p className="muted">{item.mason_mobile || "No mobile"} | {item.entries_count} entries</p>
-                    <p>Pending Rs {item.pending_amount} | Paid Rs {item.paid_amount}</p>
-                  </div>
-                ))}
-                {!adhesiveTokenReports?.mason_wise?.length ? <p className="muted">No mason-wise token report yet.</p> : null}
-              </div>
-              <div className="mini-list">
-                {(adhesiveTokenReports?.company_wise || []).slice(0, 5).map((item) => (
-                  <div key={`company-${item.adhesive_company}`} className="timeline-item">
-                    <strong>{item.adhesive_company}</strong>
-                    <p className="muted">{item.entries_count} entries</p>
-                    <p>Pending Rs {item.pending_amount} | Paid Rs {item.paid_amount}</p>
-                  </div>
-                ))}
-                {!adhesiveTokenReports?.company_wise?.length ? <p className="muted">No company-wise token report yet.</p> : null}
-              </div>
-              <div className="mini-list">
-                {(adhesiveTokenReports?.site_wise || []).slice(0, 5).map((item) => (
-                  <div key={`site-${item.site_name}`} className="timeline-item">
-                    <strong>{item.site_name}</strong>
-                    <p className="muted">{item.entries_count} entries</p>
-                    <p>Pending Rs {item.pending_amount} | Paid Rs {item.paid_amount}</p>
-                  </div>
-                ))}
-                {!adhesiveTokenReports?.site_wise?.length ? <p className="muted">No site-wise token report yet.</p> : null}
-              </div>
-              <div className="mini-list">
-                {(adhesiveTokenReports?.monthly_payout || []).slice(0, 6).map((item) => (
-                  <div key={`month-${item.payout_month}`} className="timeline-item">
-                    <strong>{item.payout_month}</strong>
-                    <p className="muted">{item.entries_count} entries</p>
-                    <p>Pending Rs {item.pending_amount} | Paid Rs {item.paid_amount}</p>
-                  </div>
-                ))}
-                {!adhesiveTokenReports?.monthly_payout?.length ? <p className="muted">No monthly payout report yet.</p> : null}
-              </div>
-              <div className="mini-list">
-                {(adhesiveTokenReports?.mismatch_rejected_claims || []).slice(0, 6).map((item) => (
-                  <div key={`mismatch-${item.id}`} className="timeline-item">
-                    <strong>{item.site_name} | {item.invoice_number}</strong>
-                    <p className="muted">{item.mason_name} | {item.adhesive_company}</p>
-                    <p>{labelize(item.verification_status)} | Rs {item.total_token_amount}</p>
-                  </div>
-                ))}
-                {!adhesiveTokenReports?.mismatch_rejected_claims?.length ? <p className="muted">No mismatch or rejected claims yet.</p> : null}
-              </div>
-            </div>
-
-            <div className="stack">
-              <h3>Recent activity</h3>
-              <div className="mini-list">
-                {adhesiveTokenActivities.slice(0, 8).map((item) => (
-                  <div key={item.id} className="timeline-item">
-                    <strong>{labelize(item.action)} | {item.mason_name}</strong>
-                    <p className="muted">{item.site_name} | {item.action_by_user_name || "System"} | {formatDateTime(item.created_at)}</p>
-                    <p>{item.details || item.note || "No activity note."}</p>
-                  </div>
-                ))}
-                {!adhesiveTokenActivities.length ? <p className="muted">No adhesive token activity yet.</p> : null}
-              </div>
-            </div>
-          </section>
-        </section>
+        <Suspense fallback={<LazySectionFallback label="adhesive tokens" />}>
+          <AdhesiveTokensSection
+            schemeSummary={schemeSummary}
+            BadgeCard={BadgeCard}
+            handleIssueSchemeToken={handleIssueSchemeToken}
+            schemeTokenForm={schemeTokenForm}
+            setSchemeTokenForm={setSchemeTokenForm}
+            activeMasons={activeMasons}
+            handleRegisteredMasonChange={handleRegisteredMasonChange}
+            handleVerifyAdhesiveInvoice={handleVerifyAdhesiveInvoice}
+            projects={projects}
+            handleAdhesiveProjectChange={handleAdhesiveProjectChange}
+            sanitizePositiveIntegerInput={sanitizePositiveIntegerInput}
+            sanitizeNonNegativeIntegerInput={sanitizeNonNegativeIntegerInput}
+            addAdhesiveTokenItemRow={addAdhesiveTokenItemRow}
+            adhesiveTokenValues={adhesiveTokenValues}
+            handleAdhesiveTokenItemChange={handleAdhesiveTokenItemChange}
+            removeAdhesiveTokenItemRow={removeAdhesiveTokenItemRow}
+            selectedRegisteredMason={selectedRegisteredMason}
+            HighlightRow={HighlightRow}
+            adhesiveClaimTotals={adhesiveClaimTotals}
+            selectedAdhesiveProject={selectedAdhesiveProject}
+            getAdhesiveClaimPreviewStatus={getAdhesiveClaimPreviewStatus}
+            labelize={labelize}
+            busyAction={busyAction}
+            editingAdhesiveTokenId={editingAdhesiveTokenId}
+            setEditingAdhesiveTokenId={setEditingAdhesiveTokenId}
+            emptySchemeToken={emptySchemeToken}
+            ListLoadControls={ListLoadControls}
+            schemeTokens={schemeTokens}
+            listLimits={listLimits}
+            increaseListLimit={increaseListLimit}
+            loading={loading}
+            adhesiveTokenStatusFilter={adhesiveTokenStatusFilter}
+            setAdhesiveTokenStatusFilter={setAdhesiveTokenStatusFilter}
+            adhesiveTokenStatuses={adhesiveTokenStatuses}
+            adhesiveTokenMasonFilter={adhesiveTokenMasonFilter}
+            setAdhesiveTokenMasonFilter={setAdhesiveTokenMasonFilter}
+            adhesiveTokenInvoiceFilter={adhesiveTokenInvoiceFilter}
+            setAdhesiveTokenInvoiceFilter={setAdhesiveTokenInvoiceFilter}
+            adhesiveTokenSiteFilter={adhesiveTokenSiteFilter}
+            setAdhesiveTokenSiteFilter={setAdhesiveTokenSiteFilter}
+            adhesiveTokenCreatedByFilter={adhesiveTokenCreatedByFilter}
+            setAdhesiveTokenCreatedByFilter={setAdhesiveTokenCreatedByFilter}
+            adhesiveTokenVerifiedByFilter={adhesiveTokenVerifiedByFilter}
+            setAdhesiveTokenVerifiedByFilter={setAdhesiveTokenVerifiedByFilter}
+            adhesiveTokenDateFromFilter={adhesiveTokenDateFromFilter}
+            setAdhesiveTokenDateFromFilter={setAdhesiveTokenDateFromFilter}
+            adhesiveTokenDateToFilter={adhesiveTokenDateToFilter}
+            setAdhesiveTokenDateToFilter={setAdhesiveTokenDateToFilter}
+            adhesiveTokenReports={adhesiveTokenReports}
+            StatCard={StatCard}
+            filteredSchemeTokens={filteredSchemeTokens}
+            user={user}
+            getAdhesiveClaimActionState={getAdhesiveClaimActionState}
+            handleOpenAdhesiveTokenDetail={handleOpenAdhesiveTokenDetail}
+            startEditingAdhesiveToken={startEditingAdhesiveToken}
+            requestVerifyAdhesiveToken={requestVerifyAdhesiveToken}
+            requestApproveAdhesiveToken={requestApproveAdhesiveToken}
+            requestMarkAdhesiveTokenPaid={requestMarkAdhesiveTokenPaid}
+            requestRejectAdhesiveToken={requestRejectAdhesiveToken}
+            requestReopenAdhesiveToken={requestReopenAdhesiveToken}
+            requestDeleteAdhesiveToken={requestDeleteAdhesiveToken}
+            formatDateTime={formatDateTime}
+            selectedAdhesiveToken={selectedAdhesiveToken}
+            adhesiveTokenActivities={adhesiveTokenActivities}
+          />
+        </Suspense>
       ) : null}
 
-        {currentView === "masons" ? (
-        <section className="content-grid">
-          <section className="panel">
-            <div className="section-head">
-              <h2>Registered masons</h2>
-              <span>{masons.length} registered</span>
-            </div>
-            {hasAnyRole(user, ["admin", "manager"]) ? (
-              <form className="form-grid" onSubmit={handleSaveMason}>
-                <input
-                  placeholder="Mason name"
-                  value={masonForm.name}
-                  onChange={(event) => setMasonForm({ ...masonForm, name: event.target.value })}
-                />
-                <input
-                  placeholder="Mobile number"
-                  value={masonForm.mobile}
-                  onChange={(event) => setMasonForm({ ...masonForm, mobile: event.target.value })}
-                />
-                <input
-                  placeholder="Current address"
-                  value={masonForm.current_address}
-                  onChange={(event) => setMasonForm({ ...masonForm, current_address: event.target.value })}
-                />
-                <input
-                  placeholder="Current address city"
-                  value={masonForm.current_address_city}
-                  onChange={(event) => setMasonForm({ ...masonForm, current_address_city: event.target.value })}
-                />
-                <input
-                  placeholder="Permanent address"
-                  value={masonForm.permanent_address}
-                  onChange={(event) => setMasonForm({ ...masonForm, permanent_address: event.target.value })}
-                />
-                <input
-                  placeholder="Permanent address city"
-                  value={masonForm.permanent_address_city}
-                  onChange={(event) => setMasonForm({ ...masonForm, permanent_address_city: event.target.value })}
-                />
-                <input
-                  type="number"
-                  min="1"
-                  placeholder="Working distance upto (KM)"
-                  value={masonForm.working_distance_upto_km}
-                  onChange={(event) =>
-                    setMasonForm({
-                      ...masonForm,
-                      working_distance_upto_km: sanitizePositiveIntegerInput(event.target.value, ""),
-                    })
-                  }
-                />
-                <select
-                  value={masonForm.status}
-                  onChange={(event) => setMasonForm({ ...masonForm, status: event.target.value })}
-                >
-                  {masonStatuses.map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-                <div className="full-span detail-card stack">
-                  <div className="section-head">
-                    <h3>Working areas</h3>
-                    <button type="button" className="secondary" onClick={addMasonWorkingArea}>
-                      Add Area
-                    </button>
-                  </div>
-                  <div className="quote-row">
-                    <input
-                      placeholder="Working area"
-                      value={masonWorkingAreaInput}
-                      onChange={(event) => setMasonWorkingAreaInput(event.target.value)}
-                    />
-                  </div>
-                  <div className="chip-row">
-                    {(masonForm.working_areas || []).map((area) => (
-                      <button
-                        key={area}
-                        type="button"
-                        className="status-chip"
-                        onClick={() => removeMasonWorkingArea(area)}
-                        title="Remove working area"
-                      >
-                        {area} x
-                      </button>
-                    ))}
-                    {!(masonForm.working_areas || []).length ? <span className="muted">Add at least one working area.</span> : null}
-                  </div>
-                </div>
-                <div className="lead-actions full-span">
-                  <button type="submit" disabled={busyAction === "save-mason"}>
-                    {busyAction === "save-mason"
-                      ? editingMasonId
-                        ? "Updating Mason..."
-                        : "Saving Mason..."
-                      : editingMasonId
-                        ? "Update Mason"
-                        : "Register Mason"}
-                  </button>
-                  {editingMasonId ? (
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => {
-                        setEditingMasonId(null);
-                        setMasonForm(emptyMason);
-                        setMasonWorkingAreaInput("");
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  ) : null}
-                </div>
-              </form>
-            ) : (
-              <EmptyState
-                compact
-                title="Registration is manager-controlled"
-                message="Sales and operations can use only active registered masons in token redemption."
-              />
-            )}
-          </section>
-
-          <section className="panel">
-            <div className="section-head">
-              <h2>Mason directory</h2>
-              <span>{activeMasons.length} active</span>
-            </div>
-            <ListLoadControls
-              label="Masons"
-              count={masons.length}
-              limit={listLimits.masons}
-              onLoadMore={() => increaseListLimit("masons")}
-              disabled={loading}
-            />
-            <div className="form-grid">
-              <input
-                placeholder="Filter by current city"
-                value={masonCurrentCityFilter}
-                onChange={(event) => setMasonCurrentCityFilter(event.target.value)}
-              />
-              <input
-                placeholder="Filter by permanent city"
-                value={masonPermanentCityFilter}
-                onChange={(event) => setMasonPermanentCityFilter(event.target.value)}
-              />
-              <input
-                placeholder="Filter by working area"
-                value={masonWorkingAreaFilter}
-                onChange={(event) => setMasonWorkingAreaFilter(event.target.value)}
-              />
-              <input
-                type="number"
-                min="1"
-                placeholder="Minimum distance KM"
-                value={masonWorkingDistanceFilter}
-                onChange={(event) => setMasonWorkingDistanceFilter(event.target.value)}
-              />
-            </div>
-            <div className="list">
-              {filteredMasons.map((mason) => (
-                <article key={mason.id} className="lead-card">
-                  <div className="section-head">
-                    <div>
-                      <h3>{mason.name}</h3>
-                      <p className="muted">{mason.mobile}</p>
-                    </div>
-                    <span className={`status-chip ${String(mason.status || "").toLowerCase() === "active" ? "unit-chip unit-plumbing" : "status-lost"}`}>
-                      {labelize(mason.status)}
-                    </span>
-                  </div>
-                  <p>{mason.current_address_city || "No current city"} | {mason.permanent_address_city || "No permanent city"}</p>
-                  <p>{(mason.working_areas || []).join(", ") || "No working areas mapped yet."}</p>
-                  <p className="muted">Working distance upto {mason.working_distance_upto_km || 0} KM</p>
-                  <p className="muted">Registered {formatDateTime(mason.registered_at)}</p>
-                  {hasAnyRole(user, ["admin", "manager"]) ? (
-                    <div className="lead-actions">
-                      <button type="button" className="secondary" onClick={() => startEditingMason(mason)}>
-                        Edit
-                      </button>
-                    </div>
-                  ) : null}
-                </article>
-              ))}
-              {filteredMasons.length === 0 ? (
-                <EmptyState title="No registered masons yet" message="Register active masons here before creating adhesive token claims." />
-              ) : null}
-            </div>
-
-            <div className="stack">
-              <h3>Recent mason activity</h3>
-              <div className="mini-list">
-                {masonActivities.slice(0, 10).map((item) => (
-                  <div key={item.id} className="timeline-item">
-                    <strong>{labelize(item.action)} | {item.mason_name || "Unknown mason"}</strong>
-                    <p className="muted">{item.mason_mobile || "No mobile"} | {formatDateTime(item.created_at)}</p>
-                    <p>{item.note || "No note added."}</p>
-                  </div>
-                ))}
-                {!masonActivities.length ? <p className="muted">No mason activity yet.</p> : null}
-              </div>
-            </div>
-          </section>
-        </section>
+      {currentView === "masons" ? (
+        <Suspense fallback={<LazySectionFallback label="registered masons" />}>
+          <RegisteredMasonsSection
+            masons={masons}
+            activeMasons={activeMasons}
+            user={user}
+            hasAnyRole={hasAnyRole}
+            masonForm={masonForm}
+            setMasonForm={setMasonForm}
+            masonStatuses={masonStatuses}
+            sanitizePositiveIntegerInput={sanitizePositiveIntegerInput}
+            masonWorkingAreaInput={masonWorkingAreaInput}
+            setMasonWorkingAreaInput={setMasonWorkingAreaInput}
+            addMasonWorkingArea={addMasonWorkingArea}
+            removeMasonWorkingArea={removeMasonWorkingArea}
+            handleSaveMason={handleSaveMason}
+            busyAction={busyAction}
+            editingMasonId={editingMasonId}
+            setEditingMasonId={setEditingMasonId}
+            emptyMason={emptyMason}
+            ListLoadControls={ListLoadControls}
+            listLimits={listLimits}
+            increaseListLimit={increaseListLimit}
+            loading={loading}
+            masonCurrentCityFilter={masonCurrentCityFilter}
+            setMasonCurrentCityFilter={setMasonCurrentCityFilter}
+            masonPermanentCityFilter={masonPermanentCityFilter}
+            setMasonPermanentCityFilter={setMasonPermanentCityFilter}
+            masonWorkingAreaFilter={masonWorkingAreaFilter}
+            setMasonWorkingAreaFilter={setMasonWorkingAreaFilter}
+            masonWorkingDistanceFilter={masonWorkingDistanceFilter}
+            setMasonWorkingDistanceFilter={setMasonWorkingDistanceFilter}
+            filteredMasons={filteredMasons}
+            labelize={labelize}
+            formatDateTime={formatDateTime}
+            startEditingMason={startEditingMason}
+            EmptyState={EmptyState}
+            masonActivities={masonActivities}
+          />
+        </Suspense>
       ) : null}
 
         {currentView === "inventory" ? (
@@ -5832,6 +5357,189 @@ export default function App() {
               {!filteredProjects.length ? <p className="muted">No projects available for profit reporting yet.</p> : null}
             </div>
           </section>
+
+          <section className="panel">
+            <div className="section-head">
+              <h2>Daily report sheet</h2>
+              <span>
+                Owner snapshot {dailyReport ? `· ${formatDate(dailyReportDate)}` : ""}
+              </span>
+            </div>
+            <div className="filter-row">
+              <label className="stack-tiny">
+                <span className="control-label">Report date</span>
+                <input
+                  type="date"
+                  value={dailyReportDate}
+                  onChange={(event) => setDailyReportDate(event.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setDailyReportDate(new Date().toISOString().slice(0, 10))}
+              >
+                Today
+              </button>
+            </div>
+            {dailyReport ? (
+              <>
+                <div className="tabs-row">
+                  <BadgeCard
+                    title="Sales"
+                    count={`Rs ${Number(dailyReport.sales?.amount || 0).toLocaleString("en-IN")}`}
+                    tone="accent"
+                  />
+                  <BadgeCard
+                    title="Collection"
+                    count={`Rs ${Number(dailyReport.collection?.amount || 0).toLocaleString("en-IN")}`}
+                    tone="accent"
+                  />
+                  <BadgeCard
+                    title="Expenses"
+                    count={`Rs ${Number(dailyReport.expense?.amount || 0).toLocaleString("en-IN")}`}
+                  />
+                  <BadgeCard
+                    title="Purchases"
+                    count={`Rs ${Number(dailyReport.purchase?.amount || 0).toLocaleString("en-IN")}`}
+                  />
+                </div>
+                <div className="report-grid">
+                  <StatCard
+                    label="Cash In"
+                    value={`Rs ${Number(dailyReport.cash_in || 0).toLocaleString("en-IN")}`}
+                  />
+                  <StatCard
+                    label="Cash Out"
+                    value={`Rs ${Number(dailyReport.cash_out || 0).toLocaleString("en-IN")}`}
+                    tone="danger"
+                  />
+                  <StatCard
+                    label="Net Cash"
+                    value={`Rs ${Number(dailyReport.net_cash || 0).toLocaleString("en-IN")}`}
+                    tone="accent"
+                  />
+                  <StatCard
+                    label="Tokens Created"
+                    value={`${dailyReport.tokens?.count || 0} · Rs ${Number(
+                      dailyReport.tokens?.amount || 0
+                    ).toLocaleString("en-IN")}`}
+                  />
+                  <StatCard
+                    label="Pending Follow-ups"
+                    value={dailyReport.followups?.count || 0}
+                  />
+                </div>
+                <div className="table-shell">
+                  <table className="data-table compact">
+                    <thead>
+                      <tr>
+                        <th>Section</th>
+                        <th>Count</th>
+                        <th>Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>Sales (quotations)</td>
+                        <td>{dailyReport.sales?.count || 0}</td>
+                        <td>Rs {Number(dailyReport.sales?.amount || 0).toLocaleString("en-IN")}</td>
+                      </tr>
+                      <tr>
+                        <td>Collection (payments)</td>
+                        <td>{dailyReport.collection?.count || 0}</td>
+                        <td>Rs {Number(dailyReport.collection?.amount || 0).toLocaleString("en-IN")}</td>
+                      </tr>
+                      <tr>
+                        <td>Expenses</td>
+                        <td>{dailyReport.expense?.count || 0}</td>
+                        <td>Rs {Number(dailyReport.expense?.amount || 0).toLocaleString("en-IN")}</td>
+                      </tr>
+                      <tr>
+                        <td>Purchases</td>
+                        <td>{dailyReport.purchase?.count || 0}</td>
+                        <td>Rs {Number(dailyReport.purchase?.amount || 0).toLocaleString("en-IN")}</td>
+                      </tr>
+                      <tr>
+                        <td>Token claims created</td>
+                        <td>{dailyReport.tokens?.count || 0}</td>
+                        <td>Rs {Number(dailyReport.tokens?.amount || 0).toLocaleString("en-IN")}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <EmptyState
+                title="No data for this date yet"
+                message="Pick a date to load the daily showroom snapshot. Once entries are made for that day, totals will appear here."
+              />
+            )}
+          </section>
+
+          {dashboardSummary ? (
+            <section className="panel">
+              <div className="section-head">
+                <h2>Live business pulse</h2>
+                <span>
+                  Live snapshot · cached 30s · {dashboardSummary.as_of_date}
+                </span>
+              </div>
+              <div className="tabs-row">
+                <BadgeCard
+                  title="Today Sales"
+                  count={`Rs ${Number(dashboardSummary.sales_today?.amount || 0).toLocaleString("en-IN")}`}
+                  tone="accent"
+                />
+                <BadgeCard
+                  title="Today Collection"
+                  count={`Rs ${Number(dashboardSummary.collection_today?.amount || 0).toLocaleString("en-IN")}`}
+                  tone="accent"
+                />
+                <BadgeCard
+                  title="Pending Payments"
+                  count={`Rs ${Number(dashboardSummary.pending_payments?.amount || 0).toLocaleString("en-IN")}`}
+                  tone="danger"
+                />
+                <BadgeCard
+                  title="Monthly Sales"
+                  count={`Rs ${Number(dashboardSummary.sales_month?.amount || 0).toLocaleString("en-IN")}`}
+                />
+              </div>
+              <div className="report-grid">
+                <StatCard
+                  label="Token Claims Pending"
+                  value={`${dashboardSummary.token_pending?.count ?? 0} · Rs ${Number(
+                    dashboardSummary.token_pending?.amount || 0
+                  ).toLocaleString("en-IN")}`}
+                  tone="danger"
+                />
+                <StatCard
+                  label="Token Paid (Month)"
+                  value={`${dashboardSummary.token_paid_month?.count ?? 0} · Rs ${Number(
+                    dashboardSummary.token_paid_month?.amount || 0
+                  ).toLocaleString("en-IN")}`}
+                  tone="accent"
+                />
+                <StatCard
+                  label="Purchases (Month)"
+                  value={`Rs ${Number(dashboardSummary.purchases_month?.amount || 0).toLocaleString("en-IN")}`}
+                />
+                <StatCard
+                  label="Followups Pending"
+                  value={dashboardSummary.followups_pending?.count ?? 0}
+                />
+                <StatCard
+                  label="Active Customers"
+                  value={dashboardSummary.active_customers?.count ?? 0}
+                />
+                <StatCard
+                  label="Active Projects"
+                  value={dashboardSummary.active_projects?.count ?? 0}
+                />
+              </div>
+            </section>
+          ) : null}
 
           <section className="panel">
             <div className="section-head">
@@ -6952,9 +6660,9 @@ function LeadCard({ lead, selected, onSelect, onDelete, canDelete = false }) {
   );
 }
 
-function StatCard({ label, value }) {
+function StatCard({ label, value, tone = "default" }) {
   return (
-    <article className="stat-card">
+    <article className={tone === "default" ? "stat-card" : `stat-card tone-${tone}`}>
       <span>{label}</span>
       <strong>{value}</strong>
     </article>
@@ -6985,6 +6693,14 @@ function EmptyState({ title, message, compact = false }) {
       <strong>{title}</strong>
       <p className="muted">{message}</p>
     </div>
+  );
+}
+
+function LazySectionFallback({ label = "module" }) {
+  return (
+    <section className="panel">
+      <p className="loading-banner">Loading {label}...</p>
+    </section>
   );
 }
 
