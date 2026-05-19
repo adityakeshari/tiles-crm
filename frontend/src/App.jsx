@@ -6,6 +6,76 @@ const RegisteredMasonsSection = lazy(() => import("./sections/RegisteredMasonsSe
 const ProjectsSection = lazy(() => import("./sections/ProjectsSection.jsx"));
 const LeadWorkspaceSection = lazy(() => import("./sections/LeadWorkspaceSection.jsx"));
 
+// Enterprise sidebar hierarchy. Sub-item IDs map to existing currentView IDs —
+// no business logic / API / route changes; only the navigation surface is restructured.
+const navGroups = [
+  {
+    id: "dashboard",
+    label: "Dashboard",
+    items: [{ id: "overview", label: "Overview" }],
+  },
+  {
+    id: "customers",
+    label: "Customers",
+    items: [
+      { id: "pipeline", label: "Leads" },
+      { id: "followups", label: "Follow-ups" },
+      { id: "quotations", label: "Quotations" },
+    ],
+  },
+  {
+    id: "sales",
+    label: "Sales",
+    items: [
+      { id: "projects", label: "Projects" },
+      { id: "plumbing", label: "Plumbing" },
+      { id: "dealers", label: "Dealers" },
+    ],
+  },
+  {
+    id: "operations",
+    label: "Operations",
+    items: [
+      { id: "complaints", label: "Complaints" },
+      { id: "operations", label: "Tasks" },
+      { id: "reports", label: "Daily Report" },
+    ],
+  },
+  {
+    id: "inventory",
+    label: "Inventory",
+    items: [
+      { id: "inventory", label: "Stock" },
+      { id: "purchases", label: "Purchase Entry" },
+    ],
+  },
+  {
+    id: "masonsTokens",
+    label: "Mason & Tokens",
+    items: [
+      { id: "masons", label: "Registered Masons" },
+      { id: "schemes", label: "Adhesive Tokens" },
+    ],
+  },
+  {
+    id: "accounts",
+    label: "Accounts",
+    items: [
+      { id: "expenses", label: "Expenses" },
+    ],
+  },
+  {
+    id: "reports",
+    label: "Reports",
+    items: [{ id: "reports", label: "Reports" }],
+  },
+  {
+    id: "team",
+    label: "Team",
+    items: [{ id: "team", label: "Staff Access" }],
+  },
+];
+
 const views = [
   { id: "overview", label: "Overview" },
   { id: "pipeline", label: "Pipeline" },
@@ -27,68 +97,84 @@ const views = [
 
 const viewMeta = {
   overview: {
-    title: "CRM Overview",
-    description: "Lead intake, current focus, and the next actions your team should take.",
+    title: "Dashboard",
+    description: "Today's summary at a glance — sales, collection, pending, follow-ups and stock alerts.",
+    audience: "Owner & Manager view",
   },
   pipeline: {
-    title: "Sales Pipeline",
-    description: "Move every enquiry through a visible conversion process.",
+    title: "Leads",
+    description: "Add new walk-ins, search customers, and move enquiries through the pipeline.",
+    audience: "Sales & Operator entry",
   },
   followups: {
-    title: "Follow-up Control",
-    description: "Keep reminders, callbacks, and visit commitments disciplined.",
+    title: "Follow-ups",
+    description: "Daily callbacks, visit reminders and pending customer commitments.",
+    audience: "Sales & Manager",
   },
   operations: {
-    title: "Operations Desk",
-    description: "Track delivery, installation, site visits, and service execution.",
+    title: "Operation Tasks",
+    description: "Delivery, installation, site visits and service handoffs.",
+    audience: "Manager & Operations",
   },
   projects: {
-    title: "Project Control",
-    description: "Manage won leads as execution projects with dispatch, payment, and profit control.",
+    title: "Projects",
+    description: "Won leads under execution — dispatches, payments, plumbing and net profit.",
+    audience: "Manager control",
   },
   plumbing: {
     title: "Plumbing Services",
-    description: "Manage plumbers, job execution, materials, and service cost under operations.",
+    description: "Plumber list, on-going jobs and materials used.",
+    audience: "Manager & Operations",
   },
   complaints: {
-    title: "Complaint Desk",
-    description: "Manage Plumbing and Tiles complaints with clear urgency and ownership.",
+    title: "Complaints",
+    description: "Customer complaints with priority, status and assigned staff.",
+    audience: "Manager & Operations",
   },
   quotations: {
-    title: "Quotation Center",
-    description: "Prepare, review, and share customer quotations systematically.",
+    title: "Quotations",
+    description: "Prepare price quotations and share with the customer.",
+    audience: "Sales",
   },
   schemes: {
-    title: "Adhesive Bag Tokens",
-    description: "Track adhesive bag token payouts, mason claims, and payout approvals in one place.",
+    title: "Adhesive Tokens",
+    description: "Token claim entry, verification and payout for masons against tile sales.",
+    audience: "Manager & Accounts control",
   },
   masons: {
     title: "Registered Masons",
-    description: "Register, activate, and manage the mason list allowed for adhesive token redemption.",
+    description: "Add a new mason, update profile and mark active/inactive — only active masons can claim tokens.",
+    audience: "Manager entry",
   },
   inventory: {
-    title: "Inventory Control",
-    description: "Maintain stock visibility and product readiness for the sales team.",
+    title: "Stock",
+    description: "Product list, design code, size, finish and stock-on-hand.",
+    audience: "Manager & Operator",
   },
   dealers: {
-    title: "Dealer Network",
-    description: "Monitor partner performance, outstanding value, and relationship health.",
+    title: "Dealers",
+    description: "Dealer network — category, purchase value, outstanding and commission.",
+    audience: "Manager control",
   },
   purchases: {
     title: "Purchase Entry",
-    description: "Daily purchase entries for showroom stock and supplies — supplier, invoice, amount, GST and remarks.",
+    description: "Daily purchase log — supplier, invoice, amount, GST and remarks.",
+    audience: "Operator daily entry",
   },
   expenses: {
-    title: "Expense Management",
-    description: "Track showroom expenses and read net profit after operating costs.",
+    title: "Expenses",
+    description: "Daily showroom expenses with category and payment mode.",
+    audience: "Accounts & Operator",
   },
   reports: {
-    title: "Owner Dashboard",
-    description: "See profit, collections, project performance, and team control from one place.",
+    title: "Reports",
+    description: "Daily report sheet plus owner control — sales, collection, profit and payouts.",
+    audience: "Owner / Manager",
   },
   team: {
-    title: "Team Access",
-    description: "Manage user roles, access, and responsibility across the CRM.",
+    title: "Staff Access",
+    description: "Add and manage user accounts and role permissions.",
+    audience: "Admin only",
   },
 };
 
@@ -1611,34 +1697,39 @@ export default function App() {
       ];
     }
 
-    const summaryCardsExtra = dashboardSummary
-      ? [
-          {
-            label: "Today Sales",
-            value: `Rs ${Number(dashboardSummary.sales_today?.amount || 0).toLocaleString("en-IN")}`,
-          },
-          {
-            label: "Today Collection",
-            value: `Rs ${Number(dashboardSummary.collection_today?.amount || 0).toLocaleString(
-              "en-IN"
-            )}`,
-          },
-          {
-            label: "Pending Payments",
-            value: `Rs ${Number(dashboardSummary.pending_payments?.amount || 0).toLocaleString(
-              "en-IN"
-            )}`,
-          },
-          {
-            label: "Token Claims Pending",
-            value: dashboardSummary.token_pending?.count ?? 0,
-          },
-        ]
-      : [];
+    // Priority KPI order for the showroom owner / manager view:
+    // 1. Today Sales  2. Today Collection  3. Pending Payments
+    // 4. New Leads    5. Hot Leads          6. Open Follow-ups
+    // 7. Token Pending  8. Stock Alert
+    const priorityCards = [
+      dashboardSummary && {
+        label: "Today Sales",
+        value: `Rs ${Number(dashboardSummary.sales_today?.amount || 0).toLocaleString("en-IN")}`,
+        tone: "accent",
+      },
+      dashboardSummary && {
+        label: "Today Collection",
+        value: `Rs ${Number(dashboardSummary.collection_today?.amount || 0).toLocaleString("en-IN")}`,
+        tone: "accent",
+      },
+      dashboardSummary && {
+        label: "Pending Payments",
+        value: `Rs ${Number(dashboardSummary.pending_payments?.amount || 0).toLocaleString("en-IN")}`,
+        tone: "danger",
+      },
+      { label: "New Leads", value: focusStats.todayWalkins },
+      { label: "Hot Leads", value: focusStats.openLeads, tone: "accent" },
+      { label: "Open Follow-ups", value: focusStats.pendingFollowups },
+      dashboardSummary && {
+        label: "Token Pending",
+        value: dashboardSummary.token_pending?.count ?? 0,
+        tone: "danger",
+      },
+      { label: "Stock Alert", value: focusStats.fastMovingSkuCount },
+    ].filter(Boolean);
 
     return [
-      ...summaryCardsExtra,
-      { label: "Pending Follow-ups", value: focusStats.pendingFollowups },
+      ...priorityCards,
       { label: "Overdue Follow-ups", value: focusStats.overdueFollowups },
       { label: "Monthly Revenue", value: `Rs ${stats?.monthly_revenue ?? 0}` },
       { label: "Sales Leads", value: focusStats.salesLeads },
@@ -3531,45 +3622,92 @@ export default function App() {
         </div>
       ) : null}
 
-      <section className="nav-shell panel">
-        <nav className="module-nav">
-            {visibleViews
-              .filter((item) => item.id !== "team" || isAdmin(user))
-            .map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={currentView === item.id ? "active-nav" : "nav-btn"}
-                onClick={() => setCurrentView(item.id)}
-              >
-                {item.label}
-              </button>
-            ))}
-        </nav>
+      <div className="app-layout">
+        <aside className="sidebar panel">
+          <div className="sidebar-brand">
+            <p className="eyebrow">AIBA Tiles</p>
+            <strong>Showroom CRM</strong>
+          </div>
+          <nav className="sidebar-nav" aria-label="Primary navigation">
+            {navGroups.map((group) => {
+              const allowed = group.items.filter(
+                (item) =>
+                  visibleViews.some((view) => view.id === item.id) &&
+                  (item.id !== "team" || isAdmin(user))
+              );
+              if (!allowed.length) return null;
+              return (
+                <div className="sidebar-group" key={group.id}>
+                  <p className="sidebar-group-label">{group.label}</p>
+                  <div className="sidebar-items">
+                    {allowed.map((item) => (
+                      <button
+                        key={`${group.id}-${item.id}`}
+                        type="button"
+                        className={
+                          currentView === item.id
+                            ? "sidebar-item sidebar-item-active"
+                            : "sidebar-item"
+                        }
+                        onClick={() => setCurrentView(item.id)}
+                      >
+                        <span className="sidebar-dot" aria-hidden="true" />
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </nav>
+        </aside>
 
-        <div className="filter-row control-bar">
-          <div className="control-group">
-            <span className="control-label">Workspace</span>
-            <select value={workspaceFilter} onChange={(event) => setWorkspaceFilter(event.target.value)}>
-              {workspaceOptions.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="control-group">
-            <span className="control-label">Business Unit</span>
-            <select value={unitFilter} onChange={(event) => setUnitFilter(event.target.value)}>
-              {businessUnits.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </section>
+        <div className="app-main">
+          <section className="filters-bar panel">
+            <div className="control-group">
+              <span className="control-label">Workspace</span>
+              <select value={workspaceFilter} onChange={(event) => setWorkspaceFilter(event.target.value)}>
+                {workspaceOptions.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="control-group">
+              <span className="control-label">Business Unit</span>
+              <select value={unitFilter} onChange={(event) => setUnitFilter(event.target.value)}>
+                {businessUnits.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="quick-actions-wrap">
+              <span className="control-label">Quick actions</span>
+              <div className="quick-actions">
+                {[
+                  { id: "pipeline", label: "+ New Lead", tone: "accent" },
+                  { id: "projects", label: "+ New Project", tone: "secondary" },
+                  { id: "purchases", label: "+ Purchase Entry", tone: "secondary" },
+                  { id: "masons", label: "+ Registered Mason", tone: "secondary" },
+                  { id: "expenses", label: "+ Expense", tone: "secondary" },
+                ]
+                  .filter((action) => visibleViews.some((view) => view.id === action.id))
+                  .map((action) => (
+                    <button
+                      key={action.id}
+                      type="button"
+                      className={action.tone === "secondary" ? "quick-action-btn secondary" : "quick-action-btn"}
+                      onClick={() => setCurrentView(action.id)}
+                    >
+                      {action.label}
+                    </button>
+                  ))}
+              </div>
+            </div>
+          </section>
 
       <section className="legend-bar panel">
         <div className="legend-group">
@@ -3596,6 +3734,9 @@ export default function App() {
           <p className="eyebrow">Active Module</p>
           <h2>{activeViewMeta.title}</h2>
           <p className="muted">{activeViewMeta.description}</p>
+          {activeViewMeta.audience ? (
+            <span className="audience-tag">{activeViewMeta.audience}</span>
+          ) : null}
         </div>
         <div className="hero-pills">
           <span className="hero-pill hero-pill-strong">
@@ -3614,7 +3755,7 @@ export default function App() {
 
       <section className="stats-grid">
         {summaryCards.map((card) => (
-          <StatCard key={card.label} label={card.label} value={card.value} />
+          <StatCard key={card.label} label={card.label} value={card.value} tone={card.tone || "default"} />
         ))}
       </section>
 
@@ -5681,6 +5822,8 @@ export default function App() {
           </div>
         </section>
       ) : null}
+        </div>
+      </div>
     </div>
   );
 }
