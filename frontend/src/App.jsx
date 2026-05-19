@@ -1746,8 +1746,9 @@ export default function App() {
       ? `${focusStats.operationsLeads} operations leads in focus`
       : `${filteredLeads.length} leads in focus`;
   const activeViewMeta = viewMeta[currentView] || viewMeta.overview;
+  const isOverview = currentView === "overview";
   const showQuickLeadEntry =
-    currentView === "overview" &&
+    isOverview &&
     hasAnyRole(user, ["admin", "manager", "sales"]) &&
     workspaceFilter !== "operations";
 
@@ -3686,285 +3687,309 @@ export default function App() {
             </div>
             <div className="quick-actions-wrap">
               <span className="control-label">Quick actions</span>
-              <div className="quick-actions">
-                {[
-                  { id: "pipeline", label: "+ New Lead", tone: "accent" },
-                  { id: "projects", label: "+ New Project", tone: "secondary" },
-                  { id: "purchases", label: "+ Purchase Entry", tone: "secondary" },
-                  { id: "masons", label: "+ Registered Mason", tone: "secondary" },
-                  { id: "expenses", label: "+ Expense", tone: "secondary" },
+                <div className="quick-actions">
+                  {[
+                  { id: "pipeline", label: "+ New Lead", tone: "secondary" },
+                    { id: "projects", label: "+ New Project", tone: "secondary" },
+                    { id: "purchases", label: "+ Purchase Entry", tone: "secondary" },
+                    { id: "masons", label: "+ Registered Mason", tone: "secondary" },
+                    { id: "expenses", label: "+ Expense", tone: "secondary" },
                 ]
                   .filter((action) => visibleViews.some((view) => view.id === action.id))
                   .map((action) => (
-                    <button
-                      key={action.id}
-                      type="button"
-                      className={action.tone === "secondary" ? "quick-action-btn secondary" : "quick-action-btn"}
-                      onClick={() => setCurrentView(action.id)}
-                    >
-                      {action.label}
-                    </button>
-                  ))}
+                      <button
+                        key={action.id}
+                        type="button"
+                        className={
+                          currentView === action.id
+                            ? "quick-action-btn quick-action-btn-active"
+                            : action.tone === "secondary"
+                              ? "quick-action-btn secondary"
+                              : "quick-action-btn"
+                        }
+                        onClick={() => setCurrentView(action.id)}
+                      >
+                        {action.label}
+                      </button>
+                    ))}
               </div>
             </div>
           </section>
 
-      <section className="legend-bar panel">
-        <div className="legend-group">
-          <span className="control-label">Business Unit</span>
-          <div className="legend-items">
-            <span className="legend-chip legend-tiles">Tiles</span>
-            <span className="legend-chip legend-plumbing">Plumbing</span>
-            <span className="legend-chip legend-both">Tiles + Plumbing</span>
+      {isOverview ? (
+        <section className="legend-bar panel">
+          <div className="legend-group">
+            <span className="control-label">Business Unit</span>
+            <div className="legend-items">
+              <span className="legend-chip legend-tiles">Tiles</span>
+              <span className="legend-chip legend-plumbing">Plumbing</span>
+              <span className="legend-chip legend-both">Tiles + Plumbing</span>
+            </div>
           </div>
-        </div>
-        <div className="legend-group">
-          <span className="control-label">Priority</span>
-          <div className="legend-items">
-            <span className="legend-chip legend-low">Low</span>
-            <span className="legend-chip legend-medium">Medium</span>
-            <span className="legend-chip legend-high">High</span>
-            <span className="legend-chip legend-urgent">Urgent</span>
+          <div className="legend-group">
+            <span className="control-label">Priority</span>
+            <div className="legend-items">
+              <span className="legend-chip legend-low">Low</span>
+              <span className="legend-chip legend-medium">Medium</span>
+              <span className="legend-chip legend-high">High</span>
+              <span className="legend-chip legend-urgent">Urgent</span>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      ) : null}
 
-      <section className="page-intro panel">
-        <div>
-          <p className="eyebrow">Active Module</p>
-          <h2>{activeViewMeta.title}</h2>
-          <p className="muted">{activeViewMeta.description}</p>
+      {isOverview ? (
+        <section className="page-intro panel">
+          <div>
+            <p className="eyebrow">Active Module</p>
+            <h2>{activeViewMeta.title}</h2>
+            <p className="muted">{activeViewMeta.description}</p>
+            {activeViewMeta.audience ? (
+              <span className="audience-tag">{activeViewMeta.audience}</span>
+            ) : null}
+          </div>
+          <div className="hero-pills">
+            <span className="hero-pill hero-pill-strong">
+              Workspace: {workspaceFilter === "all" ? "All Work" : labelize(workspaceFilter)}
+            </span>
+            <span className="hero-pill hero-pill-strong">
+              Unit: {unitFilter === "all" ? "All Units" : labelize(unitFilter)}
+            </span>
+            <span className="hero-pill hero-pill-strong">
+              View: {views.find((item) => item.id === currentView)?.label || "Overview"}
+            </span>
+          </div>
+        </section>
+      ) : (
+        <section className="module-header">
+          <div>
+            <h2>{activeViewMeta.title}</h2>
+            <p className="muted">{activeViewMeta.description}</p>
+          </div>
           {activeViewMeta.audience ? (
             <span className="audience-tag">{activeViewMeta.audience}</span>
           ) : null}
-        </div>
-        <div className="hero-pills">
-          <span className="hero-pill hero-pill-strong">
-            Workspace: {workspaceFilter === "all" ? "All Work" : labelize(workspaceFilter)}
-          </span>
-          <span className="hero-pill hero-pill-strong">
-            Unit: {unitFilter === "all" ? "All Units" : labelize(unitFilter)}
-          </span>
-          <span className="hero-pill hero-pill-strong">
-            View: {views.find((item) => item.id === currentView)?.label || "Overview"}
-          </span>
-        </div>
-      </section>
+        </section>
+      )}
 
       {loading ? <p className="loading-banner">Syncing latest CRM data...</p> : null}
 
-      <section className="stats-grid">
-        {summaryCards.map((card) => (
-          <StatCard key={card.label} label={card.label} value={card.value} tone={card.tone || "default"} />
-        ))}
-      </section>
-
-      <main className="feature-grid">
-        {showQuickLeadEntry ? (
-        <section className="panel span-two">
-          <div className="section-head">
-            <h2>Quick lead entry</h2>
-            <span>{loading ? "Syncing..." : "Under 10 seconds for sales team use"}</span>
-          </div>
-          <form className="form-grid" onSubmit={handleCreateLead}>
-            <input
-              placeholder="Customer name"
-              value={leadForm.name}
-              onChange={(event) => setLeadForm({ ...leadForm, name: event.target.value })}
-            />
-            <input
-              placeholder="Phone"
-              value={leadForm.phone}
-              onChange={(event) => setLeadForm({ ...leadForm, phone: event.target.value })}
-            />
-            <input
-              placeholder="Location"
-              value={leadForm.location}
-              onChange={(event) => setLeadForm({ ...leadForm, location: event.target.value })}
-            />
-            <select
-              value={leadForm.department}
-              onChange={(event) => setLeadForm({ ...leadForm, department: event.target.value })}
-            >
-              <option value="sales">Sales</option>
-              <option value="operations">Operations</option>
-            </select>
-            <select
-              value={leadForm.business_unit}
-              onChange={(event) => setLeadForm({ ...leadForm, business_unit: event.target.value })}
-            >
-              <option value="tiles">Tiles</option>
-              <option value="plumbing">Plumbing</option>
-              <option value="both">Tiles + Plumbing</option>
-            </select>
-            <select
-              value={leadForm.customer_type}
-              onChange={(event) => setLeadForm({ ...leadForm, customer_type: event.target.value })}
-            >
-              {customerTypes.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-            <select
-              value={leadForm.requirement_category}
-              onChange={(event) =>
-                setLeadForm({ ...leadForm, requirement_category: event.target.value })
-              }
-            >
-              {requirementCategories.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-            <input
-              type="number"
-              placeholder="Budget"
-              value={leadForm.budget}
-              onChange={(event) => setLeadForm({ ...leadForm, budget: event.target.value })}
-            />
-            <select
-              value={leadForm.timeline}
-              onChange={(event) => setLeadForm({ ...leadForm, timeline: event.target.value })}
-            >
-              {timelines.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-            <select
-              value={leadForm.lead_source}
-              onChange={(event) => setLeadForm({ ...leadForm, lead_source: event.target.value })}
-            >
-              {leadSources.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-            <select
-              value={leadForm.status}
-              onChange={(event) => setLeadForm({ ...leadForm, status: event.target.value })}
-            >
-              {leadStatuses.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-            <select
-              value={leadForm.assigned_to}
-              onChange={(event) => setLeadForm({ ...leadForm, assigned_to: event.target.value })}
-            >
-              <option value="">Unassigned</option>
-              {users.map((teamMember) => (
-                <option key={teamMember.id} value={teamMember.id}>
-                  {teamMember.name}
-                </option>
-              ))}
-            </select>
-            <textarea
-              className="full-span"
-              placeholder="Requirement details"
-              value={leadForm.requirement}
-              onChange={(event) => setLeadForm({ ...leadForm, requirement: event.target.value })}
-            />
-            <button className="full-span accent" type="submit" disabled={busyAction === "save-lead"}>
-              {busyAction === "save-lead" ? "Saving Lead..." : "Save Lead"}
-            </button>
-          </form>
-        </section>
-        ) : null}
-
-            <section className="panel adhesive-ledger-panel">
-          <div className="section-head">
-            <h2>
-              {workspaceFilter === "operations" ? "Operations watchlist" : "Follow-up discipline"}
-            </h2>
-            <span>
-              {workspaceFilter === "operations"
-                ? `${focusStats.openOpsTasks} open tasks`
-                : `${todaysFollowups.length} today`}
-            </span>
-          </div>
-          <div className="stack">
-            {workspaceFilter === "operations" ? (
-              <>
-                <HighlightRow label="Open tasks" value={focusStats.openOpsTasks} />
-                <HighlightRow label="Delayed" value={focusStats.delayedOpsTasks} tone="danger" />
-                <HighlightRow label="Completed" value={focusStats.completedOpsTasks} tone="accent" />
-              </>
-            ) : (
-              <>
-                <HighlightRow label="Pending" value={focusStats.pendingFollowups} />
-                <HighlightRow label="Overdue" value={focusStats.overdueFollowups} tone="danger" />
-                <HighlightRow label="Due today" value={focusStats.dueToday} tone="accent" />
-              </>
-            )}
-          </div>
-          <div className="mini-list">
-            {workspaceFilter === "operations"
-              ? focusedOperationsBoard.slice(0, 4).map((task) => (
-                  <button
-                    key={task.id}
-                    type="button"
-                    className="mini-card"
-                    onClick={() => {
-                      const target = leads.find((lead) => lead.id === task.lead_id);
-                      if (target) {
-                        setSelectedLead(target);
-                        setCurrentView("operations");
-                      }
-                    }}
-                  >
-                    <strong>{task.title}</strong>
-                    <span>{labelize(task.task_type)}</span>
-                    <small>{formatDateTime(task.scheduled_for)}</small>
-                  </button>
-                ))
-              : focusedFollowupBoard.slice(0, 4).map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className="mini-card"
-                    onClick={() => {
-                      const target = leads.find((lead) => lead.id === item.lead_id);
-                      if (target) {
-                        setSelectedLead(target);
-                        setCurrentView("followups");
-                      }
-                    }}
-                  >
-                    <strong>{item.lead_name}</strong>
-                    <span>{labelize(item.followup_type)}</span>
-                    <small>{formatDateTime(item.followup_date)}</small>
-                  </button>
-                ))}
-            {workspaceFilter === "operations" && focusedOperationsBoard.length === 0 ? (
-              <EmptyState title="No open ops focus" message="Operations watch items will show here once tasks are assigned." compact />
-            ) : null}
-            {workspaceFilter !== "operations" && focusedFollowupBoard.length === 0 ? (
-              <EmptyState title="No follow-up focus" message="Today and overdue follow-ups will surface here automatically." compact />
-            ) : null}
-          </div>
-          <div className="mini-list">
-            {filteredProducts.slice(0, 3).map((product) => (
-              <div key={product.id} className="timeline-item">
-                <strong>{product.name}</strong>
-                <p className="muted">
-                  {product.tile_size || "Standard"} | Rs {product.price_per_sqft}/sqft
-                </p>
-              </div>
+      {isOverview ? (
+        <>
+          <section className="stats-grid">
+            {summaryCards.map((card) => (
+              <StatCard key={card.label} label={card.label} value={card.value} tone={card.tone || "default"} />
             ))}
-            {filteredProducts.length === 0 ? (
-              <EmptyState title="No inventory highlights" message="Saved products will appear here for quick quoting and stock checks." compact />
+          </section>
+
+          <main className="feature-grid">
+            {showQuickLeadEntry ? (
+            <section className="panel span-two">
+              <div className="section-head">
+                <h2>Quick lead entry</h2>
+                <span>{loading ? "Syncing..." : "Under 10 seconds for sales team use"}</span>
+              </div>
+              <form className="form-grid" onSubmit={handleCreateLead}>
+                <input
+                  placeholder="Customer name"
+                  value={leadForm.name}
+                  onChange={(event) => setLeadForm({ ...leadForm, name: event.target.value })}
+                />
+                <input
+                  placeholder="Phone"
+                  value={leadForm.phone}
+                  onChange={(event) => setLeadForm({ ...leadForm, phone: event.target.value })}
+                />
+                <input
+                  placeholder="Location"
+                  value={leadForm.location}
+                  onChange={(event) => setLeadForm({ ...leadForm, location: event.target.value })}
+                />
+                <select
+                  value={leadForm.department}
+                  onChange={(event) => setLeadForm({ ...leadForm, department: event.target.value })}
+                >
+                  <option value="sales">Sales</option>
+                  <option value="operations">Operations</option>
+                </select>
+                <select
+                  value={leadForm.business_unit}
+                  onChange={(event) => setLeadForm({ ...leadForm, business_unit: event.target.value })}
+                >
+                  <option value="tiles">Tiles</option>
+                  <option value="plumbing">Plumbing</option>
+                  <option value="both">Tiles + Plumbing</option>
+                </select>
+                <select
+                  value={leadForm.customer_type}
+                  onChange={(event) => setLeadForm({ ...leadForm, customer_type: event.target.value })}
+                >
+                  {customerTypes.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={leadForm.requirement_category}
+                  onChange={(event) =>
+                    setLeadForm({ ...leadForm, requirement_category: event.target.value })
+                  }
+                >
+                  {requirementCategories.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="number"
+                  placeholder="Budget"
+                  value={leadForm.budget}
+                  onChange={(event) => setLeadForm({ ...leadForm, budget: event.target.value })}
+                />
+                <select
+                  value={leadForm.timeline}
+                  onChange={(event) => setLeadForm({ ...leadForm, timeline: event.target.value })}
+                >
+                  {timelines.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={leadForm.lead_source}
+                  onChange={(event) => setLeadForm({ ...leadForm, lead_source: event.target.value })}
+                >
+                  {leadSources.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={leadForm.status}
+                  onChange={(event) => setLeadForm({ ...leadForm, status: event.target.value })}
+                >
+                  {leadStatuses.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={leadForm.assigned_to}
+                  onChange={(event) => setLeadForm({ ...leadForm, assigned_to: event.target.value })}
+                >
+                  <option value="">Unassigned</option>
+                  {users.map((teamMember) => (
+                    <option key={teamMember.id} value={teamMember.id}>
+                      {teamMember.name}
+                    </option>
+                  ))}
+                </select>
+                <textarea
+                  className="full-span"
+                  placeholder="Requirement details"
+                  value={leadForm.requirement}
+                  onChange={(event) => setLeadForm({ ...leadForm, requirement: event.target.value })}
+                />
+                <button className="full-span accent" type="submit" disabled={busyAction === "save-lead"}>
+                  {busyAction === "save-lead" ? "Saving Lead..." : "Save Lead"}
+                </button>
+              </form>
+            </section>
             ) : null}
-          </div>
-        </section>
-      </main>
+
+                <section className="panel adhesive-ledger-panel">
+              <div className="section-head">
+                <h2>
+                  {workspaceFilter === "operations" ? "Operations watchlist" : "Follow-up discipline"}
+                </h2>
+                <span>
+                  {workspaceFilter === "operations"
+                    ? `${focusStats.openOpsTasks} open tasks`
+                    : `${todaysFollowups.length} today`}
+                </span>
+              </div>
+              <div className="stack">
+                {workspaceFilter === "operations" ? (
+                  <>
+                    <HighlightRow label="Open tasks" value={focusStats.openOpsTasks} />
+                    <HighlightRow label="Delayed" value={focusStats.delayedOpsTasks} tone="danger" />
+                    <HighlightRow label="Completed" value={focusStats.completedOpsTasks} tone="accent" />
+                  </>
+                ) : (
+                  <>
+                    <HighlightRow label="Pending" value={focusStats.pendingFollowups} />
+                    <HighlightRow label="Overdue" value={focusStats.overdueFollowups} tone="danger" />
+                    <HighlightRow label="Due today" value={focusStats.dueToday} tone="accent" />
+                  </>
+                )}
+              </div>
+              <div className="mini-list">
+                {workspaceFilter === "operations"
+                  ? focusedOperationsBoard.slice(0, 4).map((task) => (
+                      <button
+                        key={task.id}
+                        type="button"
+                        className="mini-card"
+                        onClick={() => {
+                          const target = leads.find((lead) => lead.id === task.lead_id);
+                          if (target) {
+                            setSelectedLead(target);
+                            setCurrentView("operations");
+                          }
+                        }}
+                      >
+                        <strong>{task.title}</strong>
+                        <span>{labelize(task.task_type)}</span>
+                        <small>{formatDateTime(task.scheduled_for)}</small>
+                      </button>
+                    ))
+                  : focusedFollowupBoard.slice(0, 4).map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className="mini-card"
+                        onClick={() => {
+                          const target = leads.find((lead) => lead.id === item.lead_id);
+                          if (target) {
+                            setSelectedLead(target);
+                            setCurrentView("followups");
+                          }
+                        }}
+                      >
+                        <strong>{item.lead_name}</strong>
+                        <span>{labelize(item.followup_type)}</span>
+                        <small>{formatDateTime(item.followup_date)}</small>
+                      </button>
+                    ))}
+                {workspaceFilter === "operations" && focusedOperationsBoard.length === 0 ? (
+                  <EmptyState title="No open ops focus" message="Operations watch items will show here once tasks are assigned." compact />
+                ) : null}
+                {workspaceFilter !== "operations" && focusedFollowupBoard.length === 0 ? (
+                  <EmptyState title="No follow-up focus" message="Today and overdue follow-ups will surface here automatically." compact />
+                ) : null}
+              </div>
+              <div className="mini-list">
+                {filteredProducts.slice(0, 3).map((product) => (
+                  <div key={product.id} className="timeline-item">
+                    <strong>{product.name}</strong>
+                    <p className="muted">
+                      {product.tile_size || "Standard"} | Rs {product.price_per_sqft}/sqft
+                    </p>
+                  </div>
+                ))}
+                {filteredProducts.length === 0 ? (
+                  <EmptyState title="No inventory highlights" message="Saved products will appear here for quick quoting and stock checks." compact />
+                ) : null}
+              </div>
+            </section>
+          </main>
+        </>
+      ) : null}
 
       {["overview", "pipeline", "followups", "operations"].includes(currentView) ? (
         <Suspense fallback={<LazySectionFallback label="lead workspace" />}>
