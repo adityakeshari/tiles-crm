@@ -5,7 +5,9 @@ import { validateExpensePayload } from "../utils/validation.js";
 
 const router = express.Router();
 
-router.use(requireRole("admin", "manager", "accounts"));
+// Read + insert are accessible to operator (Poonam) and operations as well, so daily
+// showroom expense entries are not blocked. Update/delete remain restricted below.
+router.use(requireRole("admin", "manager", "accounts", "operations", "operator"));
 
 router.get("/", async (_req, res) => {
   try {
@@ -88,10 +90,17 @@ router.post("/", async (req, res) => {
 
   try {
     const result = await query(
-      `INSERT INTO expenses (category, expense_date, amount, note, created_by)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO expenses (category, expense_date, amount, note, paid_by, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [expense.category, expense.expense_date, expense.amount, expense.note, req.user.id]
+      [
+        expense.category,
+        expense.expense_date,
+        expense.amount,
+        expense.note,
+        expense.paid_by,
+        req.user.id,
+      ]
     );
 
     return res.status(201).json(result.rows[0]);
@@ -100,7 +109,7 @@ router.post("/", async (req, res) => {
   }
 });
 
-router.put("/:id", async (req, res) => {
+router.put("/:id", requireRole("admin", "manager", "accounts"), async (req, res) => {
   const { id } = req.params;
   const validation = validateExpensePayload(req.body);
 
@@ -113,10 +122,17 @@ router.put("/:id", async (req, res) => {
   try {
     const result = await query(
       `UPDATE expenses
-       SET category = $1, expense_date = $2, amount = $3, note = $4
-       WHERE id = $5
+       SET category = $1, expense_date = $2, amount = $3, note = $4, paid_by = $5
+       WHERE id = $6
        RETURNING *`,
-      [expense.category, expense.expense_date, expense.amount, expense.note, id]
+      [
+        expense.category,
+        expense.expense_date,
+        expense.amount,
+        expense.note,
+        expense.paid_by,
+        id,
+      ]
     );
 
     if (result.rowCount === 0) {

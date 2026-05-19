@@ -1,0 +1,352 @@
+{
+  "C:\\Users\\hp\\Documents\\tiles-crm\\database.sql": {
+    "mtime": 1778498911.1402297,
+    "ast_hash": "bdc4c15d43f03347c0e897e2e48f30a4",
+    "semantic_hash": "bdc4c15d43f03347c0e897e2e48f30a4"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\package.json": {
+    "mtime": 1777550008.9030252,
+    "ast_hash": "d99ada3251cb7228ae08ba87b1ec0d39",
+    "semantic_hash": "d99ada3251cb7228ae08ba87b1ec0d39"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\run-crm.mjs": {
+    "mtime": 1777710384.159232,
+    "ast_hash": "039231b3c18d9a6d98f080cbdda8c26f",
+    "semantic_hash": "039231b3c18d9a6d98f080cbdda8c26f"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\package.json": {
+    "mtime": 1777550004.1614258,
+    "ast_hash": "1f7c3ab3d7eec27fc131455ee911e21c",
+    "semantic_hash": "1f7c3ab3d7eec27fc131455ee911e21c"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\migrations\\015_multi_role_users.sql": {
+    "mtime": 1778162269.9817138,
+    "ast_hash": "d46a787ec9632e28462037bfff257701",
+    "semantic_hash": "d46a787ec9632e28462037bfff257701"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\migrations\\016_token_claim_user_tracking.sql": {
+    "mtime": 1778310489.590594,
+    "ast_hash": "33af9e193234fdc7678cbee08cc93af4",
+    "semantic_hash": "33af9e193234fdc7678cbee08cc93af4"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\migrations\\017_complete_mason_token_repair.sql": {
+    "mtime": 1778404627.988474,
+    "ast_hash": "839515a6161c2d0d0676454696046e93",
+    "semantic_hash": "839515a6161c2d0d0676454696046e93"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\migrations\\018_registered_mason_working_profile.sql": {
+    "mtime": 1778480488.4854746,
+    "ast_hash": "fbfccd921c6a53e915a8270562738417",
+    "semantic_hash": "fbfccd921c6a53e915a8270562738417"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\migrations\\019_dashboard_scaling_indexes.sql": {
+    "mtime": 1778498923.3040574,
+    "ast_hash": "17f2f088103152cf6640baba3b6e7308",
+    "semantic_hash": "17f2f088103152cf6640baba3b6e7308"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\migrations\\020_purchase_entries.sql": {
+    "mtime": 1779091162.2771227,
+    "ast_hash": "5e15e97aa9574fa42cb5e094c8e87587",
+    "semantic_hash": "5e15e97aa9574fa42cb5e094c8e87587"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\migrations\\021_user_role_expand.sql": {
+    "mtime": 1779091166.0545223,
+    "ast_hash": "72fda4cd9c63ced2947ae49889197abf",
+    "semantic_hash": "72fda4cd9c63ced2947ae49889197abf"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\migrations\\022_mason_alt_mobile.sql": {
+    "mtime": 1779091167.557006,
+    "ast_hash": "2148d876e246e158ad3f93bed01d931e",
+    "semantic_hash": "2148d876e246e158ad3f93bed01d931e"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\migrations\\023_expense_paid_by.sql": {
+    "mtime": 1779091171.548077,
+    "ast_hash": "452d9ec9c208689ffc5ebe3297d3a166",
+    "semantic_hash": "452d9ec9c208689ffc5ebe3297d3a166"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\migrations\\024_token_claim_duplicate_guard.sql": {
+    "mtime": 1779091180.5404024,
+    "ast_hash": "6e83a18801d72f54f19fc2a73264ce7b",
+    "semantic_hash": "6e83a18801d72f54f19fc2a73264ce7b"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\migrations\\025_purchases_and_dashboard_indexes.sql": {
+    "mtime": 1779091183.0003145,
+    "ast_hash": "3c2304b7ff5711bef337da5c2f5dee6c",
+    "semantic_hash": "3c2304b7ff5711bef337da5c2f5dee6c"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\scripts\\create-admin.js": {
+    "mtime": 1777549938.2210264,
+    "ast_hash": "a39a960c31ce3ab3808eb4ed5b274bc5",
+    "semantic_hash": "a39a960c31ce3ab3808eb4ed5b274bc5"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\scripts\\seed-demo-data.js": {
+    "mtime": 1777549999.478836,
+    "ast_hash": "b6da1ade2275f3ef747a6f434b18140e",
+    "semantic_hash": "b6da1ade2275f3ef747a6f434b18140e"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\src\\app.js": {
+    "mtime": 1779091366.813311,
+    "ast_hash": "f6571f80b3fa525779a7dabaf2823bc7",
+    "semantic_hash": "f6571f80b3fa525779a7dabaf2823bc7"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\src\\db.js": {
+    "mtime": 1778498462.6333447,
+    "ast_hash": "065a5cdf5902ae90cf0975cb11fdd874",
+    "semantic_hash": "065a5cdf5902ae90cf0975cb11fdd874"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\src\\server.js": {
+    "mtime": 1778496103.2608147,
+    "ast_hash": "1e478213edd4978c741634ca867e8393",
+    "semantic_hash": "1e478213edd4978c741634ca867e8393"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\src\\middleware\\auth.js": {
+    "mtime": 1778162280.990301,
+    "ast_hash": "624fd48f6ad357a968336e58d84b59f2",
+    "semantic_hash": "624fd48f6ad357a968336e58d84b59f2"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\src\\routes\\auth.js": {
+    "mtime": 1778162364.3914943,
+    "ast_hash": "8f11f96006954d12b3312a1cbbcc9dd5",
+    "semantic_hash": "8f11f96006954d12b3312a1cbbcc9dd5"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\src\\routes\\complaints.js": {
+    "mtime": 1778498844.410614,
+    "ast_hash": "16dd1baf6f50b5394c03ae6ea66cd4c9",
+    "semantic_hash": "16dd1baf6f50b5394c03ae6ea66cd4c9"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\src\\routes\\dashboard.js": {
+    "mtime": 1779091311.7909055,
+    "ast_hash": "48cff230effd6565314c99355f48e73c",
+    "semantic_hash": "48cff230effd6565314c99355f48e73c"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\src\\routes\\dealers.js": {
+    "mtime": 1778498475.1216443,
+    "ast_hash": "04a124c4a57f50469fc7fb4e5e814965",
+    "semantic_hash": "04a124c4a57f50469fc7fb4e5e814965"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\src\\routes\\expenses.js": {
+    "mtime": 1779091394.2291503,
+    "ast_hash": "7445a9bf5fc944017b9832f573af6e51",
+    "semantic_hash": "7445a9bf5fc944017b9832f573af6e51"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\src\\routes\\exports.js": {
+    "mtime": 1777549890.2450294,
+    "ast_hash": "37b8f534877d124513e74d117b6bbac1",
+    "semantic_hash": "37b8f534877d124513e74d117b6bbac1"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\src\\routes\\inventory.js": {
+    "mtime": 1778498481.3720303,
+    "ast_hash": "3685dd1d96fe9ac56e6840d07f670b89",
+    "semantic_hash": "3685dd1d96fe9ac56e6840d07f670b89"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\src\\routes\\leads.js": {
+    "mtime": 1779091471.385986,
+    "ast_hash": "7605060870038eaad1471e3a0511bfd0",
+    "semantic_hash": "7605060870038eaad1471e3a0511bfd0"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\src\\routes\\notifications.js": {
+    "mtime": 1777542903.2534022,
+    "ast_hash": "6e285ce4be19be0031d7b582c38fa577",
+    "semantic_hash": "6e285ce4be19be0031d7b582c38fa577"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\src\\routes\\plumbing.js": {
+    "mtime": 1777568543.103359,
+    "ast_hash": "efbd9e7a5349f2028f770f948460f165",
+    "semantic_hash": "efbd9e7a5349f2028f770f948460f165"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\src\\routes\\projects.js": {
+    "mtime": 1778498868.6109426,
+    "ast_hash": "8bd2afa80c3dc22d05de2d8b8462130e",
+    "semantic_hash": "8bd2afa80c3dc22d05de2d8b8462130e"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\src\\routes\\purchases.js": {
+    "mtime": 1779091289.54174,
+    "ast_hash": "560207c18058fccc34f08f7bcfa22fbd",
+    "semantic_hash": "560207c18058fccc34f08f7bcfa22fbd"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\src\\routes\\reports.js": {
+    "mtime": 1779091343.528656,
+    "ast_hash": "0e3764e6e4935de195449350f6b8326a",
+    "semantic_hash": "0e3764e6e4935de195449350f6b8326a"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\src\\routes\\schemes.js": {
+    "mtime": 1779091493.0619495,
+    "ast_hash": "eafcf5e71aa23bce8f4bb4682a4e9ae4",
+    "semantic_hash": "eafcf5e71aa23bce8f4bb4682a4e9ae4"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\src\\routes\\users.js": {
+    "mtime": 1778162352.9802527,
+    "ast_hash": "ba64eec09d9ab6598d73aee6b4012a31",
+    "semantic_hash": "ba64eec09d9ab6598d73aee6b4012a31"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\src\\utils\\invoicePdf.js": {
+    "mtime": 1777549839.0641785,
+    "ast_hash": "d8c47aa66b702510f4030a587deb2cdf",
+    "semantic_hash": "d8c47aa66b702510f4030a587deb2cdf"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\src\\utils\\quotationPdf.js": {
+    "mtime": 1777549847.7775335,
+    "ast_hash": "9fcb86241f1fa824ea7752b3e7307b4e",
+    "semantic_hash": "9fcb86241f1fa824ea7752b3e7307b4e"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\src\\utils\\ttlCache.js": {
+    "mtime": 1778498766.4690619,
+    "ast_hash": "90a0772360fed1958ebc349c3703b644",
+    "semantic_hash": "90a0772360fed1958ebc349c3703b644"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\backend\\src\\utils\\validation.js": {
+    "mtime": 1779091224.7573729,
+    "ast_hash": "06eb7c00328a3556f8487a8ed67d056f",
+    "semantic_hash": "06eb7c00328a3556f8487a8ed67d056f"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\frontend\\package.json": {
+    "mtime": 1777989349.5979853,
+    "ast_hash": "dd49943b6a16c3321c72efe680d1015e",
+    "semantic_hash": "dd49943b6a16c3321c72efe680d1015e"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\frontend\\serve-static.mjs": {
+    "mtime": 1777990906.6997137,
+    "ast_hash": "5138f0b41219b9791ecda6c024aa80ff",
+    "semantic_hash": "5138f0b41219b9791ecda6c024aa80ff"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\frontend\\vite.config.js": {
+    "mtime": 1776576916.7703314,
+    "ast_hash": "ee80d09370b6bfb1ad86efd9a737e411",
+    "semantic_hash": "ee80d09370b6bfb1ad86efd9a737e411"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\frontend\\scripts\\copy-webconfig.mjs": {
+    "mtime": 1777989342.2076955,
+    "ast_hash": "203fdc28573e61c33faaad15babc00e7",
+    "semantic_hash": "203fdc28573e61c33faaad15babc00e7"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\frontend\\src\\api.js": {
+    "mtime": 1779091522.0912373,
+    "ast_hash": "f0da60eb6aff97d2c7be9b9e935566fa",
+    "semantic_hash": "f0da60eb6aff97d2c7be9b9e935566fa"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\frontend\\src\\App.jsx": {
+    "mtime": 1779129410.8650677,
+    "ast_hash": "1c6686e5ff94e718a8b9b5d12d5543fd",
+    "semantic_hash": "1c6686e5ff94e718a8b9b5d12d5543fd"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\frontend\\src\\main.jsx": {
+    "mtime": 1776576917.0193462,
+    "ast_hash": "b4082f39a596d0bd64120f6e2334f45c",
+    "semantic_hash": "b4082f39a596d0bd64120f6e2334f45c"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\migrations\\001_harden_existing_schema.sql": {
+    "mtime": 1776578520.86059,
+    "ast_hash": "b0725204cb8d51913766741eb28f3519",
+    "semantic_hash": "b0725204cb8d51913766741eb28f3519"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\migrations\\002_expand_tiles_crm_modules.sql": {
+    "mtime": 1776585835.5047247,
+    "ast_hash": "6a8e6d578b97abb6f2515936cd10c087",
+    "semantic_hash": "6a8e6d578b97abb6f2515936cd10c087"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\migrations\\003_inventory_module.sql": {
+    "mtime": 1776588207.9762096,
+    "ast_hash": "de837dec0800e8634f50024ddc326b69",
+    "semantic_hash": "de837dec0800e8634f50024ddc326b69"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\migrations\\004_inventory_quote_link.sql": {
+    "mtime": 1776749344.9163399,
+    "ast_hash": "b2f4069ce412cb8d56811f29757dfb5e",
+    "semantic_hash": "b2f4069ce412cb8d56811f29757dfb5e"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\migrations\\005_sales_operations_plumbing.sql": {
+    "mtime": 1777294559.961461,
+    "ast_hash": "2973167d5f622c3dba639fd7c0f05e2b",
+    "semantic_hash": "2973167d5f622c3dba639fd7c0f05e2b"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\migrations\\006_operations_tasks.sql": {
+    "mtime": 1777294924.0512285,
+    "ast_hash": "e584242e8fbe0fb1024bffbe027ec265",
+    "semantic_hash": "e584242e8fbe0fb1024bffbe027ec265"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\migrations\\007_token_scheme_management.sql": {
+    "mtime": 1777295954.240315,
+    "ast_hash": "64f8ce76f946322cf59d2590b1cbc209",
+    "semantic_hash": "64f8ce76f946322cf59d2590b1cbc209"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\migrations\\008_complaints_management.sql": {
+    "mtime": 1777351165.1096125,
+    "ast_hash": "99fdad7c4321c40aaabfd081088c163e",
+    "semantic_hash": "99fdad7c4321c40aaabfd081088c163e"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\migrations\\009_complaint_operations_link.sql": {
+    "mtime": 1777351471.380834,
+    "ast_hash": "f2e5573395714c40048f0c772cc562d1",
+    "semantic_hash": "f2e5573395714c40048f0c772cc562d1"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\migrations\\010_app_notifications.sql": {
+    "mtime": 1777542936.9707596,
+    "ast_hash": "37f8b69bffa53c039e5c360cf0becdeb",
+    "semantic_hash": "37f8b69bffa53c039e5c360cf0becdeb"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\migrations\\011_plumbing_services.sql": {
+    "mtime": 1777546476.889271,
+    "ast_hash": "8e4e98f5281db25aba8f43b0d2e6f5ac",
+    "semantic_hash": "8e4e98f5281db25aba8f43b0d2e6f5ac"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\migrations\\012_owner_projects_finance.sql": {
+    "mtime": 1777547072.3933372,
+    "ast_hash": "a9edcfa46cc6ac10daebf2ff9fec97e8",
+    "semantic_hash": "a9edcfa46cc6ac10daebf2ff9fec97e8"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\migrations\\013_adhesive_token_redemption.sql": {
+    "mtime": 1777573248.5627162,
+    "ast_hash": "13a816dc46ea2cbdb5b16e527583e67a",
+    "semantic_hash": "13a816dc46ea2cbdb5b16e527583e67a"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\migrations\\014_adhesive_token_claims.sql": {
+    "mtime": 1777574880.0417109,
+    "ast_hash": "365348eefd7fb425c0ec83411136b193",
+    "semantic_hash": "365348eefd7fb425c0ec83411136b193"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\migrations\\015_registered_masons_token_enforcement.sql": {
+    "mtime": 1778137093.2749314,
+    "ast_hash": "9b09edf9036067ab76eb33c2f4395929",
+    "semantic_hash": "9b09edf9036067ab76eb33c2f4395929"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\DEPLOYMENT.md": {
+    "mtime": 1777989421.7261074,
+    "ast_hash": "5339b7eb99dd145027fb2d4f8b24d210",
+    "semantic_hash": "5339b7eb99dd145027fb2d4f8b24d210"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\docker-compose.yml": {
+    "mtime": 1776584968.2570863,
+    "ast_hash": "28ba1d08a12b60ea9112965074564434",
+    "semantic_hash": "28ba1d08a12b60ea9112965074564434"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\README.md": {
+    "mtime": 1777573967.2739618,
+    "ast_hash": "0a0c012310a67ae22c924bfa42ed6c5b",
+    "semantic_hash": "0a0c012310a67ae22c924bfa42ed6c5b"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\SERVER_2016_CHECKLIST.md": {
+    "mtime": 1777989438.238243,
+    "ast_hash": "220955a7ba038e83865f66e1b05d9043",
+    "semantic_hash": "220955a7ba038e83865f66e1b05d9043"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\frontend\\index.html": {
+    "mtime": 1776576916.8348403,
+    "ast_hash": "33b01f3e376535cd9643aeaa26b4195e",
+    "semantic_hash": "33b01f3e376535cd9643aeaa26b4195e"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\scripts\\README_SERVER_RUN_ORDER.md": {
+    "mtime": 1778137824.7421117,
+    "ast_hash": "fd24903c6f1156c7e51ddb6ca27f3e91",
+    "semantic_hash": "fd24903c6f1156c7e51ddb6ca27f3e91"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\scripts\\deployment\\README_AUTO_DEPLOYMENT.md": {
+    "mtime": 1778311320.8611884,
+    "ast_hash": "ebcd88a3b4369fb9dc1af829b3ecc322",
+    "semantic_hash": "ebcd88a3b4369fb9dc1af829b3ecc322"
+  },
+  "C:\\Users\\hp\\Documents\\tiles-crm\\scripts\\deployment\\README_SAFE_DEPLOYMENT.md": {
+    "mtime": 1778334093.309456,
+    "ast_hash": "8458fc1226df072eac355856c385e723",
+    "semantic_hash": "8458fc1226df072eac355856c385e723"
+  }
+}

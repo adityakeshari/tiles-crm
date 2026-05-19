@@ -364,9 +364,37 @@ router.get("/", async (req, res) => {
 
 router.get("/masons", async (req, res) => {
   const limit = parseListLimit(req.query.limit, DEFAULT_MASONS_LIMIT);
+  const status = typeof req.query.status === "string" ? req.query.status.trim() : "";
+  const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+
+  const params = [];
+  const conds = [];
+
+  if (status === "active" || status === "inactive") {
+    params.push(status);
+    conds.push(`status = $${params.length}`);
+  }
+
+  if (search) {
+    params.push(`%${search}%`);
+    conds.push(
+      `(name ILIKE $${params.length} OR mobile ILIKE $${params.length} OR alt_mobile ILIKE $${params.length} OR current_address_city ILIKE $${params.length})`
+    );
+  }
+
+  const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
+  params.push(limit);
+  const limitIdx = params.length;
 
   try {
-    return res.json(await listMasons(query, limit));
+    const result = await query(
+      `${masonSelectClause}
+       ${where}
+       ORDER BY name ASC, id ASC
+       LIMIT $${limitIdx}`,
+      params
+    );
+    return res.json(result.rows);
   } catch (error) {
     return res.status(500).json({ message: "Unable to fetch registered masons", error: error.message });
   }
@@ -398,15 +426,16 @@ router.post("/masons", requireRole("admin", "manager"), async (req, res) => {
 
     const result = await query(
       `INSERT INTO masons (
-         name, mobile, area, current_address, current_address_city,
+         name, mobile, alt_mobile, area, current_address, current_address_city,
          permanent_address, permanent_address_city, working_areas,
-         working_distance_upto_km, status, created_by
+         working_distance_upto_km, status, remarks, created_by
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13)
        RETURNING *`,
       [
         mason.name,
         mason.mobile,
+        mason.alt_mobile,
         mason.area,
         mason.current_address,
         mason.current_address_city,
@@ -415,6 +444,7 @@ router.post("/masons", requireRole("admin", "manager"), async (req, res) => {
         JSON.stringify(mason.working_areas),
         mason.working_distance_upto_km,
         mason.status,
+        mason.remarks,
         req.user.id,
       ]
     );
@@ -479,19 +509,24 @@ router.put("/masons/:id", requireRole("admin", "manager"), async (req, res) => {
       `UPDATE masons
        SET name = $1,
            mobile = $2,
-           area = $3,
-           current_address = $4,
-           current_address_city = $5,
-           permanent_address = $6,
-           permanent_address_city = $7,
-           working_areas = $8::jsonb,
-           working_distance_upto_km = $9,
-           status = $10
-       WHERE id = $11
+           alt_mobile = $3,
+           area = $4,
+           current_address = $5,
+           current_address_city = $6,
+           permanent_address = $7,
+           permanent_address_city = $8,
+           working_areas = $9::jsonb,
+           working_distance_upto_km = $10,
+           status = $11,
+           remarks = $12,
+           updated_by = $13,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $14
        RETURNING *`,
       [
         mason.name,
         mason.mobile,
+        mason.alt_mobile,
         mason.area,
         mason.current_address,
         mason.current_address_city,
@@ -500,6 +535,8 @@ router.put("/masons/:id", requireRole("admin", "manager"), async (req, res) => {
         JSON.stringify(mason.working_areas),
         mason.working_distance_upto_km,
         mason.status,
+        mason.remarks,
+        req.user.id,
         id,
       ]
     );
@@ -578,6 +615,28 @@ router.post("/claims", requireRole("admin", "manager", "operations", "sales"), a
 
     const verification_status = buildVerificationStatus(claim, projectContext);
 
+    // Soft duplicate-claim guard: a non-rejected claim with the same mason + invoice + sale date
+    // is treated as a duplicate. This complements the partial unique index from migration 024,
+    // and gives a clear error message even if the index could not be created due to legacy data.
+    if (claim.invoice_number) {
+      const duplicate = await client.query(
+        `SELECT id FROM adhesive_token_claims
+          WHERE mason_id = $1
+            AND LOWER(invoice_number) = LOWER($2)
+            AND COALESCE(sale_date::text, '') = COALESCE($3::text, '')
+            AND status <> 'rejected'
+          LIMIT 1`,
+        [claim.mason_id, claim.invoice_number, claim.sale_date]
+      );
+      if (duplicate.rowCount > 0) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({
+          message: "Duplicate token claim for this mason, invoice and sale date",
+          existing_claim_id: duplicate.rows[0].id,
+        });
+      }
+    }
+
     const claimResult = await client.query(
       `INSERT INTO adhesive_token_claims (
          site_name, project_id, invoice_number, sale_date, customer_name,
@@ -640,6 +699,11 @@ router.post("/claims", requireRole("admin", "manager", "operations", "sales"), a
     return res.status(201).json(detail);
   } catch (error) {
     await client.query("ROLLBACK");
+    if (error && error.code === "23505") {
+      return res.status(409).json({
+        message: "Duplicate token claim for this mason, invoice and sale date",
+      });
+    }
     return res.status(500).json({ message: "Unable to create adhesive token claim", error: error.message });
   } finally {
     invalidateCachePrefix("schemes:");

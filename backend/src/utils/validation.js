@@ -30,7 +30,20 @@ const dealerCategories = new Set(["A", "B", "C"]);
 const leadDepartments = new Set(["sales", "operations"]);
 const businessUnits = new Set(["tiles", "plumbing", "both"]);
 const productStatuses = new Set(["active", "fast_moving", "dead_stock"]);
-const userRoles = new Set(["admin", "manager", "sales", "operations", "accounts", "inventory", "token", "reports"]);
+const userRoles = new Set([
+  "admin",
+  "manager",
+  "sales",
+  "operations",
+  "accounts",
+  "operator",
+  "inventory",
+  "token",
+  "reports",
+]);
+const expensePaymentModes = new Set(["cash", "bank", "upi", "cheque", "card", "other"]);
+const purchaseBusinessUnits = new Set(["tiles", "plumbing", "both"]);
+const purchasePaymentStatuses = new Set(["pending", "partial", "paid"]);
 const adhesiveTokenStatuses = new Set(["pending", "paid", "rejected"]);
 const adhesiveVerificationStatuses = new Set(["unverified", "matched", "mismatch", "approved", "rejected"]);
 const projectStatuses = new Set(["draft", "active", "on_hold", "completed"]);
@@ -425,6 +438,7 @@ export function validatePlumbingJobPayload(payload) {
 export function validateMasonPayload(payload) {
   const name = normalizeString(payload.name);
   const mobile = normalizeString(payload.mobile);
+  const alt_mobile = normalizeOptionalString(payload.alt_mobile);
   const current_address = normalizeString(payload.current_address);
   const current_address_city = normalizeString(payload.current_address_city);
   const permanent_address = normalizeOptionalString(payload.permanent_address);
@@ -434,6 +448,7 @@ export function validateMasonPayload(payload) {
     .filter(Boolean))];
   const working_distance_upto_km = toInteger(payload.working_distance_upto_km, 0);
   const status = normalizeString(payload.status || "active");
+  const remarks = normalizeOptionalString(payload.remarks);
 
   if (!name) {
     return { ok: false, message: "Mason name is required" };
@@ -441,6 +456,10 @@ export function validateMasonPayload(payload) {
 
   if (!isPhoneValid(mobile)) {
     return { ok: false, message: "Mason mobile must be 7 to 15 characters" };
+  }
+
+  if (alt_mobile && !isPhoneValid(alt_mobile)) {
+    return { ok: false, message: "Alternate mobile must be 7 to 15 characters" };
   }
 
   if (!current_address) {
@@ -468,6 +487,7 @@ export function validateMasonPayload(payload) {
     value: {
       name,
       mobile,
+      alt_mobile,
       area: working_areas[0] || current_address_city || "",
       current_address,
       current_address_city,
@@ -476,6 +496,7 @@ export function validateMasonPayload(payload) {
       working_areas,
       working_distance_upto_km,
       status,
+      remarks,
     },
   };
 }
@@ -603,6 +624,7 @@ export function validateExpensePayload(payload) {
   const expense_date = normalizeOptionalString(payload.expense_date) || new Date().toISOString().slice(0, 10);
   const amount = toInteger(payload.amount);
   const note = normalizeOptionalString(payload.note);
+  const paid_by = normalizeString(payload.paid_by || "cash");
 
   if (!expenseCategories.has(category)) {
     return { ok: false, message: "Expense category is invalid" };
@@ -616,6 +638,10 @@ export function validateExpensePayload(payload) {
     return { ok: false, message: "Expense date is invalid" };
   }
 
+  if (!expensePaymentModes.has(paid_by)) {
+    return { ok: false, message: "Payment mode is invalid" };
+  }
+
   return {
     ok: true,
     value: {
@@ -623,8 +649,113 @@ export function validateExpensePayload(payload) {
       expense_date,
       amount,
       note,
+      paid_by,
     },
   };
+}
+
+export function validatePurchasePayload(payload) {
+  const supplier_name = normalizeString(payload.supplier_name);
+  const supplier_phone = normalizeOptionalString(payload.supplier_phone);
+  const invoice_number = normalizeOptionalString(payload.invoice_number);
+  const purchase_date =
+    normalizeOptionalString(payload.purchase_date) || new Date().toISOString().slice(0, 10);
+  const business_unit = normalizeString(payload.business_unit || "tiles");
+  const category = normalizeOptionalString(payload.category) || "tiles";
+  const item_name = normalizeOptionalString(payload.item_name);
+  const quantity = Number(payload.quantity ?? 0);
+  const unit = normalizeOptionalString(payload.unit) || "pcs";
+  const amount = Number(payload.amount ?? 0);
+  const gst_amount = Number(payload.gst_amount ?? 0);
+  const total_amount = Number(
+    payload.total_amount === "" || payload.total_amount === null || typeof payload.total_amount === "undefined"
+      ? amount + gst_amount
+      : payload.total_amount
+  );
+  const payment_status = normalizeString(payload.payment_status || "pending");
+  const remarks = normalizeOptionalString(payload.remarks);
+
+  if (!supplier_name) {
+    return { ok: false, message: "Supplier name is required" };
+  }
+
+  if (supplier_phone && !isPhoneValid(supplier_phone)) {
+    return { ok: false, message: "Supplier phone must be 7 to 15 characters" };
+  }
+
+  if (purchase_date && Number.isNaN(new Date(purchase_date).getTime())) {
+    return { ok: false, message: "Purchase date is invalid" };
+  }
+
+  if (!purchaseBusinessUnits.has(business_unit)) {
+    return { ok: false, message: "Purchase business unit is invalid" };
+  }
+
+  if (!Number.isFinite(quantity) || quantity < 0) {
+    return { ok: false, message: "Purchase quantity must be a non-negative number" };
+  }
+
+  if (!Number.isFinite(amount) || amount < 0) {
+    return { ok: false, message: "Purchase amount must be a non-negative number" };
+  }
+
+  if (!Number.isFinite(gst_amount) || gst_amount < 0) {
+    return { ok: false, message: "GST amount must be a non-negative number" };
+  }
+
+  if (!Number.isFinite(total_amount) || total_amount < 0) {
+    return { ok: false, message: "Total amount must be a non-negative number" };
+  }
+
+  if (!purchasePaymentStatuses.has(payment_status)) {
+    return { ok: false, message: "Payment status is invalid" };
+  }
+
+  return {
+    ok: true,
+    value: {
+      supplier_name,
+      supplier_phone,
+      invoice_number,
+      purchase_date,
+      business_unit,
+      category,
+      item_name,
+      quantity,
+      unit,
+      amount,
+      gst_amount,
+      total_amount,
+      payment_status,
+      remarks,
+    },
+  };
+}
+
+export function validateDailyReportQuery(query) {
+  const dateValue = normalizeOptionalString(query.date);
+  const date = dateValue || new Date().toISOString().slice(0, 10);
+
+  if (Number.isNaN(new Date(date).getTime())) {
+    return { ok: false, message: "Report date is invalid" };
+  }
+
+  return { ok: true, value: { date } };
+}
+
+export function validateDateRangeQuery(query) {
+  const from = normalizeOptionalString(query.from);
+  const to = normalizeOptionalString(query.to);
+
+  if (from && Number.isNaN(new Date(from).getTime())) {
+    return { ok: false, message: "Range start date is invalid" };
+  }
+
+  if (to && Number.isNaN(new Date(to).getTime())) {
+    return { ok: false, message: "Range end date is invalid" };
+  }
+
+  return { ok: true, value: { from: from || null, to: to || null } };
 }
 
 export function validateDealerPayload(payload) {

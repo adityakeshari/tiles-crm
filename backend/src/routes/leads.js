@@ -212,6 +212,33 @@ router.get("/dashboard/operations", async (_req, res) => {
 
 router.get("/", async (req, res) => {
   const limit = parseListLimit(req.query.limit);
+  const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+  const status = typeof req.query.status === "string" ? req.query.status.trim() : "";
+  const department = typeof req.query.department === "string" ? req.query.department.trim() : "";
+
+  const params = [];
+  const conditions = [];
+
+  if (search) {
+    params.push(`%${search}%`);
+    conditions.push(
+      `(l.name ILIKE $${params.length} OR l.phone ILIKE $${params.length} OR l.location ILIKE $${params.length} OR l.requirement ILIKE $${params.length})`
+    );
+  }
+
+  if (status) {
+    params.push(status);
+    conditions.push(`l.status = $${params.length}`);
+  }
+
+  if (department && (department === "sales" || department === "operations")) {
+    params.push(department);
+    conditions.push(`l.department = $${params.length}`);
+  }
+
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  params.push(limit);
+  const limitIdx = params.length;
 
   try {
     const result = await query(
@@ -257,9 +284,10 @@ router.get("/", async (req, res) => {
          FROM followups
          GROUP BY lead_id
        ) AS followup_summary ON followup_summary.lead_id = l.id
+       ${where}
        ORDER BY l.created_at DESC
-       LIMIT $1`,
-      [limit]
+       LIMIT $${limitIdx}`,
+      params
     );
 
     return res.json(result.rows);

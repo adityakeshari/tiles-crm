@@ -5,6 +5,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import authRoutes from "./routes/auth.js";
 import complaintsRoutes from "./routes/complaints.js";
+import dashboardRoutes from "./routes/dashboard.js";
 import dealersRoutes from "./routes/dealers.js";
 import expensesRoutes from "./routes/expenses.js";
 import exportsRoutes from "./routes/exports.js";
@@ -13,6 +14,8 @@ import leadsRoutes from "./routes/leads.js";
 import notificationsRoutes from "./routes/notifications.js";
 import plumbingRoutes from "./routes/plumbing.js";
 import projectsRoutes from "./routes/projects.js";
+import purchasesRoutes from "./routes/purchases.js";
+import reportsRoutes from "./routes/reports.js";
 import schemesRoutes from "./routes/schemes.js";
 import usersRoutes from "./routes/users.js";
 import { requireAuth } from "./middleware/auth.js";
@@ -65,6 +68,7 @@ app.get("/api/health", (_req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/complaints", requireAuth, complaintsRoutes);
+app.use("/api/dashboard", requireAuth, dashboardRoutes);
 app.use("/api/leads", requireAuth, leadsRoutes);
 app.use("/api/dealers", requireAuth, dealersRoutes);
 app.use("/api/expenses", requireAuth, expensesRoutes);
@@ -73,8 +77,16 @@ app.use("/api/inventory", requireAuth, inventoryRoutes);
 app.use("/api/notifications", requireAuth, notificationsRoutes);
 app.use("/api/plumbing", requireAuth, plumbingRoutes);
 app.use("/api/projects", requireAuth, projectsRoutes);
+app.use("/api/purchases", requireAuth, purchasesRoutes);
+app.use("/api/reports", requireAuth, reportsRoutes);
 app.use("/api/schemes", requireAuth, schemesRoutes);
 app.use("/api/users", requireAuth, usersRoutes);
+
+// JSON 404 for unmatched API routes. Must come before the SPA fallback so missing
+// endpoints don't return index.html with a 200 status.
+app.use("/api", (_req, res) => {
+  res.status(404).json({ message: "API route not found" });
+});
 
 if (hasFrontendBuild) {
   app.use(express.static(clientDistPath));

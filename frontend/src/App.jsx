@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, getCsvExportUrl, getProjectInvoicePdfUrl, getQuotationPdfUrl } from "./api.js";
 
 const AdhesiveTokensSection = lazy(() => import("./sections/AdhesiveTokensSection.jsx"));
@@ -5685,7 +5685,7 @@ export default function App() {
   );
 }
 
-function ListLoadControls({ count, limit, onLoadMore, disabled = false }) {
+function ListLoadControlsImpl({ count, limit, onLoadMore, disabled = false }) {
   return (
     <div className="lead-actions">
       <span className="muted">{count} loaded</span>
@@ -5696,8 +5696,9 @@ function ListLoadControls({ count, limit, onLoadMore, disabled = false }) {
     </div>
   );
 }
+const ListLoadControls = memo(ListLoadControlsImpl);
 
-function LeadDetailsPanel({
+function LeadDetailsPanelImpl({
     selectedLead,
   userRoles,
   editingLead,
@@ -6329,8 +6330,9 @@ function LeadDetailsPanel({
     </section>
   );
 }
+const LeadDetailsPanel = memo(LeadDetailsPanelImpl);
 
-function AccordionSection({ title, badge, summary, isOpen, onToggle, children }) {
+function AccordionSectionImpl({ title, badge, summary, isOpen, onToggle, children }) {
   return (
     <section className={`accordion-item ${isOpen ? "open" : ""}`}>
       <button type="button" className="accordion-trigger" onClick={onToggle} aria-expanded={isOpen}>
@@ -6347,8 +6349,9 @@ function AccordionSection({ title, badge, summary, isOpen, onToggle, children })
     </section>
   );
 }
+const AccordionSection = memo(AccordionSectionImpl);
 
-function ProjectCard({ project, selected, onSelect, onEdit, canEdit }) {
+function ProjectCardImpl({ project, selected, onSelect, onEdit, canEdit }) {
   return (
     <article className={`lead-card ${selected ? "active" : ""}`} onClick={onSelect}>
       <div className="section-head">
@@ -6382,8 +6385,9 @@ function ProjectCard({ project, selected, onSelect, onEdit, canEdit }) {
     </article>
   );
 }
+const ProjectCard = memo(ProjectCardImpl);
 
-function ProjectDetailPanel({
+function ProjectDetailPanelImpl({
   project,
   dispatchDraft,
   updateDispatchDraft,
@@ -6535,8 +6539,9 @@ function ProjectDetailPanel({
     </section>
   );
 }
+const ProjectDetailPanel = memo(ProjectDetailPanelImpl);
 
-function PlumbingJobCard({
+function PlumbingJobCardImpl({
   job,
   draft,
   onDraftChange,
@@ -6617,8 +6622,9 @@ function PlumbingJobCard({
     </article>
   );
 }
+const PlumbingJobCard = memo(PlumbingJobCardImpl);
 
-function LeadCard({ lead, selected, onSelect, onDelete, canDelete = false }) {
+function LeadCardImpl({ lead, selected, onSelect, onDelete, canDelete = false }) {
   return (
     <article
       className={`lead-card unit-${lead.business_unit} ${selected ? "active" : ""}`}
@@ -6659,8 +6665,9 @@ function LeadCard({ lead, selected, onSelect, onDelete, canDelete = false }) {
     </article>
   );
 }
+const LeadCard = memo(LeadCardImpl);
 
-function StatCard({ label, value, tone = "default" }) {
+function StatCardImpl({ label, value, tone = "default" }) {
   return (
     <article className={tone === "default" ? "stat-card" : `stat-card tone-${tone}`}>
       <span>{label}</span>
@@ -6668,8 +6675,9 @@ function StatCard({ label, value, tone = "default" }) {
     </article>
   );
 }
+const StatCard = memo(StatCardImpl);
 
-function HighlightRow({ label, value, tone = "default" }) {
+function HighlightRowImpl({ label, value, tone = "default" }) {
   return (
     <div className={`highlight-row tone-${tone}`}>
       <span>{label}</span>
@@ -6677,8 +6685,9 @@ function HighlightRow({ label, value, tone = "default" }) {
     </div>
   );
 }
+const HighlightRow = memo(HighlightRowImpl);
 
-function BadgeCard({ title, count, tone = "default" }) {
+function BadgeCardImpl({ title, count, tone = "default" }) {
   return (
     <article className={`stat-card tone-${tone}`}>
       <span>{title}</span>
@@ -6686,8 +6695,9 @@ function BadgeCard({ title, count, tone = "default" }) {
     </article>
   );
 }
+const BadgeCard = memo(BadgeCardImpl);
 
-function EmptyState({ title, message, compact = false }) {
+function EmptyStateImpl({ title, message, compact = false }) {
   return (
     <div className={`empty-state ${compact ? "compact" : ""}`}>
       <strong>{title}</strong>
@@ -6695,6 +6705,7 @@ function EmptyState({ title, message, compact = false }) {
     </div>
   );
 }
+const EmptyState = memo(EmptyStateImpl);
 
 function LazySectionFallback({ label = "module" }) {
   return (

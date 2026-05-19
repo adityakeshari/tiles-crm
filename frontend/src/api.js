@@ -138,8 +138,32 @@ export const api = {
   getStats: (options) => request("/leads/dashboard/stats", options),
   getFollowupBoard: (options) => request("/leads/dashboard/followups", options),
   getOperationsBoard: (options) => request("/leads/dashboard/operations", options),
+  getDashboardSummary: (options) => request("/dashboard/summary", options),
+  getDailyReport: (params = {}, options) =>
+    request(withQuery("/reports/daily", { date: params.date }), options),
+  getSalesReport: (params = {}, options) =>
+    request(withQuery("/reports/sales", { from: params.from, to: params.to }), options),
+  getCollectionReport: (params = {}, options) =>
+    request(withQuery("/reports/collection", { from: params.from, to: params.to }), options),
+  getCustomerPendingReport: (options) => request("/reports/customer-pending", options),
+  getTokenReport: (params = {}, options) =>
+    request(withQuery("/reports/token", { status: params.status }), options),
+  getMasonTokenSummary: (options) => request("/reports/mason-token-summary", options),
   getSchemesDashboard: (options = {}) => request(withQuery("/schemes", { limit: options.limit, mason_limit: options.mason_limit }), options),
-  getMasons: (options = {}) => request(withQuery("/schemes/masons", { limit: options.limit }), options),
+  getMasons: (options = {}) =>
+    request(
+      withQuery("/schemes/masons", {
+        limit: options.limit,
+        status: options.status,
+        search: options.search,
+      }),
+      options
+    ),
+  getActiveMasons: (options = {}) =>
+    request(
+      withQuery("/schemes/masons", { limit: options.limit || 300, status: "active" }),
+      options
+    ),
   createMason: (payload) =>
     request("/schemes/masons", {
       method: "POST",
@@ -155,7 +179,16 @@ export const api = {
   getPlumbingDashboard: (options) => request("/plumbing", options),
   getProjectsDashboard: (options = {}) => request(withQuery("/projects", { limit: options.limit }), options),
   getExpensesDashboard: (options) => request("/expenses", options),
-  getLeads: (options = {}) => request(withQuery("/leads", { limit: options.limit }), options),
+  getLeads: (options = {}) =>
+    request(
+      withQuery("/leads", {
+        limit: options.limit,
+        search: options.search,
+        status: options.status,
+        department: options.department,
+      }),
+      options
+    ),
   createLead: (payload) =>
     request("/leads", {
       method: "POST",
@@ -353,6 +386,32 @@ export const api = {
   markNotificationRead: (id) =>
     request(`/notifications/${id}/read`, {
       method: "PUT",
+    }),
+  getPurchases: (options = {}) =>
+    request(
+      withQuery("/purchases", {
+        limit: options.limit,
+        offset: options.offset,
+        search: options.search,
+        from: options.from,
+        to: options.to,
+        payment_status: options.payment_status,
+      }),
+      options
+    ),
+  createPurchase: (payload) =>
+    request("/purchases", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updatePurchase: (id, payload) =>
+    request(`/purchases/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  deletePurchase: (id) =>
+    request(`/purchases/${id}`, {
+      method: "DELETE",
     }),
   getUsers: (options) => request("/users", options),
   createUser: (payload) =>
