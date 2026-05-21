@@ -54,14 +54,14 @@ function LeadDetailsPanel(props) {
     users,
     followupForm,
     setFollowupForm,
-    followupFormErrors,
-    setFollowupFormErrors,
+    followupFormErrors = {},
+    setFollowupFormErrors = () => {},
     paymentForm,
     setPaymentForm,
     quotationForm,
     setQuotationForm,
-    quotationFormErrors,
-    setQuotationFormErrors,
+    quotationFormErrors = {},
+    setQuotationFormErrors = () => {},
     followups,
     payments,
     operationsTasks,
@@ -99,8 +99,8 @@ function LeadDetailsPanel(props) {
     buildVisitReminderMessage,
     buildQuotationWhatsAppMessage,
     getQuotationPdfUrl,
-    clearFieldErrorFromEvent,
-    getFieldErrorClass,
+    clearFieldErrorFromEvent = () => {},
+    getFieldErrorClass = () => "",
   } = props;
 
   const [openSection, setOpenSection] = useState("followups");
@@ -467,10 +467,14 @@ export default function LeadWorkspaceSection(props) {
     users,
     followupForm,
     setFollowupForm,
+    followupFormErrors = {},
+    setFollowupFormErrors = () => {},
     paymentForm,
     setPaymentForm,
     quotationForm,
     setQuotationForm,
+    quotationFormErrors = {},
+    setQuotationFormErrors = () => {},
     followups,
     payments,
     quotations,
@@ -516,6 +520,8 @@ export default function LeadWorkspaceSection(props) {
     paymentTypes,
     plumbingWorkTypes,
     plumbingJobStatuses,
+    clearFieldErrorFromEvent = () => {},
+    getFieldErrorClass = () => "",
   } = props;
 
   if (currentView === "overview") {
