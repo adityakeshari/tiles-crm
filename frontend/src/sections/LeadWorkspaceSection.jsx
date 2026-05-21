@@ -15,26 +15,18 @@ function AccordionSection({ title, badge, summary, isOpen, onToggle, children })
   );
 }
 
-function LeadCard({ lead, selected, onSelect, onDelete, canDelete = false }) {
+function LeadCard({ lead, selected, onSelect, onDelete, canDelete = false, formatDateTime }) {
   return (
     <article className={`lead-card unit-${lead.business_unit} ${selected ? "active" : ""}`} onClick={onSelect}>
-      <div className="section-head">
-        <div>
-          <h3>{lead.name}</h3>
-          <p>{lead.phone}</p>
-        </div>
+      <div className="lead-card-main">
+        <h3>{lead.name}</h3>
+        <p className="muted lead-card-line">{lead.phone} | {lead.location || "No area"}</p>
+        <p className="muted lead-card-line">
+          Budget Rs {lead.budget || 0} | Next follow-up: {lead.latest_followup ? formatDateTime(lead.latest_followup) : "Not scheduled"}
+        </p>
+      </div>
+      <div className="lead-card-footer">
         <span className={`status-chip status-${lead.status}`}>{lead.status_label || lead.status}</span>
-      </div>
-      <div className="chip-row">
-        <span className={`status-chip unit-chip unit-${lead.business_unit}`}>{lead.business_unit_label || lead.business_unit}</span>
-        <span className="status-chip">{lead.department_label || lead.department}</span>
-        <span className="status-chip">{lead.customer_type_label || lead.customer_type}</span>
-      </div>
-      <p className="muted">{lead.location || "No area"}</p>
-      <p>{lead.requirement || "No requirement captured yet."}</p>
-      <div className="lead-actions">
-        <small>Quote Rs {lead.latest_quote_amount || 0}</small>
-        <small>Paid Rs {lead.total_paid || 0}</small>
         {canDelete ? (
           <button
             type="button"
@@ -54,6 +46,7 @@ function LeadCard({ lead, selected, onSelect, onDelete, canDelete = false }) {
 
 function LeadDetailsPanel(props) {
   const {
+    className = "",
     selectedLead,
     userRoles,
     editingLead,
@@ -61,10 +54,14 @@ function LeadDetailsPanel(props) {
     users,
     followupForm,
     setFollowupForm,
+    followupFormErrors,
+    setFollowupFormErrors,
     paymentForm,
     setPaymentForm,
     quotationForm,
     setQuotationForm,
+    quotationFormErrors,
+    setQuotationFormErrors,
     followups,
     payments,
     operationsTasks,
@@ -102,6 +99,8 @@ function LeadDetailsPanel(props) {
     buildVisitReminderMessage,
     buildQuotationWhatsAppMessage,
     getQuotationPdfUrl,
+    clearFieldErrorFromEvent,
+    getFieldErrorClass,
   } = props;
 
   const [openSection, setOpenSection] = useState("followups");
@@ -117,15 +116,15 @@ function LeadDetailsPanel(props) {
 
   if (!selectedLead) {
     return (
-      <section className="panel">
+      <section className={`panel lead-details-panel ${className}`.trim()}>
         <h2>Lead details</h2>
-        <p className="muted">Select a lead to update status, quotations, follow-ups, and payments.</p>
+        <p className="muted">Select a lead to view follow-ups, quotation, payment and actions.</p>
       </section>
     );
   }
 
   return (
-    <section className="panel">
+    <section className={`panel lead-details-panel ${className}`.trim()}>
       <div className="section-head">
         <h2>{selectedLead.name}</h2>
         <span className={`status-chip status-${selectedLead.status}`}>{labelize(selectedLead.status)}</span>
@@ -161,7 +160,12 @@ function LeadDetailsPanel(props) {
 
       <div className="accordion-stack">
         <AccordionSection title="Follow-ups" badge={`${followups.length} entries`} isOpen={openSection === "followups"} onToggle={() => setOpenSection(openSection === "followups" ? "" : "followups")} summary="Track calls, WhatsApp reminders, and visit commitments in one place.">
-          <form className="stack" onSubmit={handleCreateFollowup}>
+          <form
+            className="stack"
+            onSubmit={handleCreateFollowup}
+            onInputCapture={(event) => clearFieldErrorFromEvent(event, setFollowupFormErrors)}
+            onChangeCapture={(event) => clearFieldErrorFromEvent(event, setFollowupFormErrors)}
+          >
             <select value={followupForm.followup_type} onChange={(event) => setFollowupForm({ ...followupForm, followup_type: event.target.value })}>
               {followupTypes.map((item) => (
                 <option key={item.value} value={item.value}>
@@ -169,8 +173,14 @@ function LeadDetailsPanel(props) {
                 </option>
               ))}
             </select>
-            <textarea placeholder="Conversation note" value={followupForm.note} onChange={(event) => setFollowupForm({ ...followupForm, note: event.target.value })} />
-            <input type="datetime-local" value={followupForm.followup_date} onChange={(event) => setFollowupForm({ ...followupForm, followup_date: event.target.value })} />
+            <div className="form-field">
+              <textarea data-field="note" className={getFieldErrorClass(followupFormErrors, "note")} placeholder="Conversation note" value={followupForm.note} onChange={(event) => setFollowupForm({ ...followupForm, note: event.target.value })} />
+              {followupFormErrors?.note ? <span className="field-error-message">{followupFormErrors.note}</span> : null}
+            </div>
+            <div className="form-field">
+              <input data-field="followup_date" className={getFieldErrorClass(followupFormErrors, "followup_date")} type="datetime-local" value={followupForm.followup_date} onChange={(event) => setFollowupForm({ ...followupForm, followup_date: event.target.value })} />
+              {followupFormErrors?.followup_date ? <span className="field-error-message">{followupFormErrors.followup_date}</span> : null}
+            </div>
             <button type="submit" disabled={busyAction === "save-followup"}>
               {busyAction === "save-followup" ? "Saving Follow-up..." : "Save Follow-up"}
             </button>
@@ -333,16 +343,25 @@ function LeadDetailsPanel(props) {
 
         {canManageQuotations ? (
           <AccordionSection title="Quotation builder" badge={`${quotations.length} quotations`} isOpen={openSection === "quotations"} onToggle={() => setOpenSection(openSection === "quotations" ? "" : "quotations")} summary="Prepare, save, and share quotations without leaving the lead.">
-            <form className="stack quotation-form" onSubmit={handleCreateQuotation}>
+            <form
+              className="stack quotation-form"
+              onSubmit={handleCreateQuotation}
+              onInputCapture={(event) => clearFieldErrorFromEvent(event, setQuotationFormErrors)}
+              onChangeCapture={(event) => clearFieldErrorFromEvent(event, setQuotationFormErrors)}
+            >
               <div className="mini-list">
                 {quotationForm.items.map((item, index) => (
                   <div key={`quote-item-${index}`} className="timeline-item">
                     <div className="quote-row">
-                      <input placeholder="Product name" value={item.product_name} onChange={(event) => updateQuotationItem(index, "product_name", event.target.value)} />
-                      <input placeholder="Tile size" value={item.tile_size} onChange={(event) => updateQuotationItem(index, "tile_size", event.target.value)} />
-                      <input type="number" placeholder="Qty sqft" value={item.quantity_sqft} onChange={(event) => updateQuotationItem(index, "quantity_sqft", event.target.value)} />
-                      <input type="number" placeholder="Unit price" value={item.unit_price} onChange={(event) => updateQuotationItem(index, "unit_price", event.target.value)} />
+                      <input data-field={`items.${index}.product_name`} className={getFieldErrorClass(quotationFormErrors, `items.${index}.product_name`)} placeholder="Product name" value={item.product_name} onChange={(event) => updateQuotationItem(index, "product_name", event.target.value)} />
+                      <input data-field={`items.${index}.tile_size`} className={getFieldErrorClass(quotationFormErrors, `items.${index}.tile_size`)} placeholder="Tile size" value={item.tile_size} onChange={(event) => updateQuotationItem(index, "tile_size", event.target.value)} />
+                      <input data-field={`items.${index}.quantity_sqft`} className={getFieldErrorClass(quotationFormErrors, `items.${index}.quantity_sqft`)} type="number" placeholder="Qty sqft" value={item.quantity_sqft} onChange={(event) => updateQuotationItem(index, "quantity_sqft", event.target.value)} />
+                      <input data-field={`items.${index}.unit_price`} className={getFieldErrorClass(quotationFormErrors, `items.${index}.unit_price`)} type="number" placeholder="Unit price" value={item.unit_price} onChange={(event) => updateQuotationItem(index, "unit_price", event.target.value)} />
                     </div>
+                    {quotationFormErrors?.[`items.${index}.product_name`] ? <span className="field-error-message">{quotationFormErrors[`items.${index}.product_name`]}</span> : null}
+                    {quotationFormErrors?.[`items.${index}.tile_size`] ? <span className="field-error-message">{quotationFormErrors[`items.${index}.tile_size`]}</span> : null}
+                    {quotationFormErrors?.[`items.${index}.quantity_sqft`] ? <span className="field-error-message">{quotationFormErrors[`items.${index}.quantity_sqft`]}</span> : null}
+                    {quotationFormErrors?.[`items.${index}.unit_price`] ? <span className="field-error-message">{quotationFormErrors[`items.${index}.unit_price`]}</span> : null}
                   </div>
                 ))}
               </div>
@@ -511,7 +530,7 @@ export default function LeadWorkspaceSection(props) {
       }));
 
     return (
-      <section className="content-grid">
+      <section className="content-grid lead-workspace-layout">
         <section className="panel">
           <div className="section-head">
             <h2>{overviewTitle}</h2>
@@ -537,6 +556,7 @@ export default function LeadWorkspaceSection(props) {
                 selected={selectedLead?.id === lead.id}
                 onSelect={() => setSelectedLead(lead)}
                 canDelete={isAdmin(user)}
+                formatDateTime={formatDateTime}
                 onDelete={() =>
                   setPendingDelete({
                     type: "lead",
@@ -553,6 +573,7 @@ export default function LeadWorkspaceSection(props) {
         </section>
 
         <LeadDetailsPanel
+          className="lead-details-panel-overview"
           selectedLead={selectedLead}
           userRoles={normalizeUserRoles(user)}
           editingLead={editingLead}
@@ -607,36 +628,95 @@ export default function LeadWorkspaceSection(props) {
 
   if (currentView === "pipeline") {
     return (
-      <section className="panel">
-        <div className="section-head">
-          <h2>Sales pipeline</h2>
-          <span>Move every inquiry through the showroom process</span>
-        </div>
-        <ListLoadControls count={leads.length} limit={listLimits.leads} onLoadMore={() => increaseListLimit("leads")} disabled={loading} />
-        {filteredLeads.length ? (
-          <div className="pipeline-board">
-            {pipelineColumns.map((column) => (
-              <section key={column.value} className="pipeline-column">
-                <div className="pipeline-header">
-                  <h3>{column.label}</h3>
-                  <span>{column.leads.length}</span>
-                </div>
-                <div className="stack">
-                  {column.leads.map((lead) => (
-                    <article key={lead.id} className="lead-card compact-card" onClick={() => setSelectedLead(lead)}>
-                      <strong>{lead.name}</strong>
-                      <span>{labelize(lead.customer_type)}</span>
-                      <small>{lead.location || "No area"}</small>
-                      <small>Rs {lead.latest_quote_amount || lead.budget || 0}</small>
-                    </article>
-                  ))}
-                </div>
-              </section>
-            ))}
+      <section className="stack lead-workspace-layout-pipeline">
+        <section className="panel">
+          <div className="section-head">
+            <h2>Sales pipeline</h2>
+            <span>Move every inquiry through the showroom process</span>
           </div>
-        ) : (
-          <EmptyState title="No leads in the pipeline" message="Create a lead or change the filters to see the funnel columns fill up." />
-        )}
+          {filteredLeads.length ? (
+            <>
+              <div className="pipeline-board">
+                {pipelineColumns.map((column) => (
+                  <section key={column.value} className="pipeline-column">
+                    <div className="pipeline-header">
+                      <h3>{column.label}</h3>
+                      <span>{column.leads.length}</span>
+                    </div>
+                    <div className="stack">
+                      {column.leads.map((lead) => (
+                        <article key={lead.id} className={`lead-card compact-card ${selectedLead?.id === lead.id ? "active" : ""}`} onClick={() => setSelectedLead(lead)}>
+                          <strong>{lead.name}</strong>
+                          <small className="muted lead-card-line">{lead.phone} | {lead.location || "No area"}</small>
+                          <small className="muted lead-card-line">
+                            Budget Rs {lead.budget || 0} | Next follow-up: {lead.latest_followup ? formatDateTime(lead.latest_followup) : "Not scheduled"}
+                          </small>
+                          <div className="lead-card-footer">
+                            <span className={`status-chip status-${lead.status}`}>{labelize(lead.status)}</span>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </section>
+                ))}
+              </div>
+              <ListLoadControls count={leads.length} limit={listLimits.leads} onLoadMore={() => increaseListLimit("leads")} disabled={loading} />
+            </>
+          ) : (
+            <EmptyState title="No leads in the pipeline" message="Create a lead or change the filters to see the funnel columns fill up." />
+          )}
+        </section>
+
+        <LeadDetailsPanel
+          className="lead-details-panel-pipeline"
+          selectedLead={selectedLead}
+          userRoles={normalizeUserRoles(user)}
+          editingLead={editingLead}
+          setEditingLead={setEditingLead}
+          users={users}
+          followupForm={followupForm}
+          setFollowupForm={setFollowupForm}
+          paymentForm={paymentForm}
+          setPaymentForm={setPaymentForm}
+          quotationForm={quotationForm}
+          setQuotationForm={setQuotationForm}
+          followups={followups}
+          payments={payments}
+          quotations={quotations}
+          operationsTasks={operationsTasks}
+          plumbingJobs={leadPlumbingJobs}
+          plumbers={plumbers}
+          plumbingJobForm={plumbingJobForm}
+          setPlumbingJobForm={setPlumbingJobForm}
+          plumbingMaterialDrafts={plumbingMaterialDrafts}
+          updatePlumbingMaterialDraft={updatePlumbingMaterialDraft}
+          products={products}
+          handleUpdateLead={handleUpdateLead}
+          handleCreateFollowup={handleCreateFollowup}
+          handleCreatePayment={handleCreatePayment}
+          handleCreateOperationsTask={handleCreateOperationsTask}
+          handleCreateQuotation={handleCreateQuotation}
+          handleCreatePlumbingJob={handleCreatePlumbingJob}
+          handleUpdatePlumbingJobStatus={requestPlumbingJobComplete}
+          handleAddPlumbingMaterial={handleAddPlumbingMaterial}
+          operationsTaskForm={operationsTaskForm}
+          setOperationsTaskForm={setOperationsTaskForm}
+          updateQuotationItem={updateQuotationItem}
+          addQuotationItem={addQuotationItem}
+          addInventoryProductToQuote={addInventoryProductToQuote}
+          busyAction={busyAction}
+          followupTypes={followupTypes}
+          paymentTypes={paymentTypes}
+          plumbingWorkTypes={plumbingWorkTypes}
+          plumbingJobStatuses={plumbingJobStatuses}
+          labelize={labelize}
+          formatDateTime={formatDateTime}
+          shareOnWhatsApp={shareOnWhatsApp}
+          buildFollowupWhatsAppMessage={buildFollowupWhatsAppMessage}
+          buildVisitReminderMessage={buildVisitReminderMessage}
+          buildQuotationWhatsAppMessage={buildQuotationWhatsAppMessage}
+          getQuotationPdfUrl={getQuotationPdfUrl}
+        />
       </section>
     );
   }

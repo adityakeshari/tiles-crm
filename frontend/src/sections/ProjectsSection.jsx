@@ -179,6 +179,8 @@ export default function ProjectsSection(props) {
     hasAnyRole,
     projectForm,
     setProjectForm,
+    projectFormErrors,
+    setProjectFormErrors,
     handleSaveProject,
     editingProjectId,
     setEditingProjectId,
@@ -206,6 +208,8 @@ export default function ProjectsSection(props) {
     formatDateTime,
     getProjectInvoicePdfUrl,
     dispatchStatuses,
+    clearFieldErrorFromEvent,
+    getFieldErrorClass,
   } = props;
 
   return (
@@ -222,16 +226,27 @@ export default function ProjectsSection(props) {
           <BadgeCard title="Pending Plumbing" count={projectSummary?.pending_plumbing_jobs ?? 0} />
         </div>
         {hasAnyRole(user, ["admin", "manager", "operations"]) ? (
-          <form className="form-grid" onSubmit={handleSaveProject}>
-            <select value={projectForm.lead_id} onChange={(event) => setProjectForm({ ...projectForm, lead_id: event.target.value })}>
-              <option value="">Select converted lead</option>
-              {convertedLeadOptions.map((lead) => (
-                <option key={lead.id} value={lead.id}>
-                  {lead.name} | {lead.phone}
-                </option>
-              ))}
-            </select>
-            <input placeholder="Project name" value={projectForm.project_name} onChange={(event) => setProjectForm({ ...projectForm, project_name: event.target.value })} />
+          <form
+            className="form-grid"
+            onSubmit={handleSaveProject}
+            onInputCapture={(event) => clearFieldErrorFromEvent(event, setProjectFormErrors)}
+            onChangeCapture={(event) => clearFieldErrorFromEvent(event, setProjectFormErrors)}
+          >
+            <div className="form-field">
+              <select data-field="lead_id" className={getFieldErrorClass(projectFormErrors, "lead_id")} value={projectForm.lead_id} onChange={(event) => setProjectForm({ ...projectForm, lead_id: event.target.value })}>
+                <option value="">Select converted lead</option>
+                {convertedLeadOptions.map((lead) => (
+                  <option key={lead.id} value={lead.id}>
+                    {lead.name} | {lead.phone}
+                  </option>
+                ))}
+              </select>
+              {projectFormErrors?.lead_id ? <span className="field-error-message">{projectFormErrors.lead_id}</span> : null}
+            </div>
+            <div className="form-field">
+              <input data-field="project_name" className={getFieldErrorClass(projectFormErrors, "project_name")} placeholder="Project name" value={projectForm.project_name} onChange={(event) => setProjectForm({ ...projectForm, project_name: event.target.value })} />
+              {projectFormErrors?.project_name ? <span className="field-error-message">{projectFormErrors.project_name}</span> : null}
+            </div>
             <select value={projectForm.status} onChange={(event) => setProjectForm({ ...projectForm, status: event.target.value })}>
               {projectStatuses.map((item) => (
                 <option key={item.value} value={item.value}>
@@ -239,9 +254,18 @@ export default function ProjectsSection(props) {
                 </option>
               ))}
             </select>
-            <input type="date" value={projectForm.start_date} onChange={(event) => setProjectForm({ ...projectForm, start_date: event.target.value })} />
-            <input type="date" value={projectForm.expected_delivery_date} onChange={(event) => setProjectForm({ ...projectForm, expected_delivery_date: event.target.value })} />
-            <input type="date" value={projectForm.completion_date} onChange={(event) => setProjectForm({ ...projectForm, completion_date: event.target.value })} />
+            <div className="form-field">
+              <input data-field="start_date" className={getFieldErrorClass(projectFormErrors, "start_date")} type="date" value={projectForm.start_date} onChange={(event) => setProjectForm({ ...projectForm, start_date: event.target.value })} />
+              {projectFormErrors?.start_date ? <span className="field-error-message">{projectFormErrors.start_date}</span> : null}
+            </div>
+            <div className="form-field">
+              <input data-field="expected_delivery_date" className={getFieldErrorClass(projectFormErrors, "expected_delivery_date")} type="date" value={projectForm.expected_delivery_date} onChange={(event) => setProjectForm({ ...projectForm, expected_delivery_date: event.target.value })} />
+              {projectFormErrors?.expected_delivery_date ? <span className="field-error-message">{projectFormErrors.expected_delivery_date}</span> : null}
+            </div>
+            <div className="form-field">
+              <input data-field="completion_date" className={getFieldErrorClass(projectFormErrors, "completion_date")} type="date" value={projectForm.completion_date} onChange={(event) => setProjectForm({ ...projectForm, completion_date: event.target.value })} />
+              {projectFormErrors?.completion_date ? <span className="field-error-message">{projectFormErrors.completion_date}</span> : null}
+            </div>
             <textarea className="full-span" placeholder="Owner note" value={projectForm.owner_note} onChange={(event) => setProjectForm({ ...projectForm, owner_note: event.target.value })} />
             <div className="lead-actions full-span">
               <button type="submit" disabled={busyAction === "save-project"}>
@@ -254,6 +278,7 @@ export default function ProjectsSection(props) {
                   onClick={() => {
                     setEditingProjectId(null);
                     setProjectForm(emptyProject);
+                    setProjectFormErrors({});
                   }}
                 >
                   Cancel

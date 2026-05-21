@@ -6,6 +6,8 @@ export default function RegisteredMasonsSection(props) {
     hasAnyRole,
     masonForm,
     setMasonForm,
+    masonFormErrors,
+    setMasonFormErrors,
     masonStatuses,
     sanitizePositiveIntegerInput,
     masonWorkingAreaInput,
@@ -35,6 +37,8 @@ export default function RegisteredMasonsSection(props) {
     startEditingMason,
     EmptyState,
     masonActivities,
+    clearFieldErrorFromEvent,
+    getFieldErrorClass,
   } = props;
 
   return (
@@ -45,26 +49,48 @@ export default function RegisteredMasonsSection(props) {
           <span>{masons.length} registered</span>
         </div>
         {hasAnyRole(user, ["admin", "manager"]) ? (
-          <form className="form-grid" onSubmit={handleSaveMason}>
-            <input placeholder="Mason name" value={masonForm.name} onChange={(event) => setMasonForm({ ...masonForm, name: event.target.value })} />
-            <input placeholder="Mobile number" value={masonForm.mobile} onChange={(event) => setMasonForm({ ...masonForm, mobile: event.target.value })} />
+          <form
+            className="form-grid"
+            onSubmit={handleSaveMason}
+            onInputCapture={(event) => clearFieldErrorFromEvent(event, setMasonFormErrors)}
+            onChangeCapture={(event) => clearFieldErrorFromEvent(event, setMasonFormErrors)}
+          >
+            <div className="form-field">
+              <input data-field="name" className={getFieldErrorClass(masonFormErrors, "name")} placeholder="Mason name" value={masonForm.name} onChange={(event) => setMasonForm({ ...masonForm, name: event.target.value })} />
+              {masonFormErrors?.name ? <span className="field-error-message">{masonFormErrors.name}</span> : null}
+            </div>
+            <div className="form-field">
+              <input data-field="mobile" className={getFieldErrorClass(masonFormErrors, "mobile")} placeholder="Mobile number" value={masonForm.mobile} onChange={(event) => setMasonForm({ ...masonForm, mobile: event.target.value })} />
+              {masonFormErrors?.mobile ? <span className="field-error-message">{masonFormErrors.mobile}</span> : null}
+            </div>
             <input placeholder="Alternate mobile (optional)" value={masonForm.alt_mobile || ""} onChange={(event) => setMasonForm({ ...masonForm, alt_mobile: event.target.value })} />
-            <input placeholder="Current address" value={masonForm.current_address} onChange={(event) => setMasonForm({ ...masonForm, current_address: event.target.value })} />
-            <input placeholder="Current address city" value={masonForm.current_address_city} onChange={(event) => setMasonForm({ ...masonForm, current_address_city: event.target.value })} />
+            <div className="form-field">
+              <input data-field="current_address" className={getFieldErrorClass(masonFormErrors, "current_address")} placeholder="Current address" value={masonForm.current_address} onChange={(event) => setMasonForm({ ...masonForm, current_address: event.target.value })} />
+              {masonFormErrors?.current_address ? <span className="field-error-message">{masonFormErrors.current_address}</span> : null}
+            </div>
+            <div className="form-field">
+              <input data-field="current_address_city" className={getFieldErrorClass(masonFormErrors, "current_address_city")} placeholder="Current address city" value={masonForm.current_address_city} onChange={(event) => setMasonForm({ ...masonForm, current_address_city: event.target.value })} />
+              {masonFormErrors?.current_address_city ? <span className="field-error-message">{masonFormErrors.current_address_city}</span> : null}
+            </div>
             <input placeholder="Permanent address" value={masonForm.permanent_address} onChange={(event) => setMasonForm({ ...masonForm, permanent_address: event.target.value })} />
             <input placeholder="Permanent address city" value={masonForm.permanent_address_city} onChange={(event) => setMasonForm({ ...masonForm, permanent_address_city: event.target.value })} />
-            <input
-              type="number"
-              min="1"
-              placeholder="Working distance upto (KM)"
-              value={masonForm.working_distance_upto_km}
-              onChange={(event) =>
-                setMasonForm({
-                  ...masonForm,
-                  working_distance_upto_km: sanitizePositiveIntegerInput(event.target.value, ""),
-                })
-              }
-            />
+            <div className="form-field">
+              <input
+                data-field="working_distance_upto_km"
+                className={getFieldErrorClass(masonFormErrors, "working_distance_upto_km")}
+                type="number"
+                min="1"
+                placeholder="Working distance upto (KM)"
+                value={masonForm.working_distance_upto_km}
+                onChange={(event) =>
+                  setMasonForm({
+                    ...masonForm,
+                    working_distance_upto_km: sanitizePositiveIntegerInput(event.target.value, ""),
+                  })
+                }
+              />
+              {masonFormErrors?.working_distance_upto_km ? <span className="field-error-message">{masonFormErrors.working_distance_upto_km}</span> : null}
+            </div>
             <select value={masonForm.status} onChange={(event) => setMasonForm({ ...masonForm, status: event.target.value })}>
               {masonStatuses.map((item) => (
                 <option key={item.value} value={item.value}>
@@ -72,7 +98,7 @@ export default function RegisteredMasonsSection(props) {
                 </option>
               ))}
             </select>
-            <div className="full-span detail-card stack">
+            <div className={`full-span detail-card stack ${getFieldErrorClass(masonFormErrors, "working_areas")}`}>
               <div className="section-head">
                 <h3>Working areas</h3>
                 <button type="button" className="secondary" onClick={addMasonWorkingArea}>
@@ -80,7 +106,7 @@ export default function RegisteredMasonsSection(props) {
                 </button>
               </div>
               <div className="quote-row">
-                <input placeholder="Working area" value={masonWorkingAreaInput} onChange={(event) => setMasonWorkingAreaInput(event.target.value)} />
+                <input data-field="working_areas" placeholder="Working area" value={masonWorkingAreaInput} onChange={(event) => setMasonWorkingAreaInput(event.target.value)} />
               </div>
               <div className="chip-row">
                 {(masonForm.working_areas || []).map((area) => (
@@ -90,6 +116,7 @@ export default function RegisteredMasonsSection(props) {
                 ))}
                 {!(masonForm.working_areas || []).length ? <span className="muted">Add at least one working area.</span> : null}
               </div>
+              {masonFormErrors?.working_areas ? <span className="field-error-message">{masonFormErrors.working_areas}</span> : null}
             </div>
             <textarea className="full-span" placeholder="Remarks (optional)" value={masonForm.remarks || ""} onChange={(event) => setMasonForm({ ...masonForm, remarks: event.target.value })} />
             <div className="lead-actions full-span">
@@ -103,6 +130,7 @@ export default function RegisteredMasonsSection(props) {
                   onClick={() => {
                     setEditingMasonId(null);
                     setMasonForm(emptyMason);
+                    setMasonFormErrors({});
                     setMasonWorkingAreaInput("");
                   }}
                 >

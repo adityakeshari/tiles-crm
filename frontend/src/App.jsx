@@ -38,7 +38,6 @@ const navGroups = [
     items: [
       { id: "complaints", label: "Complaints" },
       { id: "operations", label: "Tasks" },
-      { id: "reports", label: "Daily Report" },
     ],
   },
   {
@@ -981,6 +980,129 @@ function sanitizePositiveIntegerInput(value, fallback = "") {
   return Math.max(1, Math.trunc(parsed));
 }
 
+function validateRequiredFields(formState, requiredFields) {
+  const errors = {};
+
+  for (const [field, config] of Object.entries(requiredFields || {})) {
+    const rule = typeof config === "string" ? { message: config } : config || {};
+    const value = typeof rule.value === "function" ? rule.value(formState) : formState?.[field];
+    const isValid =
+      typeof rule.validate === "function" ? rule.validate(value, formState) : Boolean(normalizeText(value));
+
+    if (!isValid) {
+      errors[field] = rule.message || "Required";
+    }
+  }
+
+  return errors;
+}
+
+function clearFieldErrorState(setter, field) {
+  setter((current) => {
+    if (!current?.[field]) {
+      return current;
+    }
+
+    const next = { ...current };
+    delete next[field];
+    return next;
+  });
+}
+
+function clearFieldErrorFromEvent(event, setter) {
+  const field = event.target?.getAttribute("data-field");
+  if (!field) {
+    return;
+  }
+  clearFieldErrorState(setter, field);
+}
+
+function focusFirstInvalidField(formElement, errors) {
+  if (!formElement || !errors) {
+    return;
+  }
+
+  const firstField = Object.keys(errors)[0];
+  if (!firstField) {
+    return;
+  }
+
+  const target = formElement.querySelector(`[data-field="${firstField}"]`);
+  if (!target) {
+    return;
+  }
+
+  target.focus({ preventScroll: true });
+  target.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function getFieldErrorClass(errors, field) {
+  return errors?.[field] ? "field-error" : "";
+}
+
+function getQuotationRequiredErrors(form) {
+  const errors = {};
+
+  if (!Array.isArray(form.items) || form.items.length === 0) {
+    errors.items = "At least one quotation item is required.";
+    return errors;
+  }
+
+  form.items.forEach((item, index) => {
+    if (!normalizeText(item.product_name)) {
+      errors[`items.${index}.product_name`] = "Product name is required.";
+    }
+    if (!normalizeText(item.tile_size)) {
+      errors[`items.${index}.tile_size`] = "Size is required.";
+    }
+    if (!isPositiveNumber(item.quantity_sqft)) {
+      errors[`items.${index}.quantity_sqft`] = "Quantity is required.";
+    }
+    if (!isNonNegativeNumber(item.unit_price) && item.unit_price !== 0 && item.unit_price !== "0") {
+      errors[`items.${index}.unit_price`] = "Unit price is required.";
+    }
+  });
+
+  return errors;
+}
+
+function getSchemeTokenRequiredErrors(form) {
+  const errors = validateRequiredFields(form, {
+    site_name: "Site name is required.",
+    invoice_number: "Invoice number is required.",
+    mason_id: {
+      message: "Registered mason is required.",
+      validate: (value) => Number.isInteger(Number(value)) && Number(value) > 0,
+    },
+    sale_date: {
+      message: "Sale date is required.",
+      validate: (value) => Boolean(value),
+    },
+    adhesive_company: "Adhesive company is required.",
+    adhesive_type: "Adhesive type is required.",
+    sold_bag_quantity: {
+      message: "Sold bag quantity is required.",
+      validate: (value) => isPositiveNumber(value),
+    },
+  });
+
+  if (!Array.isArray(form.items) || form.items.length === 0) {
+    errors.items = "At least one token line item is required.";
+    return errors;
+  }
+
+  form.items.forEach((item, index) => {
+    if (!isNonNegativeNumber(item.token_value) && item.token_value !== 0 && item.token_value !== "0") {
+      errors[`items.${index}.token_value`] = "Token value is required.";
+    }
+    if (!isPositiveNumber(item.quantity)) {
+      errors[`items.${index}.quantity`] = "Quantity is required.";
+    }
+  });
+
+  return errors;
+}
+
 function sanitizeNonNegativeIntegerInput(value, fallback = "") {
   if (value === "") {
     return fallback;
@@ -1131,6 +1253,7 @@ export default function App() {
   const [loginForm, setLoginForm] = useState({ phone: "", password: "" });
   const [adminForm, setAdminForm] = useState(emptyAdmin);
   const [leadForm, setLeadForm] = useState(emptyLead);
+  const [leadFormErrors, setLeadFormErrors] = useState({});
   const [leadSearch, setLeadSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [leads, setLeads] = useState([]);
@@ -1173,10 +1296,13 @@ export default function App() {
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [followupForm, setFollowupForm] = useState(emptyFollowup);
+  const [followupFormErrors, setFollowupFormErrors] = useState({});
   const [paymentForm, setPaymentForm] = useState(emptyPayment);
   const [operationsTaskForm, setOperationsTaskForm] = useState(emptyOperationsTask);
   const [quotationForm, setQuotationForm] = useState(emptyQuotation);
+  const [quotationFormErrors, setQuotationFormErrors] = useState({});
   const [schemeTokenForm, setSchemeTokenForm] = useState(emptySchemeToken);
+  const [schemeTokenFormErrors, setSchemeTokenFormErrors] = useState({});
   const [complaintForm, setComplaintForm] = useState(emptyComplaint);
   const [editingComplaintId, setEditingComplaintId] = useState(null);
   const [users, setUsers] = useState([]);
@@ -1190,6 +1316,7 @@ export default function App() {
   const [productForm, setProductForm] = useState(emptyProduct);
   const [editingProductId, setEditingProductId] = useState(null);
   const [masonForm, setMasonForm] = useState(emptyMason);
+  const [masonFormErrors, setMasonFormErrors] = useState({});
   const [editingMasonId, setEditingMasonId] = useState(null);
   const [masonWorkingAreaInput, setMasonWorkingAreaInput] = useState("");
   const [masonCurrentCityFilter, setMasonCurrentCityFilter] = useState("");
@@ -1201,13 +1328,16 @@ export default function App() {
   const [plumbingJobForm, setPlumbingJobForm] = useState(emptyPlumbingJob);
   const [plumbingMaterialDrafts, setPlumbingMaterialDrafts] = useState({});
   const [projectForm, setProjectForm] = useState(emptyProject);
+  const [projectFormErrors, setProjectFormErrors] = useState({});
   const [editingProjectId, setEditingProjectId] = useState(null);
   const [dispatchDrafts, setDispatchDrafts] = useState({});
   const [expenseForm, setExpenseForm] = useState(emptyExpense);
+  const [expenseFormErrors, setExpenseFormErrors] = useState({});
   const [editingExpenseId, setEditingExpenseId] = useState(null);
   const [purchases, setPurchases] = useState([]);
   const [purchaseSummary, setPurchaseSummary] = useState(null);
   const [purchaseForm, setPurchaseForm] = useState(emptyPurchase);
+  const [purchaseFormErrors, setPurchaseFormErrors] = useState({});
   const [editingPurchaseId, setEditingPurchaseId] = useState(null);
   const [purchaseSearch, setPurchaseSearch] = useState("");
   const [purchaseFromFilter, setPurchaseFromFilter] = useState("");
@@ -1747,6 +1877,31 @@ export default function App() {
       : `${filteredLeads.length} leads in focus`;
   const activeViewMeta = viewMeta[currentView] || viewMeta.overview;
   const isOverview = currentView === "overview";
+  const pageAction = useMemo(() => {
+    const actionMap = {
+      overview: { id: "pipeline", label: "+ New Lead" },
+      pipeline: { id: "pipeline", label: "+ New Lead" },
+      projects: { id: "projects", label: "+ New Project" },
+      purchases: { id: "purchases", label: "+ Purchase Entry" },
+      masons: { id: "masons", label: "+ Registered Mason" },
+      expenses: { id: "expenses", label: "+ Expense" },
+    };
+
+    const action = actionMap[currentView];
+    if (!action) return null;
+    if (!visibleViews.some((view) => view.id === action.id)) return null;
+    return action;
+  }, [currentView, visibleViews]);
+  const headerRoleLabel = useMemo(() => {
+    const roles = normalizeUserRoles(user);
+    if (roles.length) {
+      return roles.slice(0, 2).map(labelize).join(" / ");
+    }
+
+    return labelize(user?.role || "User");
+  }, [user]);
+  const headerWorkspaceLabel =
+    workspaceFilter === "all" ? "All Work" : labelize(workspaceFilter);
   const showQuickLeadEntry =
     isOverview &&
     hasAnyRole(user, ["admin", "manager", "sales"]) &&
@@ -2113,6 +2268,22 @@ export default function App() {
 
   async function handleCreateLead(event) {
     event.preventDefault();
+    const requiredErrors = validateRequiredFields(leadForm, {
+      name: "Customer name is required.",
+      phone: "Mobile number is required.",
+      requirement: "Requirement is required.",
+      budget: {
+        message: "Budget is required.",
+        validate: (value) => normalizeText(value) !== "",
+      },
+    });
+    setLeadFormErrors(requiredErrors);
+    if (Object.keys(requiredErrors).length) {
+      setError("");
+      focusFirstInvalidField(event.currentTarget, requiredErrors);
+      return;
+    }
+
     const validationError = validateLeadForm(leadForm);
     if (validationError) {
       setError(validationError);
@@ -2122,6 +2293,7 @@ export default function App() {
     await runBusyAction("save-lead", async () => {
       await api.createLead(normalizeLeadPayload(leadForm));
       setLeadForm(emptyLead);
+      setLeadFormErrors({});
       await loadDashboard();
     }, "Lead saved.");
   }
@@ -2164,6 +2336,20 @@ export default function App() {
       return;
     }
 
+    const requiredErrors = validateRequiredFields(followupForm, {
+      note: "Follow-up note is required.",
+      followup_date: {
+        message: "Follow-up date is required.",
+        validate: (value) => Boolean(value),
+      },
+    });
+    setFollowupFormErrors(requiredErrors);
+    if (Object.keys(requiredErrors).length) {
+      setError("");
+      focusFirstInvalidField(event.currentTarget, requiredErrors);
+      return;
+    }
+
     const validationError = validateFollowupForm(followupForm);
     if (validationError) {
       setError(validationError);
@@ -2173,6 +2359,7 @@ export default function App() {
     await runBusyAction("save-followup", async () => {
       await api.createFollowup(selectedLead.id, followupForm);
       setFollowupForm(emptyFollowup);
+      setFollowupFormErrors({});
       await loadLeadDetails(selectedLead.id);
       await loadDashboard();
     }, "Follow-up saved.");
@@ -2264,6 +2451,14 @@ export default function App() {
       return;
     }
 
+    const requiredErrors = getQuotationRequiredErrors(quotationForm);
+    setQuotationFormErrors(requiredErrors);
+    if (Object.keys(requiredErrors).length) {
+      setError("");
+      focusFirstInvalidField(event.currentTarget, requiredErrors);
+      return;
+    }
+
     const validationError = validateQuotationForm(quotationForm);
     if (validationError) {
       setError(validationError);
@@ -2284,6 +2479,7 @@ export default function App() {
         })),
       });
       setQuotationForm(emptyQuotation);
+      setQuotationFormErrors({});
       await loadLeadDetails(selectedLead.id);
       await loadDashboard();
     }, "Quotation saved.");
@@ -2331,6 +2527,32 @@ export default function App() {
 
   async function handleSaveProject(event) {
     event.preventDefault();
+    const requiredErrors = validateRequiredFields(projectForm, {
+      lead_id: {
+        message: "Converted lead is required.",
+        validate: (value) => Number.isInteger(Number(value)) && Number(value) > 0,
+      },
+      project_name: "Project name is required.",
+      start_date: {
+        message: "Start date is required.",
+        validate: (value) => Boolean(value),
+      },
+      expected_delivery_date: {
+        message: "Expected delivery date is required.",
+        validate: (value) => Boolean(value),
+      },
+      completion_date: {
+        message: "Completion date is required.",
+        validate: (value) => Boolean(value),
+      },
+    });
+    setProjectFormErrors(requiredErrors);
+    if (Object.keys(requiredErrors).length) {
+      setError("");
+      focusFirstInvalidField(event.currentTarget, requiredErrors);
+      return;
+    }
+
     const validationError = validateProjectForm(projectForm);
     if (validationError) {
       setError(validationError);
@@ -2350,6 +2572,7 @@ export default function App() {
       }
 
       setProjectForm(emptyProject);
+      setProjectFormErrors({});
       setEditingProjectId(null);
       await loadDashboard();
       setCurrentView("projects");
@@ -2495,6 +2718,23 @@ export default function App() {
 
   async function handleSaveExpense(event) {
     event.preventDefault();
+    const requiredErrors = validateRequiredFields(expenseForm, {
+      expense_date: {
+        message: "Expense date is required.",
+        validate: (value) => Boolean(value),
+      },
+      amount: {
+        message: "Amount is required.",
+        validate: (value) => normalizeText(value) !== "",
+      },
+    });
+    setExpenseFormErrors(requiredErrors);
+    if (Object.keys(requiredErrors).length) {
+      setError("");
+      focusFirstInvalidField(event.currentTarget, requiredErrors);
+      return;
+    }
+
     const validationError = validateExpenseForm(expenseForm);
     if (validationError) {
       setError(validationError);
@@ -2514,6 +2754,7 @@ export default function App() {
       }
 
       setExpenseForm(emptyExpense);
+      setExpenseFormErrors({});
       setEditingExpenseId(null);
       await loadDashboard();
     }, editingExpenseId ? "Expense updated." : "Expense saved.");
@@ -2521,6 +2762,7 @@ export default function App() {
 
   function handleEditPurchase(record) {
     setEditingPurchaseId(record.id);
+    setPurchaseFormErrors({});
     setPurchaseForm({
       supplier_name: record.supplier_name || "",
       supplier_phone: record.supplier_phone || "",
@@ -2542,10 +2784,25 @@ export default function App() {
   function handleCancelEditPurchase() {
     setEditingPurchaseId(null);
     setPurchaseForm(emptyPurchase);
+    setPurchaseFormErrors({});
   }
 
   async function handleSavePurchase(event) {
     event.preventDefault();
+    const requiredErrors = validateRequiredFields(purchaseForm, {
+      supplier_name: "Supplier name is required.",
+      purchase_date: {
+        message: "Purchase date is required.",
+        validate: (value) => Boolean(value),
+      },
+    });
+    setPurchaseFormErrors(requiredErrors);
+    if (Object.keys(requiredErrors).length) {
+      setError("");
+      focusFirstInvalidField(event.currentTarget, requiredErrors);
+      return;
+    }
+
     const validationError = validatePurchaseForm(purchaseForm);
     if (validationError) {
       setError(validationError);
@@ -2579,6 +2836,7 @@ export default function App() {
       }
 
       setPurchaseForm(emptyPurchase);
+      setPurchaseFormErrors({});
       setEditingPurchaseId(null);
       await loadDashboard();
     }, editingPurchaseId ? "Purchase updated." : "Purchase saved.");
@@ -2598,6 +2856,14 @@ export default function App() {
 
   async function handleIssueSchemeToken(event) {
     event.preventDefault();
+    const requiredErrors = getSchemeTokenRequiredErrors(schemeTokenForm);
+    setSchemeTokenFormErrors(requiredErrors);
+    if (Object.keys(requiredErrors).length) {
+      setError("");
+      focusFirstInvalidField(event.currentTarget, requiredErrors);
+      return;
+    }
+
     const validationError = validateSchemeTokenForm(schemeTokenForm);
     if (validationError) {
       setError(validationError);
@@ -2615,6 +2881,7 @@ export default function App() {
         ? await api.updateAdhesiveToken(editingAdhesiveTokenId, payload)
         : await api.createAdhesiveToken(payload);
       setSchemeTokenForm(emptySchemeToken);
+      setSchemeTokenFormErrors({});
       setEditingAdhesiveTokenId(null);
       setSelectedAdhesiveToken(detail || null);
       await loadDashboard();
@@ -2659,6 +2926,7 @@ export default function App() {
       working_areas: [...new Set([...(current.working_areas || []), nextArea])],
     }));
     setMasonWorkingAreaInput("");
+    clearFieldErrorState(setMasonFormErrors, "working_areas");
   }
 
   function removeMasonWorkingArea(areaToRemove) {
@@ -2680,6 +2948,7 @@ export default function App() {
           : item
       ),
     }));
+    clearFieldErrorState(setSchemeTokenFormErrors, `items.${index}.${field}`);
   }
 
   function addAdhesiveTokenItemRow() {
@@ -2741,6 +3010,7 @@ export default function App() {
       };
       setSelectedAdhesiveToken(detail);
       setEditingAdhesiveTokenId(token.id);
+      setSchemeTokenFormErrors({});
       setSchemeTokenForm(mapAdhesiveClaimToForm(detail));
       setCurrentView("schemes");
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -2983,6 +3253,27 @@ export default function App() {
 
   async function handleSaveMason(event) {
     event.preventDefault();
+    const requiredErrors = validateRequiredFields(masonForm, {
+      name: "Mason name is required.",
+      mobile: "Mobile number is required.",
+      current_address: "Current address is required.",
+      current_address_city: "Current address city is required.",
+      working_areas: {
+        message: "At least one working area is required.",
+        validate: (value) => Array.isArray(value) && value.filter((item) => normalizeText(item)).length > 0,
+      },
+      working_distance_upto_km: {
+        message: "Working distance is required.",
+        validate: (value) => normalizeText(value) !== "",
+      },
+    });
+    setMasonFormErrors(requiredErrors);
+    if (Object.keys(requiredErrors).length) {
+      setError("");
+      focusFirstInvalidField(event.currentTarget, requiredErrors);
+      return;
+    }
+
     const validationError = validateMasonForm(masonForm);
     if (validationError) {
       setError(validationError);
@@ -3004,6 +3295,7 @@ export default function App() {
       }
 
       setMasonForm(emptyMason);
+      setMasonFormErrors({});
       setMasonWorkingAreaInput("");
       setEditingMasonId(null);
 
@@ -3223,6 +3515,7 @@ export default function App() {
 
   function startEditingMason(mason) {
     setEditingMasonId(mason.id);
+    setMasonFormErrors({});
     setMasonForm({
       name: mason.name || "",
       mobile: mason.mobile || "",
@@ -3252,6 +3545,7 @@ export default function App() {
 
   function startEditingProject(project) {
     setEditingProjectId(project.id);
+    setProjectFormErrors({});
     setProjectForm({
       lead_id: project.lead_id,
       project_name: project.project_name || "",
@@ -3302,6 +3596,7 @@ export default function App() {
 
   function startEditingExpense(expense) {
     setEditingExpenseId(expense.id);
+    setExpenseFormErrors({});
     setExpenseForm({
       category: expense.category || "miscellaneous",
       expense_date: expense.expense_date ? formatDateInput(expense.expense_date) : "",
@@ -3319,6 +3614,7 @@ export default function App() {
         itemIndex === index ? { ...item, [field]: value } : item
       ),
     }));
+    clearFieldErrorState(setQuotationFormErrors, `items.${index}.${field}`);
   }
 
   function addQuotationItem() {
@@ -3514,16 +3810,9 @@ export default function App() {
         </div>
       ) : null}
 
-      <header className="topbar panel">
+      <header className="topbar topbar-compact panel">
         <div className="hero-copy">
-          <p className="eyebrow">Tiles Showroom CRM</p>
-          <h1>{user?.name}, your funnel, follow-ups, quotations, and dealer network are all live.</h1>
-          <div className="hero-pills">
-            <span className="hero-pill">{normalizeUserRoles(user).map(labelize).join(", ") || labelize(user?.role)}</span>
-            <span className="hero-pill">{workspaceFilter === "all" ? "All Work" : labelize(workspaceFilter)}</span>
-            <span className="hero-pill">{unitFilter === "all" ? "All Units" : labelize(unitFilter)}</span>
-            <span className="hero-pill">Unread {unreadNotifications.length}</span>
-          </div>
+          <h1>Hello {user?.name || "Team"} <span className="topbar-sep">·</span> <span className="topbar-meta">{headerRoleLabel}</span> <span className="topbar-sep">·</span> <span className="topbar-meta">{headerWorkspaceLabel}</span></h1>
         </div>
         <div className="toolbar">
           <button className="secondary" onClick={() => setShowNotifications((current) => !current)}>
@@ -3664,57 +3953,30 @@ export default function App() {
         </aside>
 
         <div className="app-main">
-          <section className="filters-bar panel">
-            <div className="control-group">
-              <span className="control-label">Workspace</span>
-              <select value={workspaceFilter} onChange={(event) => setWorkspaceFilter(event.target.value)}>
-                {workspaceOptions.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="control-group">
-              <span className="control-label">Business Unit</span>
-              <select value={unitFilter} onChange={(event) => setUnitFilter(event.target.value)}>
-                {businessUnits.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="quick-actions-wrap">
-              <span className="control-label">Quick actions</span>
-                <div className="quick-actions">
-                  {[
-                  { id: "pipeline", label: "+ New Lead", tone: "secondary" },
-                    { id: "projects", label: "+ New Project", tone: "secondary" },
-                    { id: "purchases", label: "+ Purchase Entry", tone: "secondary" },
-                    { id: "masons", label: "+ Registered Mason", tone: "secondary" },
-                    { id: "expenses", label: "+ Expense", tone: "secondary" },
-                ]
-                  .filter((action) => visibleViews.some((view) => view.id === action.id))
-                  .map((action) => (
-                      <button
-                        key={action.id}
-                        type="button"
-                        className={
-                          currentView === action.id
-                            ? "quick-action-btn quick-action-btn-active"
-                            : action.tone === "secondary"
-                              ? "quick-action-btn secondary"
-                              : "quick-action-btn"
-                        }
-                        onClick={() => setCurrentView(action.id)}
-                      >
-                        {action.label}
-                      </button>
-                    ))}
+          {["overview", "pipeline", "followups", "operations", "projects", "complaints"].includes(currentView) ? (
+            <section className="filters-bar panel">
+              <div className="control-group">
+                <span className="control-label">Workspace</span>
+                <select value={workspaceFilter} onChange={(event) => setWorkspaceFilter(event.target.value)}>
+                  {workspaceOptions.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
               </div>
-            </div>
-          </section>
+              <div className="control-group">
+                <span className="control-label">Business Unit</span>
+                <select value={unitFilter} onChange={(event) => setUnitFilter(event.target.value)}>
+                  {businessUnits.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </section>
+          ) : null}
 
       {isOverview ? (
         <section className="legend-bar panel">
@@ -3748,17 +4010,25 @@ export default function App() {
               <span className="audience-tag">{activeViewMeta.audience}</span>
             ) : null}
           </div>
-          <div className="hero-pills">
-            <span className="hero-pill hero-pill-strong">
-              Workspace: {workspaceFilter === "all" ? "All Work" : labelize(workspaceFilter)}
-            </span>
-            <span className="hero-pill hero-pill-strong">
-              Unit: {unitFilter === "all" ? "All Units" : labelize(unitFilter)}
-            </span>
-            <span className="hero-pill hero-pill-strong">
-              View: {views.find((item) => item.id === currentView)?.label || "Overview"}
-            </span>
-          </div>
+          {pageAction ? (
+            <div className="page-header-actions">
+              <button type="button" className="quick-action-btn secondary" onClick={() => setCurrentView(pageAction.id)}>
+                {pageAction.label}
+              </button>
+            </div>
+          ) : (
+            <div className="hero-pills">
+              <span className="hero-pill hero-pill-strong">
+                Workspace: {workspaceFilter === "all" ? "All Work" : labelize(workspaceFilter)}
+              </span>
+              <span className="hero-pill hero-pill-strong">
+                Unit: {unitFilter === "all" ? "All Units" : labelize(unitFilter)}
+              </span>
+              <span className="hero-pill hero-pill-strong">
+                View: {views.find((item) => item.id === currentView)?.label || "Overview"}
+              </span>
+            </div>
+          )}
         </section>
       ) : (
         <section className="module-header">
@@ -3766,9 +4036,16 @@ export default function App() {
             <h2>{activeViewMeta.title}</h2>
             <p className="muted">{activeViewMeta.description}</p>
           </div>
-          {activeViewMeta.audience ? (
-            <span className="audience-tag">{activeViewMeta.audience}</span>
-          ) : null}
+          <div className="page-header-actions">
+            {activeViewMeta.audience ? (
+              <span className="audience-tag">{activeViewMeta.audience}</span>
+            ) : null}
+            {pageAction ? (
+              <button type="button" className="quick-action-btn secondary" onClick={() => setCurrentView(pageAction.id)}>
+                {pageAction.label}
+              </button>
+            ) : null}
+          </div>
         </section>
       )}
 
@@ -3789,17 +4066,32 @@ export default function App() {
                 <h2>Quick lead entry</h2>
                 <span>{loading ? "Syncing..." : "Under 10 seconds for sales team use"}</span>
               </div>
-              <form className="form-grid" onSubmit={handleCreateLead}>
-                <input
-                  placeholder="Customer name"
-                  value={leadForm.name}
-                  onChange={(event) => setLeadForm({ ...leadForm, name: event.target.value })}
-                />
-                <input
-                  placeholder="Phone"
-                  value={leadForm.phone}
-                  onChange={(event) => setLeadForm({ ...leadForm, phone: event.target.value })}
-                />
+              <form
+                className="form-grid"
+                onSubmit={handleCreateLead}
+                onInputCapture={(event) => clearFieldErrorFromEvent(event, setLeadFormErrors)}
+                onChangeCapture={(event) => clearFieldErrorFromEvent(event, setLeadFormErrors)}
+              >
+                <div className="form-field">
+                  <input
+                    data-field="name"
+                    className={getFieldErrorClass(leadFormErrors, "name")}
+                    placeholder="Customer name"
+                    value={leadForm.name}
+                    onChange={(event) => setLeadForm({ ...leadForm, name: event.target.value })}
+                  />
+                  {leadFormErrors.name ? <span className="field-error-message">{leadFormErrors.name}</span> : null}
+                </div>
+                <div className="form-field">
+                  <input
+                    data-field="phone"
+                    className={getFieldErrorClass(leadFormErrors, "phone")}
+                    placeholder="Phone"
+                    value={leadForm.phone}
+                    onChange={(event) => setLeadForm({ ...leadForm, phone: event.target.value })}
+                  />
+                  {leadFormErrors.phone ? <span className="field-error-message">{leadFormErrors.phone}</span> : null}
+                </div>
                 <input
                   placeholder="Location"
                   value={leadForm.location}
@@ -3842,12 +4134,17 @@ export default function App() {
                     </option>
                   ))}
                 </select>
-                <input
-                  type="number"
-                  placeholder="Budget"
-                  value={leadForm.budget}
-                  onChange={(event) => setLeadForm({ ...leadForm, budget: event.target.value })}
-                />
+                <div className="form-field">
+                  <input
+                    data-field="budget"
+                    className={getFieldErrorClass(leadFormErrors, "budget")}
+                    type="number"
+                    placeholder="Budget"
+                    value={leadForm.budget}
+                    onChange={(event) => setLeadForm({ ...leadForm, budget: event.target.value })}
+                  />
+                  {leadFormErrors.budget ? <span className="field-error-message">{leadFormErrors.budget}</span> : null}
+                </div>
                 <select
                   value={leadForm.timeline}
                   onChange={(event) => setLeadForm({ ...leadForm, timeline: event.target.value })}
@@ -3889,12 +4186,16 @@ export default function App() {
                     </option>
                   ))}
                 </select>
-                <textarea
-                  className="full-span"
-                  placeholder="Requirement details"
-                  value={leadForm.requirement}
-                  onChange={(event) => setLeadForm({ ...leadForm, requirement: event.target.value })}
-                />
+                <div className="form-field full-span">
+                  <textarea
+                    data-field="requirement"
+                    className={getFieldErrorClass(leadFormErrors, "requirement")}
+                    placeholder="Requirement details"
+                    value={leadForm.requirement}
+                    onChange={(event) => setLeadForm({ ...leadForm, requirement: event.target.value })}
+                  />
+                  {leadFormErrors.requirement ? <span className="field-error-message">{leadFormErrors.requirement}</span> : null}
+                </div>
                 <button className="full-span accent" type="submit" disabled={busyAction === "save-lead"}>
                   {busyAction === "save-lead" ? "Saving Lead..." : "Save Lead"}
                 </button>
@@ -4021,10 +4322,14 @@ export default function App() {
             users={users}
             followupForm={followupForm}
             setFollowupForm={setFollowupForm}
+            followupFormErrors={followupFormErrors}
+            setFollowupFormErrors={setFollowupFormErrors}
             paymentForm={paymentForm}
             setPaymentForm={setPaymentForm}
             quotationForm={quotationForm}
             setQuotationForm={setQuotationForm}
+            quotationFormErrors={quotationFormErrors}
+            setQuotationFormErrors={setQuotationFormErrors}
             followups={followups}
             payments={payments}
             quotations={quotations}
@@ -4070,6 +4375,8 @@ export default function App() {
             paymentTypes={paymentTypes}
             plumbingWorkTypes={plumbingWorkTypes}
             plumbingJobStatuses={plumbingJobStatuses}
+            clearFieldErrorFromEvent={clearFieldErrorFromEvent}
+            getFieldErrorClass={getFieldErrorClass}
           />
         </Suspense>
       ) : null}
@@ -4083,6 +4390,8 @@ export default function App() {
             hasAnyRole={hasAnyRole}
             projectForm={projectForm}
             setProjectForm={setProjectForm}
+            projectFormErrors={projectFormErrors}
+            setProjectFormErrors={setProjectFormErrors}
             handleSaveProject={handleSaveProject}
             editingProjectId={editingProjectId}
             setEditingProjectId={setEditingProjectId}
@@ -4110,6 +4419,8 @@ export default function App() {
             formatDateTime={formatDateTime}
             getProjectInvoicePdfUrl={getProjectInvoicePdfUrl}
             dispatchStatuses={dispatchStatuses}
+            clearFieldErrorFromEvent={clearFieldErrorFromEvent}
+            getFieldErrorClass={getFieldErrorClass}
           />
         </Suspense>
       ) : null}
@@ -4318,7 +4629,12 @@ export default function App() {
               <BadgeCard title="Monthly Expenses" count={`Rs ${expenseSummary?.monthly_expenses ?? 0}`} />
               <BadgeCard title="Net After Expenses" count={`Rs ${expenseSummary?.monthly_net_profit_after_expenses ?? 0}`} tone="accent" />
             </div>
-            <form className="form-grid" onSubmit={handleSaveExpense}>
+            <form
+              className="form-grid"
+              onSubmit={handleSaveExpense}
+              onInputCapture={(event) => clearFieldErrorFromEvent(event, setExpenseFormErrors)}
+              onChangeCapture={(event) => clearFieldErrorFromEvent(event, setExpenseFormErrors)}
+            >
               <select
                 value={expenseForm.category}
                 onChange={(event) => setExpenseForm({ ...expenseForm, category: event.target.value })}
@@ -4329,17 +4645,27 @@ export default function App() {
                   </option>
                 ))}
               </select>
-              <input
-                type="date"
-                value={expenseForm.expense_date}
-                onChange={(event) => setExpenseForm({ ...expenseForm, expense_date: event.target.value })}
-              />
-              <input
-                type="number"
-                placeholder="Amount"
-                value={expenseForm.amount}
-                onChange={(event) => setExpenseForm({ ...expenseForm, amount: event.target.value })}
-              />
+              <div className="form-field">
+                <input
+                  data-field="expense_date"
+                  className={getFieldErrorClass(expenseFormErrors, "expense_date")}
+                  type="date"
+                  value={expenseForm.expense_date}
+                  onChange={(event) => setExpenseForm({ ...expenseForm, expense_date: event.target.value })}
+                />
+                {expenseFormErrors.expense_date ? <span className="field-error-message">{expenseFormErrors.expense_date}</span> : null}
+              </div>
+              <div className="form-field">
+                <input
+                  data-field="amount"
+                  className={getFieldErrorClass(expenseFormErrors, "amount")}
+                  type="number"
+                  placeholder="Amount"
+                  value={expenseForm.amount}
+                  onChange={(event) => setExpenseForm({ ...expenseForm, amount: event.target.value })}
+                />
+                {expenseFormErrors.amount ? <span className="field-error-message">{expenseFormErrors.amount}</span> : null}
+              </div>
               <select
                 value={expenseForm.paid_by}
                 onChange={(event) => setExpenseForm({ ...expenseForm, paid_by: event.target.value })}
@@ -4373,6 +4699,7 @@ export default function App() {
                     onClick={() => {
                       setEditingExpenseId(null);
                       setExpenseForm(emptyExpense);
+                      setExpenseFormErrors({});
                     }}
                   >
                     Cancel
@@ -4460,14 +4787,24 @@ export default function App() {
               />
             </div>
 
-            <form className="form-grid" onSubmit={handleSavePurchase}>
-              <input
-                placeholder="Supplier name"
-                value={purchaseForm.supplier_name}
-                onChange={(event) =>
-                  setPurchaseForm({ ...purchaseForm, supplier_name: event.target.value })
-                }
-              />
+            <form
+              className="form-grid"
+              onSubmit={handleSavePurchase}
+              onInputCapture={(event) => clearFieldErrorFromEvent(event, setPurchaseFormErrors)}
+              onChangeCapture={(event) => clearFieldErrorFromEvent(event, setPurchaseFormErrors)}
+            >
+              <div className="form-field">
+                <input
+                  data-field="supplier_name"
+                  className={getFieldErrorClass(purchaseFormErrors, "supplier_name")}
+                  placeholder="Supplier name"
+                  value={purchaseForm.supplier_name}
+                  onChange={(event) =>
+                    setPurchaseForm({ ...purchaseForm, supplier_name: event.target.value })
+                  }
+                />
+                {purchaseFormErrors.supplier_name ? <span className="field-error-message">{purchaseFormErrors.supplier_name}</span> : null}
+              </div>
               <input
                 placeholder="Supplier phone"
                 value={purchaseForm.supplier_phone}
@@ -4482,13 +4819,18 @@ export default function App() {
                   setPurchaseForm({ ...purchaseForm, invoice_number: event.target.value })
                 }
               />
-              <input
-                type="date"
-                value={purchaseForm.purchase_date}
-                onChange={(event) =>
-                  setPurchaseForm({ ...purchaseForm, purchase_date: event.target.value })
-                }
-              />
+              <div className="form-field">
+                <input
+                  data-field="purchase_date"
+                  className={getFieldErrorClass(purchaseFormErrors, "purchase_date")}
+                  type="date"
+                  value={purchaseForm.purchase_date}
+                  onChange={(event) =>
+                    setPurchaseForm({ ...purchaseForm, purchase_date: event.target.value })
+                  }
+                />
+                {purchaseFormErrors.purchase_date ? <span className="field-error-message">{purchaseFormErrors.purchase_date}</span> : null}
+              </div>
               <select
                 value={purchaseForm.business_unit}
                 onChange={(event) =>
@@ -5073,6 +5415,8 @@ export default function App() {
             handleIssueSchemeToken={handleIssueSchemeToken}
             schemeTokenForm={schemeTokenForm}
             setSchemeTokenForm={setSchemeTokenForm}
+            schemeTokenFormErrors={schemeTokenFormErrors}
+            setSchemeTokenFormErrors={setSchemeTokenFormErrors}
             activeMasons={activeMasons}
             handleRegisteredMasonChange={handleRegisteredMasonChange}
             handleVerifyAdhesiveInvoice={handleVerifyAdhesiveInvoice}
@@ -5132,6 +5476,8 @@ export default function App() {
             formatDateTime={formatDateTime}
             selectedAdhesiveToken={selectedAdhesiveToken}
             adhesiveTokenActivities={adhesiveTokenActivities}
+            clearFieldErrorFromEvent={clearFieldErrorFromEvent}
+            getFieldErrorClass={getFieldErrorClass}
           />
         </Suspense>
       ) : null}
@@ -5145,6 +5491,8 @@ export default function App() {
             hasAnyRole={hasAnyRole}
             masonForm={masonForm}
             setMasonForm={setMasonForm}
+            masonFormErrors={masonFormErrors}
+            setMasonFormErrors={setMasonFormErrors}
             masonStatuses={masonStatuses}
             sanitizePositiveIntegerInput={sanitizePositiveIntegerInput}
             masonWorkingAreaInput={masonWorkingAreaInput}
@@ -5174,6 +5522,8 @@ export default function App() {
             startEditingMason={startEditingMason}
             EmptyState={EmptyState}
             masonActivities={masonActivities}
+            clearFieldErrorFromEvent={clearFieldErrorFromEvent}
+            getFieldErrorClass={getFieldErrorClass}
           />
         </Suspense>
       ) : null}
@@ -5853,16 +6203,14 @@ export default function App() {
   );
 }
 
-function ListLoadControlsImpl({ count, limit, onLoadMore, disabled = false }) {
-  return (
-    <div className="lead-actions">
-      <span className="muted">{count} loaded</span>
-      <span className="muted">Showing first {limit}</span>
-      <button type="button" className="secondary" onClick={onLoadMore} disabled={disabled || limit >= MAX_LIST_LIMIT}>
-        {limit >= MAX_LIST_LIMIT ? "Max Loaded" : `Load 100 More`}
-      </button>
-    </div>
-  );
+  function ListLoadControlsImpl({ count, limit, onLoadMore, disabled = false }) {
+    return (
+      <div className="list-load-actions">
+        <button type="button" className="secondary" onClick={onLoadMore} disabled={disabled || limit >= MAX_LIST_LIMIT}>
+          {limit >= MAX_LIST_LIMIT ? "Max Loaded" : `Load 100 More`}
+        </button>
+      </div>
+    );
 }
 const ListLoadControls = memo(ListLoadControlsImpl);
 

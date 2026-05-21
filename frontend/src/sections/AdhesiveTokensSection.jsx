@@ -5,6 +5,8 @@ export default function AdhesiveTokensSection(props) {
     handleIssueSchemeToken,
     schemeTokenForm,
     setSchemeTokenForm,
+    schemeTokenFormErrors,
+    setSchemeTokenFormErrors,
     activeMasons,
     handleRegisteredMasonChange,
     handleVerifyAdhesiveInvoice,
@@ -64,6 +66,8 @@ export default function AdhesiveTokensSection(props) {
     formatDateTime,
     selectedAdhesiveToken,
     adhesiveTokenActivities,
+    clearFieldErrorFromEvent,
+    getFieldErrorClass,
   } = props;
 
   const selectedClaimActionState = selectedAdhesiveToken ? getAdhesiveClaimActionState(selectedAdhesiveToken, user) : null;
@@ -83,18 +87,32 @@ export default function AdhesiveTokensSection(props) {
           <BadgeCard title="Rejected Claims" count={schemeSummary?.rejected_claims ?? 0} tone="danger" />
         </div>
 
-        <form className="form-grid" onSubmit={handleIssueSchemeToken}>
+        <form
+          className="form-grid"
+          onSubmit={handleIssueSchemeToken}
+          onInputCapture={(event) => clearFieldErrorFromEvent(event, setSchemeTokenFormErrors)}
+          onChangeCapture={(event) => clearFieldErrorFromEvent(event, setSchemeTokenFormErrors)}
+        >
           <p className="full-span muted">Token claim can be created with Site + Mason + Invoice. Project/customer linking is optional.</p>
-          <input placeholder="Site name" value={schemeTokenForm.site_name} onChange={(event) => setSchemeTokenForm({ ...schemeTokenForm, site_name: event.target.value })} />
-          <input placeholder="Invoice / bill number" value={schemeTokenForm.invoice_number} onChange={(event) => setSchemeTokenForm({ ...schemeTokenForm, invoice_number: event.target.value })} />
-          <select value={schemeTokenForm.mason_id} onChange={(event) => handleRegisteredMasonChange(event.target.value)}>
-            <option value="">Select registered mason</option>
-            {activeMasons.map((mason) => (
-              <option key={mason.id} value={mason.id}>
-                {mason.name} | {mason.mobile} | {mason.area || "No area"}
-              </option>
-            ))}
-          </select>
+          <div className="form-field">
+            <input data-field="site_name" className={getFieldErrorClass(schemeTokenFormErrors, "site_name")} placeholder="Site name" value={schemeTokenForm.site_name} onChange={(event) => setSchemeTokenForm({ ...schemeTokenForm, site_name: event.target.value })} />
+            {schemeTokenFormErrors?.site_name ? <span className="field-error-message">{schemeTokenFormErrors.site_name}</span> : null}
+          </div>
+          <div className="form-field">
+            <input data-field="invoice_number" className={getFieldErrorClass(schemeTokenFormErrors, "invoice_number")} placeholder="Invoice / bill number" value={schemeTokenForm.invoice_number} onChange={(event) => setSchemeTokenForm({ ...schemeTokenForm, invoice_number: event.target.value })} />
+            {schemeTokenFormErrors?.invoice_number ? <span className="field-error-message">{schemeTokenFormErrors.invoice_number}</span> : null}
+          </div>
+          <div className="form-field">
+            <select data-field="mason_id" className={getFieldErrorClass(schemeTokenFormErrors, "mason_id")} value={schemeTokenForm.mason_id} onChange={(event) => handleRegisteredMasonChange(event.target.value)}>
+              <option value="">Select registered mason</option>
+              {activeMasons.map((mason) => (
+                <option key={mason.id} value={mason.id}>
+                  {mason.name} | {mason.mobile} | {mason.area || "No area"}
+                </option>
+              ))}
+            </select>
+            {schemeTokenFormErrors?.mason_id ? <span className="field-error-message">{schemeTokenFormErrors.mason_id}</span> : null}
+          </div>
           <button type="button" className="secondary" onClick={handleVerifyAdhesiveInvoice}>
             Verify Invoice
           </button>
@@ -103,15 +121,26 @@ export default function AdhesiveTokensSection(props) {
           <input placeholder="Permanent address city" value={schemeTokenForm.mason_permanent_address_city} readOnly />
           <input placeholder="Working areas" value={(schemeTokenForm.mason_working_areas || []).join(", ")} readOnly />
           <input placeholder="Working distance upto (KM)" value={schemeTokenForm.mason_working_distance_upto_km} readOnly />
-          <input placeholder="Adhesive type" value={schemeTokenForm.adhesive_type} onChange={(event) => setSchemeTokenForm({ ...schemeTokenForm, adhesive_type: event.target.value })} />
-          <input placeholder="Adhesive company" value={schemeTokenForm.adhesive_company} onChange={(event) => setSchemeTokenForm({ ...schemeTokenForm, adhesive_company: event.target.value })} />
-          <input
-            type="number"
-            min="1"
-            placeholder="Sold bag quantity"
-            value={schemeTokenForm.sold_bag_quantity}
-            onChange={(event) => setSchemeTokenForm({ ...schemeTokenForm, sold_bag_quantity: sanitizePositiveIntegerInput(event.target.value, "") })}
-          />
+          <div className="form-field">
+            <input data-field="adhesive_type" className={getFieldErrorClass(schemeTokenFormErrors, "adhesive_type")} placeholder="Adhesive type" value={schemeTokenForm.adhesive_type} onChange={(event) => setSchemeTokenForm({ ...schemeTokenForm, adhesive_type: event.target.value })} />
+            {schemeTokenFormErrors?.adhesive_type ? <span className="field-error-message">{schemeTokenFormErrors.adhesive_type}</span> : null}
+          </div>
+          <div className="form-field">
+            <input data-field="adhesive_company" className={getFieldErrorClass(schemeTokenFormErrors, "adhesive_company")} placeholder="Adhesive company" value={schemeTokenForm.adhesive_company} onChange={(event) => setSchemeTokenForm({ ...schemeTokenForm, adhesive_company: event.target.value })} />
+            {schemeTokenFormErrors?.adhesive_company ? <span className="field-error-message">{schemeTokenFormErrors.adhesive_company}</span> : null}
+          </div>
+          <div className="form-field">
+            <input
+              data-field="sold_bag_quantity"
+              className={getFieldErrorClass(schemeTokenFormErrors, "sold_bag_quantity")}
+              type="number"
+              min="1"
+              placeholder="Sold bag quantity"
+              value={schemeTokenForm.sold_bag_quantity}
+              onChange={(event) => setSchemeTokenForm({ ...schemeTokenForm, sold_bag_quantity: sanitizePositiveIntegerInput(event.target.value, "") })}
+            />
+            {schemeTokenFormErrors?.sold_bag_quantity ? <span className="field-error-message">{schemeTokenFormErrors.sold_bag_quantity}</span> : null}
+          </div>
           <div className="full-span detail-card stack">
             <div className="section-head">
               <h3>Token line items</h3>
@@ -126,6 +155,8 @@ export default function AdhesiveTokensSection(props) {
                   <div key={`claim-item-${index}`} className="timeline-item">
                     <div className="form-grid">
                       <select
+                        data-field={`items.${index}.token_value`}
+                        className={getFieldErrorClass(schemeTokenFormErrors, `items.${index}.token_value`)}
                         value={isPresetValue ? String(item.token_value) : "custom"}
                         onChange={(event) => {
                           if (event.target.value === "custom") {
@@ -144,6 +175,8 @@ export default function AdhesiveTokensSection(props) {
                       </select>
                       {!isPresetValue ? (
                         <input
+                          data-field={`items.${index}.token_value`}
+                          className={getFieldErrorClass(schemeTokenFormErrors, `items.${index}.token_value`)}
                           type="number"
                           min="0"
                           placeholder="Custom token value"
@@ -152,6 +185,8 @@ export default function AdhesiveTokensSection(props) {
                         />
                       ) : (
                         <input
+                          data-field={`items.${index}.quantity`}
+                          className={getFieldErrorClass(schemeTokenFormErrors, `items.${index}.quantity`)}
                           type="number"
                           min="1"
                           placeholder="Quantity"
@@ -161,6 +196,8 @@ export default function AdhesiveTokensSection(props) {
                       )}
                       {isPresetValue ? null : (
                         <input
+                          data-field={`items.${index}.quantity`}
+                          className={getFieldErrorClass(schemeTokenFormErrors, `items.${index}.quantity`)}
                           type="number"
                           min="1"
                           placeholder="Quantity"
@@ -176,6 +213,8 @@ export default function AdhesiveTokensSection(props) {
                         Remove Row
                       </button>
                     </div>
+                    {schemeTokenFormErrors?.[`items.${index}.token_value`] ? <span className="field-error-message">{schemeTokenFormErrors[`items.${index}.token_value`]}</span> : null}
+                    {schemeTokenFormErrors?.[`items.${index}.quantity`] ? <span className="field-error-message">{schemeTokenFormErrors[`items.${index}.quantity`]}</span> : null}
                   </div>
                 );
               })}
@@ -191,7 +230,10 @@ export default function AdhesiveTokensSection(props) {
             ))}
           </select>
           <input placeholder="Optional customer name" value={schemeTokenForm.customer_name} onChange={(event) => setSchemeTokenForm({ ...schemeTokenForm, customer_name: event.target.value })} />
-          <input type="date" value={schemeTokenForm.sale_date} onChange={(event) => setSchemeTokenForm({ ...schemeTokenForm, sale_date: event.target.value })} />
+          <div className="form-field">
+            <input data-field="sale_date" className={getFieldErrorClass(schemeTokenFormErrors, "sale_date")} type="date" value={schemeTokenForm.sale_date} onChange={(event) => setSchemeTokenForm({ ...schemeTokenForm, sale_date: event.target.value })} />
+            {schemeTokenFormErrors?.sale_date ? <span className="field-error-message">{schemeTokenFormErrors.sale_date}</span> : null}
+          </div>
           <input placeholder="Token / bag photo URL" value={schemeTokenForm.token_photo_url} onChange={(event) => setSchemeTokenForm({ ...schemeTokenForm, token_photo_url: event.target.value })} />
           <div className="detail-card stack full-span">
             <div className="section-head">
@@ -240,6 +282,7 @@ export default function AdhesiveTokensSection(props) {
                 onClick={() => {
                   setEditingAdhesiveTokenId(null);
                   setSchemeTokenForm(emptySchemeToken);
+                  setSchemeTokenFormErrors({});
                 }}
               >
                 Cancel Edit
