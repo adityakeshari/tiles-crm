@@ -1731,14 +1731,35 @@ button.secondary.danger-soft:hover {
   background: var(--crm-surface-soft);
 }
 
+/* Billing New Sale summary — sits below the product table in normal
+ * document flow. Previous version was `position: sticky; bottom: 0.75rem`
+ * which floated the summary on top of the product / qty / rate inputs.
+ * The summary still looks elevated but no longer covers content. */
 .billing-sale-sticky-summary {
-  position: sticky;
-  bottom: 0.75rem;
-  z-index: 8;
+  position: static;
+  margin-top: 1rem;
   border: 1px solid var(--crm-border-strong);
-  box-shadow: var(--shadow-md);
-  background: rgba(255, 255, 255, 0.98);
-  backdrop-filter: blur(6px);
+  box-shadow: var(--shadow-sm);
+  background: var(--crm-surface);
+}
+
+/* Defensive guards: nothing in the billing summary tree should escape
+ * its document flow and overlap the form above. */
+.billing-sale-sticky-summary,
+.billing-sale-sticky-summary * {
+  position: static;
+}
+
+/* Action buttons row stays aligned to the right edge of the summary. */
+.billing-sale-sticky-summary .billing-sale-actions {
+  justify-content: flex-end;
+}
+
+/* Leave a small breathing pad below the summary so the page doesn't
+ * end abruptly. */
+.billing-form,
+.billing-new-sale-form {
+  padding-bottom: 1rem;
 }
 
 .billing-discount-bar {
@@ -3238,4 +3259,338 @@ button.sidebar-item-active .sidebar-dot {
   .stock-ledger-toolbar .stock-ledger-view-group .control-label {
     margin: 0;
   }
+}
+
+/* ==================================================================
+ * Leads workspace UX polish — frontend-only
+ * Targets existing class names: .pipeline-board, .pipeline-column,
+ * .lead-card, .lead-workspace-layout (the existing 2-col), the leads
+ * toolbar (.filter-row inside the leads view), and the overview lead
+ * detail panel. Global filters-bar already hidden on Pipeline / Overview
+ * by the JSX gate.
+ * ================================================================== */
+
+/* 1) Pipeline kanban — full available width, equal columns,
+ *    horizontal scroll only when truly needed. */
+.app-main .pipeline-board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(240px, 1fr);
+  gap: 0.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+  scrollbar-width: thin;
+  width: 100%;
+}
+
+.app-main .pipeline-board::-webkit-scrollbar {
+  height: 7px;
+}
+.app-main .pipeline-board::-webkit-scrollbar-thumb {
+  background: var(--crm-border-strong);
+  border-radius: 999px;
+}
+
+.app-main .pipeline-column {
+  background: var(--crm-bg-soft);
+  border: 1px solid var(--crm-border);
+  border-radius: var(--radius-lg);
+  padding: 0.75rem 0.7rem;
+  min-height: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.app-main .pipeline-column > .section-head,
+.app-main .pipeline-column > h3 {
+  margin-bottom: 0.3rem;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--crm-muted);
+  font-weight: 700;
+}
+
+.app-main .pipeline-column .lead-card {
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
+  background: var(--crm-surface);
+  border: 1px solid var(--crm-border);
+}
+
+.app-main .pipeline-column .lead-card:hover {
+  border-color: var(--crm-border-strong);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+/* 2) Lead card structure inside Pipeline + Overview list:
+ *    Name (h3) · Phone | Area · Budget | Next follow-up · Status badge */
+.lead-card h3 {
+  font-size: 0.95rem;
+  margin: 0 0 0.18rem;
+  color: var(--crm-text-strong);
+}
+
+.lead-card .lead-card-meta,
+.lead-card .lead-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.6rem;
+  font-size: 0.78rem;
+  color: var(--crm-muted);
+  margin: 0;
+}
+
+.lead-card .lead-card-footer,
+.lead-card .section-head + .muted {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.4rem;
+  font-size: 0.78rem;
+}
+
+.lead-card .lead-card-budget {
+  font-weight: 600;
+  color: var(--crm-text);
+}
+
+.lead-card .lead-card-next-followup {
+  color: var(--crm-amber-600);
+  font-weight: 600;
+}
+
+/* Status chip baseline already styled — keep it tight inside lead-card */
+.lead-card > .status-chip,
+.lead-card .status-chip {
+  padding: 0.16rem 0.55rem;
+  font-size: 0.7rem;
+}
+
+/* 3) Overview leads list (non-kanban) — full width cards, compact */
+.app-main .lead-workspace-layout .list .lead-card,
+.app-main .list .lead-card {
+  padding: 0.7rem 0.85rem;
+}
+
+/* 4) Leads toolbar (search + stage + status + new-lead button) — sticky
+ *    so it stays visible while scrolling the kanban. */
+.app-main .lead-workspace-layout .filter-row,
+.app-main .lead-workspace-layout .leads-toolbar,
+.app-main .pipeline-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  background: var(--crm-surface);
+  border: 1px solid var(--crm-border);
+  border-radius: var(--radius-md);
+  padding: 0.55rem 0.75rem;
+  margin-bottom: 0.85rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  box-shadow: var(--shadow-xs);
+}
+
+.app-main .lead-workspace-layout .filter-row > input[type="search"],
+.app-main .lead-workspace-layout .filter-row > input[type="text"],
+.app-main .pipeline-toolbar input[type="search"],
+.app-main .pipeline-toolbar input[type="text"] {
+  flex: 1 1 280px;
+  max-width: 380px;
+  padding: 0.42rem 0.65rem;
+  font-size: 0.88rem;
+}
+
+.app-main .lead-workspace-layout .filter-row > select,
+.app-main .pipeline-toolbar > select {
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+  min-width: 130px;
+  flex: 0 0 auto;
+}
+
+.app-main .lead-workspace-layout .filter-row > button,
+.app-main .pipeline-toolbar > button {
+  margin-left: auto;
+  padding: 0.42rem 0.85rem;
+  font-size: 0.85rem;
+}
+
+/* 5) Lead detail panel — keep it as a sticky right column with a clear
+ *    elevated "drawer" feel so it behaves like a slide-out without
+ *    needing JSX-level state. The existing 2-col `.lead-workspace-layout`
+ *    already places the detail panel on the right. */
+.app-main .lead-workspace-layout {
+  grid-template-columns: minmax(0, 1fr) clamp(360px, 30vw, 440px);
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.app-main .lead-workspace-layout > :nth-child(2) {
+  position: sticky;
+  top: 1rem;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  background: var(--crm-surface);
+  border: 1px solid var(--crm-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
+  padding: 0.95rem 1rem;
+  transition: box-shadow 150ms ease, transform 150ms ease;
+}
+
+.app-main .lead-workspace-layout > :nth-child(2):empty {
+  display: none;
+}
+
+.app-main .lead-workspace-layout > :nth-child(2)::before {
+  content: "";
+  display: block;
+  width: 36px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--crm-amber-500);
+  margin-bottom: 0.6rem;
+}
+
+/* When pipeline tab is active, hide the lead-detail bottom block (if
+ *    any) so the kanban can take the full width; details still appear
+ *    via the right-column drawer above. */
+.app-main .lead-workspace-layout .lead-detail-bottom {
+  display: none;
+}
+
+@media (max-width: 1180px) {
+  .app-main .pipeline-board {
+    grid-auto-columns: minmax(220px, 1fr);
+  }
+  .app-main .lead-workspace-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .app-main .lead-workspace-layout > :nth-child(2) {
+    position: static;
+    max-height: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .app-main .pipeline-board {
+    grid-auto-columns: 84vw;
+  }
+  .app-main .lead-workspace-layout .filter-row,
+  .app-main .pipeline-toolbar {
+    position: relative;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .app-main .lead-workspace-layout .filter-row > input[type="search"],
+  .app-main .pipeline-toolbar input[type="search"] {
+    max-width: none;
+  }
+  .app-main .lead-workspace-layout .filter-row > button,
+  .app-main .pipeline-toolbar > button {
+    margin-left: 0;
+  }
+}
+
+/* Stock Reports actionable — click-to-edit highlight + filter chips */
+.product-report-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 0.85rem;
+}
+
+button.stat-card.product-report-filter {
+  background: var(--crm-surface);
+  border: 1px solid var(--crm-border);
+  text-align: left;
+  font-weight: 600;
+  color: var(--crm-text);
+  box-shadow: var(--shadow-xs);
+  cursor: pointer;
+  padding: 0.85rem 0.95rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+button.stat-card.product-report-filter:hover {
+  border-color: var(--crm-border-strong);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+button.stat-card.product-report-filter-active {
+  border-color: var(--crm-amber-500);
+  box-shadow: 0 0 0 2px rgba(240, 180, 41, 0.18), var(--shadow-sm);
+}
+
+button.stat-card.product-report-filter > span {
+  font-size: 0.72rem;
+  color: var(--crm-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0;
+}
+
+button.stat-card.product-report-filter > strong {
+  font-size: 1.4rem;
+  color: var(--crm-text-strong);
+}
+
+.product-report-table .data-table tbody tr.product-report-row {
+  cursor: pointer;
+}
+
+.product-report-table .data-table tbody tr.product-report-row:hover td {
+  background: var(--crm-amber-100);
+}
+
+.product-master-section.product-highlight-section {
+  border: 1.5px solid var(--crm-amber-500);
+  background: var(--crm-amber-100);
+  box-shadow: 0 0 0 2px rgba(240, 180, 41, 0.18);
+  position: relative;
+}
+
+.product-master-section.product-highlight-section::before {
+  content: "Needs attention";
+  position: absolute;
+  top: -10px;
+  left: 1rem;
+  padding: 0.15rem 0.55rem;
+  background: var(--crm-amber-500);
+  color: var(--crm-navy-900);
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  border-radius: 999px;
+}
+
+.product-master-section.product-highlight-section input:not([readonly]),
+.product-master-section.product-highlight-section select {
+  border-color: rgba(217, 156, 27, 0.55);
+}
+
+.product-master-section.product-highlight-section input:not([readonly]):focus,
+.product-master-section.product-highlight-section select:focus {
+  border-color: var(--crm-amber-500);
+  box-shadow: 0 0 0 3px rgba(240, 180, 41, 0.22);
+}
+
+.missing-field-note {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--crm-amber-600);
+  margin-left: 0.45rem;
+  text-transform: none;
+  letter-spacing: 0;
 }

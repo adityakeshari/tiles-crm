@@ -1893,6 +1893,8 @@ export default function App() {
   const [dailyReportDate, setDailyReportDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [reportsView, setReportsView] = useState("overview");
   const [inventoryWorkspaceTab, setInventoryWorkspaceTab] = useState("new");
+  const [productReportGapFilter, setProductReportGapFilter] = useState("all");
+  const [productHighlightedFields, setProductHighlightedFields] = useState([]);
   const [inventoryLedgerSearch, setInventoryLedgerSearch] = useState("");
   const [inventoryLedgerView, setInventoryLedgerView] = useState("list");
   const [inventoryLedgerCategoryFilter, setInventoryLedgerCategoryFilter] = useState("all");
@@ -5791,9 +5793,10 @@ export default function App() {
     setCurrentView("projects");
   }
 
-  function startEditingProduct(product) {
+  function startEditingProduct(product, highlightFields = []) {
     setEditingProductId(product.id);
     setInventoryWorkspaceTab("new");
+    setProductHighlightedFields(Array.isArray(highlightFields) ? highlightFields : []);
     setIsAddingCustomProductCategory(false);
     setIsAddingCustomCompany(false);
     setIsAddingCustomProductSize(false);
@@ -6275,7 +6278,7 @@ export default function App() {
         </aside>
 
         <div className="app-main">
-          {["overview", "pipeline", "followups", "operations", "complaints"].includes(currentView) ? (
+          {["followups", "operations", "complaints"].includes(currentView) ? (
             <section className="filters-bar panel">
               <div className="control-group">
                 <span className="control-label">Workspace</span>
@@ -6742,19 +6745,6 @@ export default function App() {
                 ) : null}
                 {workspaceFilter !== "operations" && focusedFollowupBoard.length === 0 ? (
                   <EmptyState title="No follow-up focus" message="Today and overdue follow-ups will surface here automatically." compact />
-                ) : null}
-              </div>
-              <div className="mini-list">
-                {filteredProducts.slice(0, 3).map((product) => (
-                  <div key={product.id} className="timeline-item">
-                    <strong>{product.name}</strong>
-                    <p className="muted">
-                      {product.tile_size || "Standard"} | Rs {product.price_per_sqft}/sqft
-                    </p>
-                  </div>
-                ))}
-                {filteredProducts.length === 0 ? (
-                  <EmptyState title="No inventory highlights" message="Saved products will appear here for quick quoting and stock checks." compact />
                 ) : null}
               </div>
             </section>
@@ -8451,8 +8441,20 @@ export default function App() {
               <span>Create and maintain product foundation fields</span>
             </div>
             <form className="product-master-form" onSubmit={handleSaveProduct}>
-              <div className="form-section full-span product-master-section">
-                <span className="form-section-title">Basic product information</span>
+              <div
+                className={
+                  "form-section full-span product-master-section" +
+                  (productHighlightedFields.includes("company") || productHighlightedFields.includes("size")
+                    ? " product-highlight-section"
+                    : "")
+                }
+              >
+                <span className="form-section-title">
+                  Basic product information
+                  {productHighlightedFields.includes("company") || productHighlightedFields.includes("size") ? (
+                    <span className="missing-field-note"> · Please fill the highlighted fields</span>
+                  ) : null}
+                </span>
                 <div className="product-master-table">
                   <div className="product-master-row">
                     <div className="form-field">
@@ -8738,8 +8740,20 @@ export default function App() {
                 </div>
               ) : null}
 
-              <div className="form-section full-span product-master-section">
-                <span className="form-section-title">Packaging information</span>
+              <div
+                className={
+                  "form-section full-span product-master-section" +
+                  (productHighlightedFields.includes("packaging") || productHighlightedFields.includes("weight")
+                    ? " product-highlight-section"
+                    : "")
+                }
+              >
+                <span className="form-section-title">
+                  Packaging information
+                  {productHighlightedFields.includes("packaging") || productHighlightedFields.includes("weight") ? (
+                    <span className="missing-field-note"> · Please fill the highlighted fields</span>
+                  ) : null}
+                </span>
                 <div className="product-master-table">
                   <div className="product-master-row">
                     <div className="form-field">
@@ -8813,8 +8827,18 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="form-section full-span product-master-section">
-                <span className="form-section-title">Owner Pricing Optional</span>
+              <div
+                className={
+                  "form-section full-span product-master-section" +
+                  (productHighlightedFields.includes("pricing") ? " product-highlight-section" : "")
+                }
+              >
+                <span className="form-section-title">
+                  Owner Pricing Optional
+                  {productHighlightedFields.includes("pricing") ? (
+                    <span className="missing-field-note"> · Missing pricing — please review</span>
+                  ) : null}
+                </span>
                 <p className="muted product-form-note">
                   Pricing can be completed later by Owner/Admin after purchase costing.
                 </p>
@@ -9295,26 +9319,139 @@ export default function App() {
                 {inventorySummary?.total_products ?? 0} products | {productHealthSummary.averageCompleteness}% complete
               </span>
             </div>
-            <div className="report-grid">
-              <StatCard label="Missing company" value={inventorySummary?.missing_company_count ?? productHealthSummary.missingCompanyCount} />
-              <StatCard label="Missing size" value={inventorySummary?.missing_size_count ?? productHealthSummary.missingSizeCount} />
-              <StatCard label="Missing weight" value={inventorySummary?.missing_weight_count ?? productHealthSummary.missingWeightCount} tone="danger" />
-              <StatCard label="Missing pricing" value={inventorySummary?.missing_pricing_count ?? productHealthSummary.missingPricingCount} tone="danger" />
-              <StatCard label="Missing packaging" value={inventorySummary?.missing_packaging_count ?? productHealthSummary.missingPackagingCount} />
-              <StatCard label="High stock products" value={productHealthSummary.highStockCount} />
+            <div className="report-grid product-report-cards">
+              <button
+                type="button"
+                className={`stat-card product-report-filter ${productReportGapFilter === "all" ? "product-report-filter-active" : ""}`}
+                onClick={() => setProductReportGapFilter("all")}
+              >
+                <span>All missing data</span>
+                <strong>{productWarningList.length}</strong>
+              </button>
+              <button
+                type="button"
+                className={`stat-card product-report-filter ${productReportGapFilter === "company" ? "product-report-filter-active" : ""}`}
+                onClick={() => setProductReportGapFilter("company")}
+              >
+                <span>Missing company</span>
+                <strong>{inventorySummary?.missing_company_count ?? productHealthSummary.missingCompanyCount}</strong>
+              </button>
+              <button
+                type="button"
+                className={`stat-card product-report-filter ${productReportGapFilter === "size" ? "product-report-filter-active" : ""}`}
+                onClick={() => setProductReportGapFilter("size")}
+              >
+                <span>Missing size</span>
+                <strong>{inventorySummary?.missing_size_count ?? productHealthSummary.missingSizeCount}</strong>
+              </button>
+              <button
+                type="button"
+                className={`stat-card tone-danger product-report-filter ${productReportGapFilter === "weight" ? "product-report-filter-active" : ""}`}
+                onClick={() => setProductReportGapFilter("weight")}
+              >
+                <span>Missing weight</span>
+                <strong>{inventorySummary?.missing_weight_count ?? productHealthSummary.missingWeightCount}</strong>
+              </button>
+              <button
+                type="button"
+                className={`stat-card tone-danger product-report-filter ${productReportGapFilter === "pricing" ? "product-report-filter-active" : ""}`}
+                onClick={() => setProductReportGapFilter("pricing")}
+              >
+                <span>Missing pricing</span>
+                <strong>{inventorySummary?.missing_pricing_count ?? productHealthSummary.missingPricingCount}</strong>
+              </button>
+              <button
+                type="button"
+                className={`stat-card product-report-filter ${productReportGapFilter === "packaging" ? "product-report-filter-active" : ""}`}
+                onClick={() => setProductReportGapFilter("packaging")}
+              >
+                <span>Missing packaging</span>
+                <strong>{inventorySummary?.missing_packaging_count ?? productHealthSummary.missingPackagingCount}</strong>
+              </button>
             </div>
-            <div className="mini-list">
-              {productWarningList.slice(0, 10).map((product) => (
-                <div key={`warning-${product.id}`} className="timeline-item">
-                  <strong>{product.name}</strong>
-                  <p className="muted">
-                    {product.company_name || "Company missing"} | {product.product_size || product.tile_size || "Size missing"}
-                  </p>
-                  <p>Missing: {getProductDataGaps(product).map(formatProductDataGapLabel).join(", ")}</p>
-                </div>
-              ))}
-              {!productWarningList.length ? <p className="muted">No product master warnings right now.</p> : null}
+            <div className="table-shell product-report-table">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Product</th>
+                    <th>Company</th>
+                    <th>Size</th>
+                    <th>Missing fields</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    const filtered = (productWarningList || []).filter((product) => {
+                      if (productReportGapFilter === "all") return true;
+                      const gaps = getProductDataGaps(product);
+                      return gaps.includes(productReportGapFilter);
+                    });
+                    const sorted = [...filtered].sort((a, b) => {
+                      const ga = getProductDataGaps(a).length;
+                      const gb = getProductDataGaps(b).length;
+                      if (gb !== ga) return gb - ga;
+                      return String(a.name || "").localeCompare(String(b.name || ""));
+                    });
+                    if (!sorted.length) {
+                      return (
+                        <tr>
+                          <td colSpan={5}>
+                            <EmptyState
+                              title="No product master warnings"
+                              message="Every loaded product has the required master data filled."
+                              compact
+                            />
+                          </td>
+                        </tr>
+                      );
+                    }
+                    return sorted.map((product) => {
+                      const gaps = getProductDataGaps(product);
+                      return (
+                        <tr
+                          key={`warning-${product.id}`}
+                          className="product-report-row"
+                          onClick={() => startEditingProduct(product, gaps)}
+                          style={{ cursor: "pointer" }}
+                        >
+                          <td>
+                            <strong>{product.name}</strong>
+                            <div className="muted">{product.design_code || product.category || ""}</div>
+                          </td>
+                          <td>{product.company_name || <span className="muted">— missing</span>}</td>
+                          <td>{product.product_size || product.tile_size || <span className="muted">— missing</span>}</td>
+                          <td>
+                            <div className="chip-row">
+                              {gaps.map((code) => (
+                                <span key={code} className={`status-chip status-${code === "pricing" || code === "weight" ? "urgent" : "pending"}`}>
+                                  {formatProductDataGapLabel(code)}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                startEditingProduct(product, gaps);
+                              }}
+                            >
+                              Fix Missing Data
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()}
+                </tbody>
+              </table>
             </div>
+            <p className="muted" style={{ marginTop: "0.6rem", fontSize: "0.8rem" }}>
+              Click any row or use Fix Missing Data to jump to New Entry with the empty fields highlighted.
+            </p>
           </section>
           ) : null}
         </section>
