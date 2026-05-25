@@ -44,6 +44,22 @@ const userRoles = new Set([
 const expensePaymentModes = new Set(["cash", "bank", "upi", "cheque", "card", "other"]);
 const purchaseBusinessUnits = new Set(["tiles", "plumbing", "both"]);
 const purchasePaymentStatuses = new Set(["pending", "partial", "paid"]);
+const billingInvoiceTypes = new Set(["gst_invoice", "estimate"]);
+const billingItemTypes = new Set(["tiles", "plumbing", "adhesive", "granite_marble", "custom_item"]);
+const billingApprovalStatuses = new Set(["draft", "pending_approval", "approved", "rejected", "cancelled"]);
+const billingPaymentStatuses = new Set(["unpaid", "partial", "paid"]);
+const billingPaymentModes = new Set(["cash", "upi", "bank_transfer", "cheque", "mixed"]);
+const purchaseCostingStatuses = new Set(["draft", "cost_calculated", "approved", "cancelled"]);
+const purchaseAllocationMethods = new Set([
+  "weight_wise",
+  "purchase_value_wise",
+  "quantity_wise",
+  "supplier_amount_wise",
+  "manual",
+  "by_value",
+  "by_quantity",
+]);
+const overheadAllocationMethods = new Set(["per_box", "per_sqft", "sales_value_wise", "quantity_wise"]);
 const adhesiveTokenStatuses = new Set(["pending", "paid", "rejected"]);
 const adhesiveVerificationStatuses = new Set(["unverified", "matched", "mismatch", "approved", "rejected"]);
 const projectStatuses = new Set(["draft", "active", "on_hold", "completed"]);
@@ -654,12 +670,24 @@ export function validateExpensePayload(payload) {
   };
 }
 
-export function validatePurchasePayload(payload) {
+export function validatePurchasePayload(payload, { requireMaster = true } = {}) {
   const supplier_name = normalizeString(payload.supplier_name);
   const supplier_phone = normalizeOptionalString(payload.supplier_phone);
+  const supplier_id_raw = payload.supplier_id;
+  const supplier_id =
+    supplier_id_raw === "" || supplier_id_raw === null || typeof supplier_id_raw === "undefined"
+      ? null
+      : Number(supplier_id_raw);
+  const product_id_raw = payload.product_id;
+  const product_id =
+    product_id_raw === "" || product_id_raw === null || typeof product_id_raw === "undefined"
+      ? null
+      : Number(product_id_raw);
   const invoice_number = normalizeOptionalString(payload.invoice_number);
   const purchase_date =
     normalizeOptionalString(payload.purchase_date) || new Date().toISOString().slice(0, 10);
+  const truck_number = normalizeOptionalString(payload.truck_number);
+  const delivery_date = normalizeOptionalString(payload.delivery_date);
   const business_unit = normalizeString(payload.business_unit || "tiles");
   const category = normalizeOptionalString(payload.category) || "tiles";
   const item_name = normalizeOptionalString(payload.item_name);
@@ -675,7 +703,14 @@ export function validatePurchasePayload(payload) {
   const payment_status = normalizeString(payload.payment_status || "pending");
   const remarks = normalizeOptionalString(payload.remarks);
 
-  if (!supplier_name) {
+  if (requireMaster) {
+    if (!Number.isInteger(supplier_id) || supplier_id <= 0) {
+      return { ok: false, message: "Registered supplier is required" };
+    }
+    if (!Number.isInteger(product_id) || product_id <= 0) {
+      return { ok: false, message: "Inventory product is required" };
+    }
+  } else if (!supplier_name) {
     return { ok: false, message: "Supplier name is required" };
   }
 
@@ -685,6 +720,10 @@ export function validatePurchasePayload(payload) {
 
   if (purchase_date && Number.isNaN(new Date(purchase_date).getTime())) {
     return { ok: false, message: "Purchase date is invalid" };
+  }
+
+  if (delivery_date && Number.isNaN(new Date(delivery_date).getTime())) {
+    return { ok: false, message: "Delivery date is invalid" };
   }
 
   if (!purchaseBusinessUnits.has(business_unit)) {
@@ -714,10 +753,14 @@ export function validatePurchasePayload(payload) {
   return {
     ok: true,
     value: {
+      supplier_id,
+      product_id,
       supplier_name,
       supplier_phone,
       invoice_number,
       purchase_date,
+      truck_number,
+      delivery_date: delivery_date || null,
       business_unit,
       category,
       item_name,
@@ -741,6 +784,490 @@ export function validateDailyReportQuery(query) {
   }
 
   return { ok: true, value: { date } };
+}
+
+export function validateBillingInvoicePayload(payload) {
+  const customer_name = normalizeString(payload.customer_name);
+  const customer_mobile = normalizeOptionalString(payload.customer_mobile);
+  const customer_address = normalizeOptionalString(payload.customer_address);
+  const leadIdValue = payload.lead_id;
+  const quotationIdValue = payload.quotation_id;
+  const projectIdValue = payload.project_id;
+  const lead_id =
+    leadIdValue === "" || leadIdValue === null || typeof leadIdValue === "undefined"
+      ? null
+      : Number(leadIdValue);
+  const quotation_id =
+    quotationIdValue === "" || quotationIdValue === null || typeof quotationIdValue === "undefined"
+      ? null
+      : Number(quotationIdValue);
+  const project_id =
+    projectIdValue === "" || projectIdValue === null || typeof projectIdValue === "undefined"
+      ? null
+      : Number(projectIdValue);
+  const site_reference = normalizeOptionalString(payload.site_reference);
+  const invoice_type = normalizeString(payload.invoice_type || "gst_invoice");
+  const invoice_date =
+    normalizeOptionalString(payload.invoice_date) || new Date().toISOString().slice(0, 10);
+  const notes = normalizeOptionalString(payload.notes);
+  const transport_charge = Number(payload.transport_charge ?? 0);
+  const additional_charge = Number(payload.additional_charge ?? 0);
+  const status = normalizeString(payload.status || "draft");
+  const approval_note = normalizeOptionalString(payload.approval_note);
+  const items = Array.isArray(payload.items) ? payload.items : [];
+
+  if (!customer_name) {
+    return { ok: false, message: "Customer name is required" };
+  }
+
+  if (customer_mobile && !isPhoneValid(customer_mobile)) {
+    return { ok: false, message: "Customer mobile must be 7 to 15 characters" };
+  }
+
+  if (lead_id !== null && (!Number.isInteger(lead_id) || lead_id <= 0)) {
+    return { ok: false, message: "Lead reference is invalid" };
+  }
+
+  if (quotation_id !== null && (!Number.isInteger(quotation_id) || quotation_id <= 0)) {
+    return { ok: false, message: "Quotation reference is invalid" };
+  }
+
+  if (project_id !== null && (!Number.isInteger(project_id) || project_id <= 0)) {
+    return { ok: false, message: "Project reference is invalid" };
+  }
+
+  if (!billingInvoiceTypes.has(invoice_type)) {
+    return { ok: false, message: "Invoice type is invalid" };
+  }
+
+  if (!billingApprovalStatuses.has(status)) {
+    return { ok: false, message: "Invoice status is invalid" };
+  }
+
+  if (invoice_date && Number.isNaN(new Date(invoice_date).getTime())) {
+    return { ok: false, message: "Invoice date is invalid" };
+  }
+
+  if (!Number.isFinite(transport_charge) || transport_charge < 0) {
+    return { ok: false, message: "Transport charge must be a non-negative number" };
+  }
+
+  if (!Number.isFinite(additional_charge) || additional_charge < 0) {
+    return { ok: false, message: "Additional charge must be a non-negative number" };
+  }
+
+  if (!items.length) {
+    return { ok: false, message: "At least one invoice item is required" };
+  }
+
+  const normalizedItems = [];
+
+  for (const item of items) {
+    const item_type = normalizeString(item.item_type || "tiles");
+    const productIdValue = item.product_id;
+    const product_id =
+      productIdValue === "" || productIdValue === null || typeof productIdValue === "undefined"
+        ? null
+        : Number(productIdValue);
+    const product_name = normalizeString(item.product_name);
+    const quantity = Number(item.quantity ?? 0);
+    const unit = normalizeString(item.unit || "pcs");
+    const rate = Number(item.rate ?? 0);
+    const discount = Number(item.discount ?? 0);
+    const gst_percent = Number(item.gst_percent ?? item.gst ?? 0);
+
+    if (!billingItemTypes.has(item_type)) {
+      return { ok: false, message: "Invoice item type is invalid" };
+    }
+
+    if (product_id !== null && (!Number.isInteger(product_id) || product_id <= 0)) {
+      return { ok: false, message: "Invoice item product reference is invalid" };
+    }
+
+    if (!product_name) {
+      return { ok: false, message: "Invoice item product name is required" };
+    }
+
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      return { ok: false, message: "Invoice item quantity must be greater than zero" };
+    }
+
+    if (!unit) {
+      return { ok: false, message: "Invoice item unit is required" };
+    }
+
+    if (!Number.isFinite(rate) || rate < 0) {
+      return { ok: false, message: "Invoice item rate must be a non-negative number" };
+    }
+
+    if (!Number.isFinite(discount) || discount < 0) {
+      return { ok: false, message: "Invoice item discount must be a non-negative number" };
+    }
+
+    if (!Number.isFinite(gst_percent) || gst_percent < 0) {
+      return { ok: false, message: "Invoice item GST must be a non-negative number" };
+    }
+
+    const taxable = Math.max(quantity * rate - discount, 0);
+    const total = Number((taxable + taxable * (gst_percent / 100)).toFixed(2));
+
+    normalizedItems.push({
+      item_type,
+      product_id,
+      product_name,
+      quantity,
+      unit,
+      rate,
+      discount,
+      gst_percent,
+      total,
+    });
+  }
+
+  const subtotal = Number(
+    normalizedItems.reduce((sum, item) => sum + Math.max(item.quantity * item.rate - item.discount, 0), 0).toFixed(2)
+  );
+  const gst_amount = Number(
+    normalizedItems.reduce((sum, item) => {
+      const taxable = Math.max(item.quantity * item.rate - item.discount, 0);
+      return sum + taxable * (item.gst_percent / 100);
+    }, 0).toFixed(2)
+  );
+  const total_discount = Number(normalizedItems.reduce((sum, item) => sum + item.discount, 0).toFixed(2));
+  const grand_total = Number((subtotal + gst_amount + transport_charge + additional_charge).toFixed(2));
+
+  return {
+    ok: true,
+    value: {
+      customer_name,
+      customer_mobile,
+      customer_address,
+      lead_id,
+      quotation_id,
+      project_id,
+      site_reference,
+      invoice_type,
+      invoice_date,
+      notes,
+      transport_charge,
+      additional_charge,
+      total_discount,
+      subtotal,
+      gst_amount,
+      grand_total,
+      status,
+      approval_note,
+      items: normalizedItems,
+    },
+  };
+}
+
+export function validateBillingApprovalPayload(payload) {
+  const action = normalizeString(payload.action);
+  const note = normalizeOptionalString(payload.note);
+
+  if (!["approved", "rejected"].includes(action)) {
+    return { ok: false, message: "Approval action must be approved or rejected" };
+  }
+
+  return {
+    ok: true,
+    value: {
+      action,
+      note,
+    },
+  };
+}
+
+export function validateBillingPaymentPayload(payload) {
+  const amount = Number(payload.amount ?? 0);
+  const payment_mode = normalizeString(payload.payment_mode || "cash");
+  const note = normalizeOptionalString(payload.note);
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { ok: false, message: "Payment amount must be greater than zero" };
+  }
+
+  if (!billingPaymentModes.has(payment_mode)) {
+    return { ok: false, message: "Payment mode is invalid" };
+  }
+
+  return {
+    ok: true,
+    value: {
+      amount: Number(amount.toFixed(2)),
+      payment_mode,
+      note,
+    },
+  };
+}
+
+export function validatePurchaseCostingPayload(payload) {
+  const lot_number = normalizeString(payload.lot_number);
+  const arrival_date = normalizeOptionalString(payload.arrival_date) || new Date().toISOString().slice(0, 10);
+  const vehicle_number = normalizeOptionalString(payload.vehicle_number);
+  const transporter_name = normalizeOptionalString(payload.transporter_name);
+  const driver_name = normalizeOptionalString(payload.driver_name);
+  const driver_mobile = normalizeOptionalString(payload.driver_mobile);
+  const allocation_method = normalizeString(payload.allocation_method || "weight_wise");
+  const total_freight_cost = Number(payload.total_freight_cost ?? 0);
+  const total_unloading_cost = Number(payload.total_unloading_cost ?? 0);
+  const other_charges = Number(payload.other_charges ?? 0);
+  const financed_amount = Number(payload.financed_amount ?? 0);
+  const interest_rate_percent = Number(payload.interest_rate_percent ?? 0);
+  const holding_days = Number(payload.holding_days ?? 0);
+  const interest_cost_override =
+    payload.interest_cost_override === "" || payload.interest_cost_override === null || typeof payload.interest_cost_override === "undefined"
+      ? null
+      : Number(payload.interest_cost_override);
+  const showroom_overhead_amount = Number(payload.showroom_overhead_amount ?? 0);
+  const stock_received_date = normalizeOptionalString(payload.stock_received_date) || arrival_date;
+  const time_decay_percent =
+    payload.time_decay_percent === "" || payload.time_decay_percent === null || typeof payload.time_decay_percent === "undefined"
+      ? null
+      : Number(payload.time_decay_percent);
+  const marketing_cost_amount = Number(payload.marketing_cost_amount ?? 0);
+  const marketing_cost_allocation_method = normalizeOptionalString(payload.marketing_cost_allocation_method) || "manual";
+  const monthly_overhead_allocation_method =
+    normalizeOptionalString(payload.monthly_overhead_allocation_method) || "per_box";
+  const overhead_period = normalizeOptionalString(payload.overhead_period);
+  const overhead_notes = normalizeOptionalString(payload.overhead_notes);
+  const minimum_margin_percent = Number(payload.minimum_margin_percent ?? 0);
+  const target_margin_percent = Number(payload.target_margin_percent ?? 0);
+  const remarks = normalizeOptionalString(payload.remarks);
+  const status = normalizeString(payload.status || "draft");
+  const suppliers = Array.isArray(payload.suppliers) ? payload.suppliers : [];
+
+  if (!lot_number) {
+    return { ok: false, message: "Lot / truck number is required" };
+  }
+
+  if (arrival_date && Number.isNaN(new Date(arrival_date).getTime())) {
+    return { ok: false, message: "Arrival date is invalid" };
+  }
+
+  if (driver_mobile && !isPhoneValid(driver_mobile)) {
+    return { ok: false, message: "Driver mobile must be 7 to 15 characters" };
+  }
+
+  if (!purchaseAllocationMethods.has(allocation_method)) {
+    return { ok: false, message: "Allocation method is invalid" };
+  }
+
+  if (!purchaseCostingStatuses.has(status)) {
+    return { ok: false, message: "Purchase costing status is invalid" };
+  }
+
+  if (!overheadAllocationMethods.has(monthly_overhead_allocation_method)) {
+    return { ok: false, message: "Monthly overhead allocation method is invalid" };
+  }
+
+  const numericChecks = [
+    ["Total freight cost", total_freight_cost],
+    ["Total unloading cost", total_unloading_cost],
+    ["Other charges", other_charges],
+    ["Financed amount", financed_amount],
+    ["Interest rate", interest_rate_percent],
+    ["Holding days", holding_days],
+    ["Showroom overhead amount", showroom_overhead_amount],
+    ["Marketing cost amount", marketing_cost_amount],
+    ["Minimum margin", minimum_margin_percent],
+    ["Target margin", target_margin_percent],
+  ];
+
+  for (const [label, value] of numericChecks) {
+    if (!Number.isFinite(value) || value < 0) {
+      return { ok: false, message: `${label} must be a non-negative number` };
+    }
+  }
+
+  if (interest_cost_override !== null && (!Number.isFinite(interest_cost_override) || interest_cost_override < 0)) {
+    return { ok: false, message: "Interest cost override must be a non-negative number" };
+  }
+
+  if (stock_received_date && Number.isNaN(new Date(stock_received_date).getTime())) {
+    return { ok: false, message: "Stock received date is invalid" };
+  }
+
+  if (time_decay_percent !== null && (!Number.isFinite(time_decay_percent) || time_decay_percent < 0)) {
+    return { ok: false, message: "Time decay percent must be a non-negative number" };
+  }
+
+  if (!suppliers.length) {
+    return { ok: false, message: "At least one supplier is required" };
+  }
+
+  const normalizedSuppliers = [];
+
+  for (const supplier of suppliers) {
+    const supplier_name = normalizeString(supplier.supplier_name);
+    const supplier_invoice_number = normalizeOptionalString(supplier.supplier_invoice_number);
+    const supplier_invoice_date = normalizeOptionalString(supplier.supplier_invoice_date);
+    const supplier_amount =
+      supplier.supplier_amount === "" || supplier.supplier_amount === null || typeof supplier.supplier_amount === "undefined"
+        ? null
+        : Number(supplier.supplier_amount);
+    const supplier_notes = normalizeOptionalString(supplier.supplier_notes);
+    const items = Array.isArray(supplier.items) ? supplier.items : [];
+
+    if (!supplier_name) {
+      return { ok: false, message: "Supplier name is required" };
+    }
+
+    if (supplier_invoice_date && Number.isNaN(new Date(supplier_invoice_date).getTime())) {
+      return { ok: false, message: "Supplier invoice date is invalid" };
+    }
+
+    if (supplier_amount !== null && (!Number.isFinite(supplier_amount) || supplier_amount < 0)) {
+      return { ok: false, message: "Supplier amount must be a non-negative number" };
+    }
+
+    if (!items.length) {
+      return { ok: false, message: `Supplier ${supplier_name} must have at least one product line` };
+    }
+
+    const normalizedItems = [];
+
+    for (const item of items) {
+      const productIdValue = item.product_id;
+      const product_id =
+        productIdValue === "" || productIdValue === null || typeof productIdValue === "undefined"
+          ? null
+          : Number(productIdValue);
+      const item_name = normalizeString(item.item_name);
+      const company_name = normalizeOptionalString(item.company_name);
+      const product_size = normalizeOptionalString(item.product_size);
+      const category = normalizeString(item.category || "tiles");
+      const quantity = Number(item.quantity ?? 0);
+      const unit = normalizeString(item.unit || "pcs");
+      const basic_purchase_rate = Number(item.basic_purchase_rate ?? 0);
+      const boxes =
+        item.boxes === "" || item.boxes === null || typeof item.boxes === "undefined" ? 0 : Number(item.boxes);
+      const pieces_per_box =
+        item.pieces_per_box === "" || item.pieces_per_box === null || typeof item.pieces_per_box === "undefined"
+          ? 0
+          : Number(item.pieces_per_box);
+      const sqft_per_box =
+        item.sqft_per_box === "" || item.sqft_per_box === null || typeof item.sqft_per_box === "undefined"
+          ? 0
+          : Number(item.sqft_per_box);
+      const weight_per_box =
+        item.weight_per_box === "" || item.weight_per_box === null || typeof item.weight_per_box === "undefined"
+          ? 0
+          : Number(item.weight_per_box);
+      const weight_per_unit =
+        item.weight_per_unit === "" || item.weight_per_unit === null || typeof item.weight_per_unit === "undefined"
+          ? 0
+          : Number(item.weight_per_unit);
+      const damage_quantity = Number(item.damage_quantity ?? 0);
+      const manual_allocation_value =
+        item.manual_allocation_value === "" || item.manual_allocation_value === null || typeof item.manual_allocation_value === "undefined"
+          ? 0
+          : Number(item.manual_allocation_value);
+
+      if (product_id !== null && (!Number.isInteger(product_id) || product_id <= 0)) {
+        return { ok: false, message: "Purchase lot product reference is invalid" };
+      }
+
+      if (!item_name) {
+        return { ok: false, message: "Product / item name is required" };
+      }
+
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        return { ok: false, message: "Purchase lot quantity must be greater than zero" };
+      }
+
+      if (!unit) {
+        return { ok: false, message: "Purchase lot unit is required" };
+      }
+
+      if (!Number.isFinite(basic_purchase_rate) || basic_purchase_rate < 0) {
+        return { ok: false, message: "Basic purchase rate must be a non-negative number" };
+      }
+
+      const itemNumericChecks = [
+        ["Boxes", boxes],
+        ["Pieces per box", pieces_per_box],
+        ["Sqft per box", sqft_per_box],
+        ["Weight per box", weight_per_box],
+        ["Weight per unit", weight_per_unit],
+      ];
+
+      for (const [label, value] of itemNumericChecks) {
+        if (!Number.isFinite(value) || value < 0) {
+          return { ok: false, message: `${label} must be a non-negative number` };
+        }
+      }
+
+      if (!Number.isFinite(damage_quantity) || damage_quantity < 0 || damage_quantity > quantity) {
+        return { ok: false, message: "Damage / decay quantity is invalid" };
+      }
+
+      if (!Number.isFinite(manual_allocation_value) || manual_allocation_value < 0) {
+        return { ok: false, message: "Manual allocation value must be a non-negative number" };
+      }
+
+      normalizedItems.push({
+        product_id,
+        item_name,
+        company_name,
+        product_size,
+        category,
+        quantity,
+        unit,
+        basic_purchase_rate,
+        boxes,
+        pieces_per_box,
+        sqft_per_box,
+        weight_per_box,
+        weight_per_unit,
+        damage_quantity,
+        manual_allocation_value,
+      });
+    }
+
+    normalizedSuppliers.push({
+      supplier_name,
+      supplier_invoice_number,
+      supplier_invoice_date: supplier_invoice_date || null,
+      supplier_amount,
+      supplier_notes,
+      items: normalizedItems,
+    });
+  }
+
+  return {
+    ok: true,
+    value: {
+      lot_number,
+      arrival_date,
+      vehicle_number,
+      transporter_name,
+      driver_name,
+      driver_mobile,
+      allocation_method,
+      total_freight_cost,
+      total_unloading_cost,
+      other_charges,
+      financed_amount,
+      interest_rate_percent,
+      holding_days,
+      interest_cost_override,
+      showroom_overhead_amount,
+      stock_received_date,
+      time_decay_percent,
+      marketing_cost_amount,
+      marketing_cost_allocation_method,
+      monthly_overhead_allocation_method,
+      overhead_period,
+      overhead_notes,
+      minimum_margin_percent,
+      target_margin_percent,
+      remarks,
+      status,
+      suppliers: normalizedSuppliers,
+    },
+  };
 }
 
 export function validateDateRangeQuery(query) {
@@ -810,13 +1337,28 @@ export function validateDealerPayload(payload) {
 
 export function validateProductPayload(payload) {
   const name = normalizeString(payload.name);
+  const company_name = normalizeOptionalString(payload.company_name);
   const design_code = normalizeOptionalString(payload.design_code);
   const business_unit = normalizeString(payload.business_unit || "tiles");
   const category = normalizeOptionalString(payload.category || "flooring");
   const tile_size = normalizeOptionalString(payload.tile_size);
+  const product_size = normalizeOptionalString(payload.product_size || tile_size);
+  const unit = normalizeOptionalString(payload.unit || "pcs");
   const finish = normalizeOptionalString(payload.finish);
   const stock_sqft = toInteger(payload.stock_sqft, 0);
   const price_per_sqft = toInteger(payload.price_per_sqft, 0);
+  const purchase_rate = Number(payload.purchase_rate ?? 0);
+  const last_purchase_rate = Number(payload.last_purchase_rate ?? purchase_rate ?? 0);
+  const landed_cost_per_unit = Number(payload.landed_cost_per_unit ?? 0);
+  const minimum_allowed_rate = Number(payload.minimum_allowed_rate ?? 0);
+  const suggested_selling_rate = Number(payload.suggested_selling_rate ?? 0);
+  const pieces_per_box = Number(payload.pieces_per_box ?? 0);
+  const sqft_per_box = Number(payload.sqft_per_box ?? 0);
+  const weight_per_box = Number(payload.weight_per_box ?? 0);
+  const weight_per_unit = Number(payload.weight_per_unit ?? 0);
+  const safety_margin_percent = Number(payload.safety_margin_percent ?? 0);
+  const growth_margin_percent = Number(payload.growth_margin_percent ?? 0);
+  const pricing_lock = Boolean(payload.pricing_lock);
   const status = normalizeString(payload.status || "active");
 
   if (!name) {
@@ -826,8 +1368,30 @@ export function validateProductPayload(payload) {
   if (
     !Number.isFinite(stock_sqft) ||
     !Number.isFinite(price_per_sqft) ||
+    !Number.isFinite(purchase_rate) ||
+    !Number.isFinite(last_purchase_rate) ||
+    !Number.isFinite(landed_cost_per_unit) ||
+    !Number.isFinite(minimum_allowed_rate) ||
+    !Number.isFinite(suggested_selling_rate) ||
+    !Number.isFinite(pieces_per_box) ||
+    !Number.isFinite(sqft_per_box) ||
+    !Number.isFinite(weight_per_box) ||
+    !Number.isFinite(weight_per_unit) ||
+    !Number.isFinite(safety_margin_percent) ||
+    !Number.isFinite(growth_margin_percent) ||
     stock_sqft < 0 ||
-    price_per_sqft < 0
+    price_per_sqft < 0 ||
+    purchase_rate < 0 ||
+    last_purchase_rate < 0 ||
+    landed_cost_per_unit < 0 ||
+    minimum_allowed_rate < 0 ||
+    suggested_selling_rate < 0 ||
+    pieces_per_box < 0 ||
+    sqft_per_box < 0 ||
+    weight_per_box < 0 ||
+    weight_per_unit < 0 ||
+    safety_margin_percent < 0 ||
+    growth_margin_percent < 0
   ) {
     return { ok: false, message: "Inventory values must be non-negative" };
   }
@@ -844,13 +1408,28 @@ export function validateProductPayload(payload) {
     ok: true,
     value: {
       name,
+      company_name,
       design_code,
       business_unit,
       category,
       tile_size,
+      product_size,
+      unit,
       finish,
+      pieces_per_box,
+      sqft_per_box,
+      weight_per_box,
+      weight_per_unit,
       stock_sqft,
+      purchase_rate,
       price_per_sqft,
+      last_purchase_rate,
+      landed_cost_per_unit,
+      minimum_allowed_rate,
+      suggested_selling_rate,
+      safety_margin_percent,
+      growth_margin_percent,
+      pricing_lock,
       status,
     },
   };

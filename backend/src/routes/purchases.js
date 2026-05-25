@@ -1,5 +1,5 @@
 import express from "express";
-import { query } from "../db.js";
+import { pool, query } from "../db.js";
 import { requireRole } from "../middleware/auth.js";
 import { validatePurchasePayload } from "../utils/validation.js";
 
@@ -27,7 +27,238 @@ function parseOffset(value) {
   return parsed;
 }
 
+function roundRate(value) {
+  return Number(Number(value || 0).toFixed(2));
+}
+
+function createProductMatchError(itemName, businessUnit, productIds) {
+  const error = new Error(
+    `Multiple products match "${itemName}" for business unit "${businessUnit}". Please fix product mapping before continuing.`
+  );
+  error.code = "PRODUCT_MATCH_AMBIGUOUS";
+  error.meta = { itemName, businessUnit, productIds };
+  return error;
+}
+
+function buildPurchaseDuplicateMessage() {
+  return "Duplicate purchase item: the same supplier, invoice number, purchase date, and product already exist.";
+}
+
+function classifyRateDifference(currentRate, averageRate) {
+  const current = Number(currentRate || 0);
+  const average = Number(averageRate || 0);
+
+  if (!(current > 0) || !(average > 0)) {
+    return {
+      difference_amount: 0,
+      difference_percentage: 0,
+      status: "normal",
+      approval_required: false,
+    };
+  }
+
+  const differenceAmount = roundRate(current - average);
+  const differencePercentage = roundRate((differenceAmount / average) * 100);
+
+  if (differencePercentage > 8) {
+    return {
+      difference_amount: differenceAmount,
+      difference_percentage: differencePercentage,
+      status: "approval_required",
+      approval_required: true,
+    };
+  }
+
+  if (differencePercentage > 3) {
+    return {
+      difference_amount: differenceAmount,
+      difference_percentage: differencePercentage,
+      status: "review",
+      approval_required: false,
+    };
+  }
+
+  return {
+    difference_amount: differenceAmount,
+    difference_percentage: differencePercentage,
+    status: "normal",
+    approval_required: false,
+  };
+}
+
+function buildTrend(lastFiveRates) {
+  if (!Array.isArray(lastFiveRates) || lastFiveRates.length < 2) {
+    return "stable";
+  }
+
+  const chronological = [...lastFiveRates].reverse();
+  const start = Number(chronological[0]?.rate || 0);
+  const end = Number(chronological[chronological.length - 1]?.rate || 0);
+
+  if (!(start > 0) || !(end > 0)) {
+    return "stable";
+  }
+
+  const deltaPercent = ((end - start) / start) * 100;
+
+  if (deltaPercent >= 2) {
+    return "rising";
+  }
+
+  if (deltaPercent <= -2) {
+    return "falling";
+  }
+
+  return "stable";
+}
+
+async function resolveInventoryProduct(client, purchase) {
+  const itemName = typeof purchase.item_name === "string" ? purchase.item_name.trim() : "";
+
+  if (!itemName) {
+    return null;
+  }
+  const businessUnit = purchase.business_unit || "tiles";
+  const productResult = await client.query(
+    `SELECT id, business_unit
+     FROM products
+     WHERE LOWER(name) = LOWER($1)
+       AND business_unit IN ($2, 'both')
+     ORDER BY
+       CASE
+         WHEN business_unit = $2 THEN 0
+         WHEN business_unit = 'both' THEN 1
+         ELSE 2
+       END,
+       id ASC`,
+    [itemName, businessUnit]
+  );
+
+  if (!productResult.rowCount) {
+    return null;
+  }
+
+  const exactMatches = productResult.rows.filter((row) => row.business_unit === businessUnit);
+  if (exactMatches.length > 1) {
+    process.stderr.write(
+      `[purchase-inventory-match] ambiguous exact match for ${itemName} (${businessUnit}) -> ${exactMatches.map((row) => row.id).join(",")}\n`
+    );
+    throw createProductMatchError(itemName, businessUnit, exactMatches.map((row) => row.id));
+  }
+
+  if (exactMatches.length === 1) {
+    return exactMatches[0];
+  }
+
+  const fallbackMatches = productResult.rows.filter((row) => row.business_unit === "both");
+  if (fallbackMatches.length > 1) {
+    process.stderr.write(
+      `[purchase-inventory-match] ambiguous fallback match for ${itemName} (${businessUnit}) -> ${fallbackMatches.map((row) => row.id).join(",")}\n`
+    );
+    throw createProductMatchError(itemName, businessUnit, fallbackMatches.map((row) => row.id));
+  }
+
+  return fallbackMatches[0] || null;
+}
+
+async function syncPurchaseInventory(client, purchase, direction) {
+  const quantity = Math.round(Number(purchase.quantity || 0));
+  if (!quantity) {
+    return;
+  }
+
+  const product = await resolveInventoryProduct(client, purchase);
+  if (!product) {
+    return;
+  }
+
+  await client.query(
+    `UPDATE products
+     SET stock_sqft = GREATEST(stock_sqft + $1, 0)
+     WHERE id = $2`,
+    [direction * quantity, product.id]
+  );
+}
+
 // Read endpoints accessible to staff who legitimately need showroom-level visibility.
+router.get(
+  "/by-truck",
+  requireRole("admin", "manager", "accounts", "operations", "operator", "reports", "inventory"),
+  async (req, res) => {
+    const truckNumber = typeof req.query.truck_number === "string" ? req.query.truck_number.trim() : "";
+    const deliveryDate = typeof req.query.delivery_date === "string" ? req.query.delivery_date.trim() : "";
+
+    if (!truckNumber || !deliveryDate || Number.isNaN(new Date(deliveryDate).getTime())) {
+      return res.status(400).json({ message: "truck_number and delivery_date are required" });
+    }
+
+    try {
+      const result = await query(
+        `SELECT
+            p.id,
+            p.supplier_id,
+            p.product_id,
+            p.supplier_name,
+            p.supplier_phone,
+            p.invoice_number,
+            p.purchase_date,
+            p.delivery_date,
+            p.truck_number,
+            p.business_unit,
+            p.category,
+            p.item_name,
+            p.quantity,
+            p.unit,
+            p.amount,
+            p.gst_amount,
+            p.total_amount,
+            pr.company_name,
+            pr.product_size,
+            pr.pieces_per_box,
+            pr.sqft_per_box,
+            pr.weight_per_box,
+            pr.weight_per_unit,
+            pr.last_purchase_rate
+         FROM purchases p
+         LEFT JOIN products pr ON pr.id = p.product_id
+         WHERE LOWER(TRIM(p.truck_number)) = LOWER(TRIM($1))
+           AND p.delivery_date = $2::date
+         ORDER BY p.supplier_name ASC, p.invoice_number ASC, p.id ASC`,
+        [truckNumber, deliveryDate]
+      );
+
+      const groupedMap = new Map();
+      result.rows.forEach((row) => {
+        const groupKey = `${row.supplier_id || "unknown"}::${row.invoice_number || ""}`;
+        if (!groupedMap.has(groupKey)) {
+          groupedMap.set(groupKey, {
+            supplier_id: row.supplier_id,
+            supplier_name: row.supplier_name,
+            supplier_phone: row.supplier_phone,
+            invoice_number: row.invoice_number,
+            purchase_date: row.purchase_date,
+            delivery_date: row.delivery_date,
+            truck_number: row.truck_number,
+            total_amount: 0,
+            items: [],
+          });
+        }
+        const group = groupedMap.get(groupKey);
+        group.total_amount += Number(row.total_amount || 0);
+        group.items.push(row);
+      });
+
+      return res.json({
+        truck_number: truckNumber,
+        delivery_date: deliveryDate,
+        bills: [...groupedMap.values()],
+      });
+    } catch (error) {
+      return res.status(500).json({ message: "Unable to fetch linked purchase bills", error: error.message });
+    }
+  }
+);
+
 router.get(
   "/",
   requireRole("admin", "manager", "accounts", "operations", "operator", "reports"),
@@ -115,6 +346,210 @@ router.get(
   }
 );
 
+router.get(
+  "/product-intelligence/:productId",
+  requireRole("admin", "manager", "accounts", "operations", "operator", "reports", "inventory"),
+  async (req, res) => {
+    const productId = Number.parseInt(req.params.productId, 10);
+    const currentRate = Number(req.query.current_rate ?? 0);
+
+    if (!Number.isFinite(productId) || productId <= 0) {
+      return res.status(400).json({ message: "Product id is invalid" });
+    }
+
+    try {
+      const productResult = await query(
+        `SELECT id, name, business_unit, category, unit
+         FROM products
+         WHERE id = $1
+         LIMIT 1`,
+        [productId]
+      );
+
+      if (!productResult.rowCount) {
+        return res.status(404).json({ message: "Product not found" });
+      }
+
+      const product = productResult.rows[0];
+      const productName = typeof product.name === "string" ? product.name.trim() : "";
+      const businessUnit = product.business_unit || "tiles";
+
+      const [purchaseEntryResult, costingResult] = await Promise.all([
+        query(
+          `SELECT
+             p.purchase_date AS activity_date,
+             p.supplier_name,
+             p.item_name,
+             p.quantity::numeric AS quantity,
+             CASE
+               WHEN COALESCE(p.quantity, 0) > 0 THEN ROUND((COALESCE(p.amount, 0) / NULLIF(p.quantity, 0))::numeric, 2)
+               ELSE 0
+             END AS rate,
+             'purchase_entry' AS source
+           FROM purchases p
+           WHERE LOWER(TRIM(p.item_name)) = LOWER(TRIM($1))
+             AND (p.business_unit = $2 OR p.business_unit = 'both' OR $2 = 'both')
+             AND COALESCE(p.quantity, 0) > 0
+           ORDER BY p.purchase_date DESC, p.id DESC
+           LIMIT 50`,
+          [productName, businessUnit]
+        ),
+        query(
+          `SELECT
+             COALESCE(l.arrival_date, l.created_at::date) AS activity_date,
+             s.supplier_name,
+             i.item_name,
+             COALESCE(i.net_usable_quantity, i.quantity, 0)::numeric AS quantity,
+             ROUND(COALESCE(i.basic_purchase_rate, 0)::numeric, 2) AS rate,
+             'purchase_costing' AS source
+           FROM purchase_lot_items i
+           JOIN purchase_lot_suppliers s ON s.id = i.supplier_id
+           JOIN purchase_lots l ON l.id = i.lot_id
+           WHERE (i.product_id = $1 OR LOWER(TRIM(i.item_name)) = LOWER(TRIM($2)))
+             AND l.status <> 'cancelled'
+             AND COALESCE(i.basic_purchase_rate, 0) > 0
+           ORDER BY COALESCE(l.arrival_date, l.created_at::date) DESC, i.id DESC
+           LIMIT 50`,
+          [productId, productName]
+        ),
+      ]);
+
+      const history = [...purchaseEntryResult.rows, ...costingResult.rows]
+        .map((row) => ({
+          purchase_date: row.activity_date,
+          supplier_name: row.supplier_name || "",
+          item_name: row.item_name || productName,
+          quantity: Number(row.quantity || 0),
+          rate: roundRate(row.rate),
+          source: row.source,
+        }))
+        .filter((row) => row.rate > 0)
+        .sort((left, right) => {
+          const leftTime = new Date(left.purchase_date || 0).getTime();
+          const rightTime = new Date(right.purchase_date || 0).getTime();
+          return rightTime - leftTime;
+        });
+
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - 30);
+      const recentWindow = history.filter((row) => {
+        const time = new Date(row.purchase_date || 0).getTime();
+        return Number.isFinite(time) && time >= cutoffDate.getTime();
+      });
+
+      const averageWindow = recentWindow.length ? recentWindow : history;
+      const average30DayRate = averageWindow.length
+        ? roundRate(
+            averageWindow.reduce((sum, row) => sum + Number(row.rate || 0), 0) / averageWindow.length
+          )
+        : 0;
+      const minRate = averageWindow.length
+        ? roundRate(Math.min(...averageWindow.map((row) => Number(row.rate || 0))))
+        : 0;
+      const maxRate = averageWindow.length
+        ? roundRate(Math.max(...averageWindow.map((row) => Number(row.rate || 0))))
+        : 0;
+
+      const supplierMap = new Map();
+      history.forEach((row) => {
+        const supplierName = row.supplier_name || "Unknown supplier";
+        if (!supplierMap.has(supplierName)) {
+          supplierMap.set(supplierName, {
+            supplier_name: supplierName,
+            last_rate: row.rate,
+            last_purchase_date: row.purchase_date,
+            quantity: row.quantity,
+          });
+        }
+      });
+
+      const supplierComparison = [...supplierMap.values()].sort((left, right) => {
+        if (left.last_rate !== right.last_rate) {
+          return left.last_rate - right.last_rate;
+        }
+
+        return new Date(right.last_purchase_date || 0).getTime() - new Date(left.last_purchase_date || 0).getTime();
+      });
+
+      const lastFiveRates = history.slice(0, 5).map((row) => ({
+        rate: row.rate,
+        supplier_name: row.supplier_name,
+        purchase_date: row.purchase_date,
+        quantity: row.quantity,
+        source: row.source,
+      }));
+      const difference = classifyRateDifference(currentRate, average30DayRate);
+
+      return res.json({
+        product_id: product.id,
+        product_name: product.name,
+        last_purchase_rate: history[0]?.rate || 0,
+        avg_30_day_rate: average30DayRate,
+        min_rate: minRate,
+        max_rate: maxRate,
+        last_supplier: history[0]?.supplier_name || "",
+        best_supplier_rate: supplierComparison[0]?.last_rate || 0,
+        recommended_supplier: supplierComparison[0]?.supplier_name || "",
+        supplier_comparison: supplierComparison,
+        last_5_rates: lastFiveRates,
+        trend: buildTrend(lastFiveRates),
+        current_rate: Number.isFinite(currentRate) ? roundRate(currentRate) : 0,
+        difference_amount: difference.difference_amount,
+        difference_percentage: difference.difference_percentage,
+        status: difference.status,
+        approval_required: difference.approval_required,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        message: "Unable to fetch product purchase intelligence",
+        error: error.message,
+      });
+    }
+  }
+);
+
+async function loadSupplierForPurchase(client, supplierId) {
+  const result = await client.query(
+    `SELECT id, name, mobile, status FROM suppliers WHERE id = $1 LIMIT 1`,
+    [supplierId]
+  );
+  if (!result.rowCount) {
+    const error = new Error("Registered supplier not found");
+    error.code = "SUPPLIER_NOT_FOUND";
+    throw error;
+  }
+  if (result.rows[0].status !== "active") {
+    const error = new Error("Selected supplier is inactive");
+    error.code = "SUPPLIER_INACTIVE";
+    throw error;
+  }
+  return result.rows[0];
+}
+
+async function loadProductForPurchase(client, productId) {
+  const result = await client.query(
+    `SELECT id, name, business_unit, category, unit FROM products WHERE id = $1 LIMIT 1`,
+    [productId]
+  );
+  if (!result.rowCount) {
+    const error = new Error("Inventory product not found");
+    error.code = "PRODUCT_NOT_FOUND";
+    throw error;
+  }
+  return result.rows[0];
+}
+
+function mapPurchaseFieldErrorToResponse(error) {
+  if (!error || !error.code) return null;
+  if (error.code === "SUPPLIER_NOT_FOUND" || error.code === "SUPPLIER_INACTIVE") {
+    return { status: 400, message: error.message };
+  }
+  if (error.code === "PRODUCT_NOT_FOUND") {
+    return { status: 400, message: error.message };
+  }
+  return null;
+}
+
 router.post(
   "/",
   requireRole("admin", "manager", "accounts", "operations", "operator"),
@@ -127,26 +562,46 @@ router.post(
 
     const purchase = validation.value;
 
+    const client = await pool.connect();
+
     try {
-      const result = await query(
+      await client.query("BEGIN");
+
+      // Resolve master records (validation already ensured ids are present).
+      const supplier = await loadSupplierForPurchase(client, purchase.supplier_id);
+      const product = await loadProductForPurchase(client, purchase.product_id);
+
+      const supplierName = supplier.name;
+      const supplierPhone = purchase.supplier_phone || supplier.mobile || "";
+      const itemName = product.name;
+      const category = purchase.category || product.category || "tiles";
+      const unit = purchase.unit || product.unit || "pcs";
+
+      const result = await client.query(
         `INSERT INTO purchases (
+            supplier_id, product_id,
             supplier_name, supplier_phone, invoice_number, purchase_date,
+            truck_number, delivery_date,
             business_unit, category, item_name, quantity, unit,
             amount, gst_amount, total_amount, payment_status, remarks,
             created_by, updated_by
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $15)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $19)
           RETURNING *`,
         [
-          purchase.supplier_name,
-          purchase.supplier_phone,
+          purchase.supplier_id,
+          purchase.product_id,
+          supplierName,
+          supplierPhone,
           purchase.invoice_number,
           purchase.purchase_date,
+          purchase.truck_number,
+          purchase.delivery_date,
           purchase.business_unit,
-          purchase.category,
-          purchase.item_name,
+          category,
+          itemName,
           purchase.quantity,
-          purchase.unit,
+          unit,
           purchase.amount,
           purchase.gst_amount,
           purchase.total_amount,
@@ -156,14 +611,27 @@ router.post(
         ]
       );
 
+      await syncPurchaseInventory(client, result.rows[0], 1);
+      await client.query("COMMIT");
+
       return res.status(201).json(result.rows[0]);
     } catch (error) {
+      await client.query("ROLLBACK");
+      const mapped = mapPurchaseFieldErrorToResponse(error);
+      if (mapped) {
+        return res.status(mapped.status).json({ message: mapped.message });
+      }
       if (error && error.code === "23505") {
         return res.status(409).json({
-          message: "Duplicate purchase entry: same supplier and invoice number already exist",
+          message: buildPurchaseDuplicateMessage(),
         });
       }
+      if (error && error.code === "PRODUCT_MATCH_AMBIGUOUS") {
+        return res.status(409).json({ message: error.message });
+      }
       return res.status(500).json({ message: "Unable to create purchase", error: error.message });
+    } finally {
+      client.release();
     }
   }
 );
@@ -181,37 +649,65 @@ router.put(
 
     const purchase = validation.value;
 
+    const client = await pool.connect();
+
     try {
-      const result = await query(
+      await client.query("BEGIN");
+      const existingResult = await client.query("SELECT * FROM purchases WHERE id = $1 LIMIT 1", [id]);
+
+      if (!existingResult.rowCount) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Purchase not found" });
+      }
+
+      await syncPurchaseInventory(client, existingResult.rows[0], -1);
+
+      const supplier = await loadSupplierForPurchase(client, purchase.supplier_id);
+      const product = await loadProductForPurchase(client, purchase.product_id);
+      const supplierName = supplier.name;
+      const supplierPhone = purchase.supplier_phone || supplier.mobile || "";
+      const itemName = product.name;
+      const category = purchase.category || product.category || "tiles";
+      const unit = purchase.unit || product.unit || "pcs";
+
+      const result = await client.query(
         `UPDATE purchases
-            SET supplier_name = $1,
-                supplier_phone = $2,
-                invoice_number = $3,
-                purchase_date = $4,
-                business_unit = $5,
-                category = $6,
-                item_name = $7,
-                quantity = $8,
-                unit = $9,
-                amount = $10,
-                gst_amount = $11,
-                total_amount = $12,
-                payment_status = $13,
-                remarks = $14,
-                updated_by = $15,
+            SET supplier_id = $1,
+                product_id = $2,
+                supplier_name = $3,
+                supplier_phone = $4,
+                invoice_number = $5,
+                purchase_date = $6,
+                truck_number = $7,
+                delivery_date = $8,
+                business_unit = $9,
+                category = $10,
+                item_name = $11,
+                quantity = $12,
+                unit = $13,
+                amount = $14,
+                gst_amount = $15,
+                total_amount = $16,
+                payment_status = $17,
+                remarks = $18,
+                updated_by = $19,
                 updated_at = CURRENT_TIMESTAMP
-          WHERE id = $16
+          WHERE id = $20
           RETURNING *`,
         [
-          purchase.supplier_name,
-          purchase.supplier_phone,
+          purchase.supplier_id,
+          purchase.product_id,
+          supplierName,
+          supplierPhone,
           purchase.invoice_number,
           purchase.purchase_date,
+          purchase.truck_number,
+          purchase.delivery_date,
           purchase.business_unit,
-          purchase.category,
-          purchase.item_name,
+          category,
+          itemName,
           purchase.quantity,
-          purchase.unit,
+          unit,
           purchase.amount,
           purchase.gst_amount,
           purchase.total_amount,
@@ -222,35 +718,54 @@ router.put(
         ]
       );
 
-      if (result.rowCount === 0) {
+      if (!result.rowCount) {
+        await client.query("ROLLBACK");
         return res.status(404).json({ message: "Purchase not found" });
       }
 
+      await syncPurchaseInventory(client, result.rows[0], 1);
+      await client.query("COMMIT");
       return res.json(result.rows[0]);
     } catch (error) {
+      await client.query("ROLLBACK");
       if (error && error.code === "23505") {
         return res.status(409).json({
-          message: "Duplicate purchase entry: same supplier and invoice number already exist",
+          message: buildPurchaseDuplicateMessage(),
         });
       }
+      if (error && error.code === "PRODUCT_MATCH_AMBIGUOUS") {
+        return res.status(409).json({ message: error.message });
+      }
+      const mapped = mapPurchaseFieldErrorToResponse(error);
+      if (mapped) {
+        return res.status(mapped.status).json({ message: mapped.message });
+      }
       return res.status(500).json({ message: "Unable to update purchase", error: error.message });
+    } finally {
+      client.release();
     }
   }
 );
 
 router.delete("/:id", requireRole("admin"), async (req, res) => {
   const { id } = req.params;
-
+  const client = await pool.connect();
   try {
-    const result = await query("DELETE FROM purchases WHERE id = $1 RETURNING id", [id]);
-
-    if (result.rowCount === 0) {
+    await client.query("BEGIN");
+    const existing = await client.query("SELECT * FROM purchases WHERE id = $1 LIMIT 1", [id]);
+    if (!existing.rowCount) {
+      await client.query("ROLLBACK");
       return res.status(404).json({ message: "Purchase not found" });
     }
-
+    await syncPurchaseInventory(client, existing.rows[0], -1);
+    await client.query("DELETE FROM purchases WHERE id = $1", [id]);
+    await client.query("COMMIT");
     return res.status(204).send();
   } catch (error) {
+    await client.query("ROLLBACK");
     return res.status(500).json({ message: "Unable to delete purchase", error: error.message });
+  } finally {
+    client.release();
   }
 });
 

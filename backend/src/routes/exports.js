@@ -217,4 +217,104 @@ router.get("/projects.csv", async (_req, res) => {
   }
 });
 
+router.get("/billing.csv", async (_req, res) => {
+  try {
+    const result = await query(
+      `SELECT
+         i.id,
+         i.invoice_number,
+         i.invoice_type,
+         i.invoice_date,
+         i.customer_name,
+         i.customer_mobile,
+         i.customer_address,
+         i.site_reference,
+         i.status,
+         i.payment_status,
+         i.payment_mode,
+         i.subtotal,
+         i.total_discount,
+         i.gst_amount,
+         i.transport_charge,
+         i.additional_charge,
+         i.grand_total,
+         i.received_amount,
+         i.remaining_amount,
+         i.notes,
+         COALESCE(u.name, 'System') AS created_by_name,
+         i.created_at
+       FROM invoices i
+       LEFT JOIN users u ON u.id = i.created_by
+       ORDER BY i.invoice_date DESC, i.id DESC`
+    );
+
+    sendCsv(
+      res,
+      "billing-export.csv",
+      [
+        { key: "id", label: "Invoice ID" },
+        { key: "invoice_number", label: "Invoice Number" },
+        { key: "invoice_type", label: "Invoice Type" },
+        { key: "invoice_date", label: "Invoice Date" },
+        { key: "customer_name", label: "Customer Name" },
+        { key: "customer_mobile", label: "Mobile" },
+        { key: "customer_address", label: "Address" },
+        { key: "site_reference", label: "Site Reference" },
+        { key: "status", label: "Status" },
+        { key: "payment_status", label: "Payment Status" },
+        { key: "payment_mode", label: "Payment Mode" },
+        { key: "subtotal", label: "Subtotal" },
+        { key: "total_discount", label: "Discount" },
+        { key: "gst_amount", label: "GST Amount" },
+        { key: "transport_charge", label: "Transport Charge" },
+        { key: "additional_charge", label: "Additional Charge" },
+        { key: "grand_total", label: "Grand Total" },
+        { key: "received_amount", label: "Received Amount" },
+        { key: "remaining_amount", label: "Remaining Amount" },
+        { key: "notes", label: "Notes" },
+        { key: "created_by_name", label: "Created By" },
+        { key: "created_at", label: "Created At" },
+      ],
+      result.rows
+    );
+  } catch (error) {
+    return res.status(500).json({ message: "Unable to export billing", error: error.message });
+  }
+});
+
+router.get("/billing-customer-ledger.csv", async (_req, res) => {
+  try {
+    const result = await query(
+      `SELECT
+         i.customer_name,
+         i.customer_mobile,
+         COUNT(*)::int AS bill_count,
+         COALESCE(SUM(i.grand_total), 0)::numeric AS billed_amount,
+         COALESCE(SUM(i.received_amount), 0)::numeric AS received_amount,
+         COALESCE(SUM(i.remaining_amount), 0)::numeric AS pending_amount,
+         MAX(i.invoice_date) AS latest_invoice_date
+       FROM invoices i
+       GROUP BY i.customer_name, i.customer_mobile
+       ORDER BY billed_amount DESC, latest_invoice_date DESC`
+    );
+
+    sendCsv(
+      res,
+      "billing-customer-ledger.csv",
+      [
+        { key: "customer_name", label: "Customer Name" },
+        { key: "customer_mobile", label: "Mobile" },
+        { key: "bill_count", label: "Bill Count" },
+        { key: "billed_amount", label: "Billed Amount" },
+        { key: "received_amount", label: "Received Amount" },
+        { key: "pending_amount", label: "Pending Amount" },
+        { key: "latest_invoice_date", label: "Latest Invoice Date" },
+      ],
+      result.rows
+    );
+  } catch (error) {
+    return res.status(500).json({ message: "Unable to export customer ledger", error: error.message });
+  }
+});
+
 export default router;

@@ -201,14 +201,33 @@ CREATE TABLE dealers (
 CREATE TABLE products (
   id SERIAL PRIMARY KEY,
   name VARCHAR(140) NOT NULL,
+  company_name VARCHAR(140) NOT NULL DEFAULT '',
   design_code VARCHAR(60) NOT NULL DEFAULT '',
   business_unit VARCHAR(20) NOT NULL DEFAULT 'tiles'
     CHECK (business_unit IN ('tiles', 'plumbing', 'both')),
   category VARCHAR(40) NOT NULL DEFAULT 'flooring',
+  unit VARCHAR(20) NOT NULL DEFAULT 'pcs',
   tile_size VARCHAR(40) NOT NULL DEFAULT '',
+  product_size VARCHAR(60) NOT NULL DEFAULT '',
   finish VARCHAR(40) NOT NULL DEFAULT '',
+  pieces_per_box NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (pieces_per_box >= 0),
+  sqft_per_box NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (sqft_per_box >= 0),
+  weight_per_box NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (weight_per_box >= 0),
+  weight_per_unit NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (weight_per_unit >= 0),
   stock_sqft INT NOT NULL DEFAULT 0 CHECK (stock_sqft >= 0),
+  purchase_rate NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (purchase_rate >= 0),
   price_per_sqft INT NOT NULL DEFAULT 0 CHECK (price_per_sqft >= 0),
+  last_purchase_rate NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (last_purchase_rate >= 0),
+  landed_cost_per_unit NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (landed_cost_per_unit >= 0),
+  real_cost_per_unit NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (real_cost_per_unit >= 0),
+  overhead_cost_per_unit NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (overhead_cost_per_unit >= 0),
+  final_business_cost_per_unit NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (final_business_cost_per_unit >= 0),
+  minimum_allowed_rate NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (minimum_allowed_rate >= 0),
+  suggested_selling_rate NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (suggested_selling_rate >= 0),
+  safety_margin_percent NUMERIC(8, 2) NOT NULL DEFAULT 0 CHECK (safety_margin_percent >= 0),
+  growth_margin_percent NUMERIC(8, 2) NOT NULL DEFAULT 0 CHECK (growth_margin_percent >= 0),
+  pricing_lock BOOLEAN NOT NULL DEFAULT FALSE,
+  cost_updated_at TIMESTAMPTZ,
   status VARCHAR(20) NOT NULL DEFAULT 'active'
     CHECK (status IN ('active', 'fast_moving', 'dead_stock')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -355,6 +374,218 @@ CREATE TABLE app_notifications (
   read_at TIMESTAMPTZ
 );
 
+CREATE TABLE invoices (
+  id SERIAL PRIMARY KEY,
+  invoice_number VARCHAR(80) NOT NULL UNIQUE,
+  invoice_type VARCHAR(20) NOT NULL DEFAULT 'gst_invoice'
+    CHECK (invoice_type IN ('gst_invoice', 'estimate')),
+  invoice_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  customer_name VARCHAR(120) NOT NULL,
+  customer_mobile VARCHAR(20) NOT NULL DEFAULT '',
+  customer_address TEXT NOT NULL DEFAULT '',
+  lead_id INT REFERENCES leads(id) ON DELETE SET NULL,
+  quotation_id INT REFERENCES quotations(id) ON DELETE SET NULL,
+  project_id INT REFERENCES projects(id) ON DELETE SET NULL,
+  site_reference VARCHAR(160) NOT NULL DEFAULT '',
+  status VARCHAR(20) NOT NULL DEFAULT 'draft'
+    CHECK (status IN ('draft', 'pending_approval', 'approved', 'rejected', 'cancelled')),
+  payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid'
+    CHECK (payment_status IN ('unpaid', 'partial', 'paid')),
+  payment_mode VARCHAR(20) NOT NULL DEFAULT 'cash'
+    CHECK (payment_mode IN ('cash', 'upi', 'bank_transfer', 'cheque', 'mixed')),
+  subtotal NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (subtotal >= 0),
+  total_discount NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (total_discount >= 0),
+  gst_amount NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (gst_amount >= 0),
+  transport_charge NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (transport_charge >= 0),
+  additional_charge NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (additional_charge >= 0),
+  grand_total NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (grand_total >= 0),
+  received_amount NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (received_amount >= 0),
+  remaining_amount NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (remaining_amount >= 0),
+  notes TEXT NOT NULL DEFAULT '',
+  approval_required BOOLEAN NOT NULL DEFAULT FALSE,
+  approval_reason TEXT NOT NULL DEFAULT '',
+  approval_note TEXT NOT NULL DEFAULT '',
+  approved_by INT REFERENCES users(id) ON DELETE SET NULL,
+  approved_at TIMESTAMPTZ,
+  rejected_by INT REFERENCES users(id) ON DELETE SET NULL,
+  rejected_at TIMESTAMPTZ,
+  cancelled_by INT REFERENCES users(id) ON DELETE SET NULL,
+  cancelled_at TIMESTAMPTZ,
+  stock_applied BOOLEAN NOT NULL DEFAULT FALSE,
+  created_by INT REFERENCES users(id) ON DELETE SET NULL,
+  updated_by INT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE invoice_items (
+  id SERIAL PRIMARY KEY,
+  invoice_id INT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  product_id INT REFERENCES products(id) ON DELETE SET NULL,
+  item_type VARCHAR(30) NOT NULL DEFAULT 'tiles'
+    CHECK (item_type IN ('tiles', 'plumbing', 'adhesive', 'granite_marble', 'custom_item')),
+  product_name VARCHAR(160) NOT NULL,
+  quantity NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (quantity > 0),
+  unit VARCHAR(20) NOT NULL DEFAULT 'pcs',
+  rate NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (rate >= 0),
+  discount NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (discount >= 0),
+  gst_percent NUMERIC(8, 2) NOT NULL DEFAULT 0 CHECK (gst_percent >= 0),
+  total NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (total >= 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE invoice_payments (
+  id SERIAL PRIMARY KEY,
+  invoice_id INT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  amount NUMERIC(14, 2) NOT NULL CHECK (amount > 0),
+  payment_mode VARCHAR(20) NOT NULL DEFAULT 'cash'
+    CHECK (payment_mode IN ('cash', 'upi', 'bank_transfer', 'cheque', 'mixed')),
+  note TEXT NOT NULL DEFAULT '',
+  received_by INT REFERENCES users(id) ON DELETE SET NULL,
+  received_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE invoice_activity_logs (
+  id SERIAL PRIMARY KEY,
+  invoice_id INT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  action VARCHAR(40) NOT NULL
+    CHECK (action IN ('created', 'updated', 'submitted_for_approval', 'approved', 'rejected', 'cancelled', 'payment_recorded', 'deleted', 'stock_reduced', 'stock_restored', 'printed', 'shared')),
+  note TEXT NOT NULL DEFAULT '',
+  created_by INT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE purchase_lots (
+  id SERIAL PRIMARY KEY,
+  lot_number VARCHAR(80) NOT NULL UNIQUE,
+  arrival_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  vehicle_number VARCHAR(40) NOT NULL DEFAULT '',
+  transporter_name VARCHAR(120) NOT NULL DEFAULT '',
+  driver_name VARCHAR(120) NOT NULL DEFAULT '',
+  driver_mobile VARCHAR(20) NOT NULL DEFAULT '',
+  allocation_method VARCHAR(30) NOT NULL DEFAULT 'weight_wise'
+    CHECK (allocation_method IN ('weight_wise', 'purchase_value_wise', 'quantity_wise', 'supplier_amount_wise', 'manual', 'by_value', 'by_quantity')),
+  total_freight_cost NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (total_freight_cost >= 0),
+  total_unloading_cost NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (total_unloading_cost >= 0),
+  other_charges NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (other_charges >= 0),
+  financed_amount NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (financed_amount >= 0),
+  interest_rate_percent NUMERIC(8, 2) NOT NULL DEFAULT 0 CHECK (interest_rate_percent >= 0),
+  holding_days NUMERIC(10, 2) NOT NULL DEFAULT 0 CHECK (holding_days >= 0),
+  stock_received_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  interest_cost_override NUMERIC(14, 2),
+  interest_cost NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (interest_cost >= 0),
+  calculated_interest_cost NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (calculated_interest_cost >= 0),
+  showroom_overhead_amount NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (showroom_overhead_amount >= 0),
+  monthly_overhead_amount NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (monthly_overhead_amount >= 0),
+  monthly_overhead_allocation_method VARCHAR(30) NOT NULL DEFAULT 'per_box',
+  monthly_sales_boxes NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (monthly_sales_boxes >= 0),
+  monthly_sales_sqft NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (monthly_sales_sqft >= 0),
+  monthly_sales_quantity NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (monthly_sales_quantity >= 0),
+  monthly_sales_value NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (monthly_sales_value >= 0),
+  monthly_overhead_rate NUMERIC(14, 4) NOT NULL DEFAULT 0 CHECK (monthly_overhead_rate >= 0),
+  overhead_period VARCHAR(60) NOT NULL DEFAULT '',
+  overhead_notes TEXT NOT NULL DEFAULT '',
+  time_decay_percent NUMERIC(8, 2) NOT NULL DEFAULT 0 CHECK (time_decay_percent >= 0),
+  time_decay_cost NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (time_decay_cost >= 0),
+  marketing_cost_amount NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (marketing_cost_amount >= 0),
+  marketing_cost_allocation_method VARCHAR(30) NOT NULL DEFAULT 'manual',
+  minimum_margin_percent NUMERIC(8, 2) NOT NULL DEFAULT 0 CHECK (minimum_margin_percent >= 0),
+  target_margin_percent NUMERIC(8, 2) NOT NULL DEFAULT 0 CHECK (target_margin_percent >= 0),
+  total_purchase_value NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (total_purchase_value >= 0),
+  total_net_usable_quantity NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (total_net_usable_quantity >= 0),
+  total_truck_weight_kg NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (total_truck_weight_kg >= 0),
+  freight_per_kg NUMERIC(14, 4) NOT NULL DEFAULT 0 CHECK (freight_per_kg >= 0),
+  total_real_cost NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (total_real_cost >= 0),
+  total_final_business_cost NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (total_final_business_cost >= 0),
+  remarks TEXT NOT NULL DEFAULT '',
+  status VARCHAR(20) NOT NULL DEFAULT 'draft'
+    CHECK (status IN ('draft', 'cost_calculated', 'approved', 'cancelled')),
+  stock_applied BOOLEAN NOT NULL DEFAULT FALSE,
+  created_by INT REFERENCES users(id) ON DELETE SET NULL,
+  updated_by INT REFERENCES users(id) ON DELETE SET NULL,
+  approved_by INT REFERENCES users(id) ON DELETE SET NULL,
+  approved_at TIMESTAMPTZ,
+  cancelled_by INT REFERENCES users(id) ON DELETE SET NULL,
+  cancelled_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE purchase_lot_suppliers (
+  id SERIAL PRIMARY KEY,
+  lot_id INT NOT NULL REFERENCES purchase_lots(id) ON DELETE CASCADE,
+  supplier_name VARCHAR(140) NOT NULL,
+  supplier_invoice_number VARCHAR(80) NOT NULL DEFAULT '',
+  supplier_invoice_date DATE,
+  supplier_amount NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (supplier_amount >= 0),
+  supplier_notes TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE purchase_lot_items (
+  id SERIAL PRIMARY KEY,
+  lot_id INT NOT NULL REFERENCES purchase_lots(id) ON DELETE CASCADE,
+  supplier_id INT NOT NULL REFERENCES purchase_lot_suppliers(id) ON DELETE CASCADE,
+  product_id INT REFERENCES products(id) ON DELETE SET NULL,
+  item_name VARCHAR(160) NOT NULL,
+  category VARCHAR(40) NOT NULL DEFAULT 'tiles',
+  quantity NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (quantity > 0),
+  unit VARCHAR(20) NOT NULL DEFAULT 'pcs',
+  basic_purchase_rate NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (basic_purchase_rate >= 0),
+  company_name VARCHAR(140) NOT NULL DEFAULT '',
+  product_size VARCHAR(60) NOT NULL DEFAULT '',
+  boxes NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (boxes >= 0),
+  pieces_per_box NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (pieces_per_box >= 0),
+  sqft_per_box NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (sqft_per_box >= 0),
+  weight_per_box NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (weight_per_box >= 0),
+  weight_per_unit NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (weight_per_unit >= 0),
+  total_weight_kg NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (total_weight_kg >= 0),
+  purchase_value NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (purchase_value >= 0),
+  damage_quantity NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (damage_quantity >= 0),
+  damage_decay_percent NUMERIC(8, 2) NOT NULL DEFAULT 0 CHECK (damage_decay_percent >= 0),
+  net_usable_quantity NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (net_usable_quantity >= 0),
+  allocated_freight NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (allocated_freight >= 0),
+  allocated_unloading NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (allocated_unloading >= 0),
+  allocated_interest NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (allocated_interest >= 0),
+  allocated_showroom_overhead NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (allocated_showroom_overhead >= 0),
+  allocated_monthly_overhead NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (allocated_monthly_overhead >= 0),
+  allocated_other_charges NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (allocated_other_charges >= 0),
+  allocated_time_decay NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (allocated_time_decay >= 0),
+  allocated_marketing_cost NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (allocated_marketing_cost >= 0),
+  final_landed_cost NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (final_landed_cost >= 0),
+  real_cost NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (real_cost >= 0),
+  final_business_cost NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (final_business_cost >= 0),
+  landed_cost_per_unit NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (landed_cost_per_unit >= 0),
+  real_cost_per_unit NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (real_cost_per_unit >= 0),
+  overhead_cost_per_unit NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (overhead_cost_per_unit >= 0),
+  final_business_cost_per_unit NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (final_business_cost_per_unit >= 0),
+  minimum_allowed_rate NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (minimum_allowed_rate >= 0),
+  suggested_selling_rate NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (suggested_selling_rate >= 0),
+  overhead_warning TEXT NOT NULL DEFAULT '',
+  manual_allocation_value NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (manual_allocation_value >= 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE purchase_lot_charges (
+  id SERIAL PRIMARY KEY,
+  lot_id INT NOT NULL REFERENCES purchase_lots(id) ON DELETE CASCADE,
+  charge_type VARCHAR(30) NOT NULL
+    CHECK (charge_type IN ('freight', 'unloading', 'interest', 'overhead', 'time_decay', 'marketing', 'other')),
+  amount NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (amount >= 0),
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE purchase_lot_activity_logs (
+  id SERIAL PRIMARY KEY,
+  lot_id INT NOT NULL REFERENCES purchase_lots(id) ON DELETE CASCADE,
+  action VARCHAR(40) NOT NULL
+    CHECK (action IN ('created', 'updated', 'cost_calculated', 'approved', 'cancelled', 'inventory_resynced')),
+  note TEXT NOT NULL DEFAULT '',
+  created_by INT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX idx_leads_status ON leads(status);
 CREATE INDEX idx_leads_source ON leads(lead_source);
 CREATE INDEX idx_leads_assigned_to ON leads(assigned_to);
@@ -413,3 +644,22 @@ CREATE INDEX idx_adhesive_claims_mason_status_created_at ON adhesive_token_claim
 CREATE INDEX idx_masons_status_current_city ON masons(status, current_address_city);
 CREATE INDEX idx_complaints_priority_created_at ON complaints(priority, created_at DESC);
 CREATE INDEX idx_followups_lead_status_date ON followups(lead_id, status, followup_date DESC);
+CREATE INDEX idx_invoices_date_desc ON invoices(invoice_date DESC, id DESC);
+CREATE INDEX idx_invoices_status_date ON invoices(status, invoice_date DESC);
+CREATE INDEX idx_invoices_payment_status_date ON invoices(payment_status, invoice_date DESC);
+CREATE INDEX idx_invoices_customer_mobile ON invoices(customer_mobile);
+CREATE INDEX idx_invoices_project_id ON invoices(project_id);
+CREATE INDEX idx_invoice_items_invoice_id ON invoice_items(invoice_id);
+CREATE INDEX idx_invoice_items_product_id ON invoice_items(product_id);
+CREATE INDEX idx_invoice_payments_invoice_id ON invoice_payments(invoice_id);
+CREATE INDEX idx_invoice_payments_received_at ON invoice_payments(received_at DESC);
+CREATE INDEX idx_invoice_activity_logs_invoice_id ON invoice_activity_logs(invoice_id);
+CREATE INDEX idx_products_cost_updated_at ON products(cost_updated_at DESC);
+CREATE INDEX idx_purchase_lots_status ON purchase_lots(status);
+CREATE INDEX idx_purchase_lots_arrival_date ON purchase_lots(arrival_date DESC);
+CREATE INDEX idx_purchase_lots_created_at ON purchase_lots(created_at DESC);
+CREATE INDEX idx_purchase_lot_suppliers_supplier_name ON purchase_lot_suppliers(supplier_name);
+CREATE INDEX idx_purchase_lot_items_product_id ON purchase_lot_items(product_id);
+CREATE INDEX idx_purchase_lot_items_created_at ON purchase_lot_items(created_at DESC);
+CREATE INDEX idx_purchase_lot_items_supplier_id ON purchase_lot_items(supplier_id);
+CREATE INDEX idx_purchase_lot_activity_logs_lot_id ON purchase_lot_activity_logs(lot_id);

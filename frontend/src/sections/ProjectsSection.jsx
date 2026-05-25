@@ -1,3 +1,5 @@
+import { useMemo, useState } from "react";
+
 function ProjectCard({ project, selected, onSelect, onEdit, canEdit, labelize }) {
   return (
     <article className={`lead-card unit-${project.business_unit || "tiles"} ${selected ? "active" : ""}`} onClick={onSelect}>
@@ -211,114 +213,165 @@ export default function ProjectsSection(props) {
     clearFieldErrorFromEvent,
     getFieldErrorClass,
   } = props;
+  const [activeTab, setActiveTab] = useState("new");
+  const projectAlerts = useMemo(
+    () => ({
+      pendingPayment: (filteredProjects || []).filter((project) => Number(project.pending_payment || 0) > 0).length,
+      lowMargin: (filteredProjects || []).filter((project) => Number(project.profit_margin || 0) <= 10).length,
+      pendingDispatch: (filteredProjects || []).filter((project) => Number(project.pending_dispatch_items || 0) > 0).length,
+    }),
+    [filteredProjects]
+  );
 
   return (
-    <section className="content-grid">
-      <section className="panel">
-        <div className="section-head">
-          <h2>Project control</h2>
-          <span>{projectSummary?.total_projects ?? 0} projects</span>
-        </div>
-        <div className="tabs-row">
-          <BadgeCard title="Active" count={projectSummary?.active_projects ?? 0} tone="accent" />
-          <BadgeCard title="Completed" count={projectSummary?.completed_projects ?? 0} />
-          <BadgeCard title="Pending Dispatch" count={projectSummary?.pending_dispatch_items ?? 0} tone="danger" />
-          <BadgeCard title="Pending Plumbing" count={projectSummary?.pending_plumbing_jobs ?? 0} />
-        </div>
-        {hasAnyRole(user, ["admin", "manager", "operations"]) ? (
-          <form
-            className="form-grid"
-            onSubmit={handleSaveProject}
-            onInputCapture={(event) => clearFieldErrorFromEvent(event, setProjectFormErrors)}
-            onChangeCapture={(event) => clearFieldErrorFromEvent(event, setProjectFormErrors)}
-          >
-            <div className="form-field">
-              <select data-field="lead_id" className={getFieldErrorClass(projectFormErrors, "lead_id")} value={projectForm.lead_id} onChange={(event) => setProjectForm({ ...projectForm, lead_id: event.target.value })}>
-                <option value="">Select converted lead</option>
-                {convertedLeadOptions.map((lead) => (
-                  <option key={lead.id} value={lead.id}>
-                    {lead.name} | {lead.phone}
+    <section className="stack workspace-stack">
+      <div className="module-nav workspace-tab-nav">
+        <button type="button" className={activeTab === "new" ? "active-nav" : "nav-btn"} onClick={() => setActiveTab("new")}>
+          New Entry
+        </button>
+        <button type="button" className={activeTab === "ledger" ? "active-nav" : "nav-btn"} onClick={() => setActiveTab("ledger")}>
+          Ledger
+        </button>
+        <button type="button" className={activeTab === "reports" ? "active-nav" : "nav-btn"} onClick={() => setActiveTab("reports")}>
+          Reports
+        </button>
+      </div>
+
+      {activeTab === "new" ? (
+        <section className="panel">
+          <div className="section-head">
+            <h2>Project control</h2>
+            <span>{projectSummary?.total_projects ?? 0} projects</span>
+          </div>
+          {hasAnyRole(user, ["admin", "manager", "operations"]) ? (
+            <form
+              className="form-grid"
+              onSubmit={handleSaveProject}
+              onInputCapture={(event) => clearFieldErrorFromEvent(event, setProjectFormErrors)}
+              onChangeCapture={(event) => clearFieldErrorFromEvent(event, setProjectFormErrors)}
+            >
+              <div className="form-field">
+                <select data-field="lead_id" className={getFieldErrorClass(projectFormErrors, "lead_id")} value={projectForm.lead_id} onChange={(event) => setProjectForm({ ...projectForm, lead_id: event.target.value })}>
+                  <option value="">Select converted lead</option>
+                  {convertedLeadOptions.map((lead) => (
+                    <option key={lead.id} value={lead.id}>
+                      {lead.name} | {lead.phone}
+                    </option>
+                  ))}
+                </select>
+                {projectFormErrors?.lead_id ? <span className="field-error-message">{projectFormErrors.lead_id}</span> : null}
+              </div>
+              <div className="form-field">
+                <input data-field="project_name" className={getFieldErrorClass(projectFormErrors, "project_name")} placeholder="Project name" value={projectForm.project_name} onChange={(event) => setProjectForm({ ...projectForm, project_name: event.target.value })} />
+                {projectFormErrors?.project_name ? <span className="field-error-message">{projectFormErrors.project_name}</span> : null}
+              </div>
+              <select value={projectForm.status} onChange={(event) => setProjectForm({ ...projectForm, status: event.target.value })}>
+                {projectStatuses.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
                   </option>
                 ))}
               </select>
-              {projectFormErrors?.lead_id ? <span className="field-error-message">{projectFormErrors.lead_id}</span> : null}
-            </div>
-            <div className="form-field">
-              <input data-field="project_name" className={getFieldErrorClass(projectFormErrors, "project_name")} placeholder="Project name" value={projectForm.project_name} onChange={(event) => setProjectForm({ ...projectForm, project_name: event.target.value })} />
-              {projectFormErrors?.project_name ? <span className="field-error-message">{projectFormErrors.project_name}</span> : null}
-            </div>
-            <select value={projectForm.status} onChange={(event) => setProjectForm({ ...projectForm, status: event.target.value })}>
-              {projectStatuses.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-            <div className="form-field">
-              <input data-field="start_date" className={getFieldErrorClass(projectFormErrors, "start_date")} type="date" value={projectForm.start_date} onChange={(event) => setProjectForm({ ...projectForm, start_date: event.target.value })} />
-              {projectFormErrors?.start_date ? <span className="field-error-message">{projectFormErrors.start_date}</span> : null}
-            </div>
-            <div className="form-field">
-              <input data-field="expected_delivery_date" className={getFieldErrorClass(projectFormErrors, "expected_delivery_date")} type="date" value={projectForm.expected_delivery_date} onChange={(event) => setProjectForm({ ...projectForm, expected_delivery_date: event.target.value })} />
-              {projectFormErrors?.expected_delivery_date ? <span className="field-error-message">{projectFormErrors.expected_delivery_date}</span> : null}
-            </div>
-            <div className="form-field">
-              <input data-field="completion_date" className={getFieldErrorClass(projectFormErrors, "completion_date")} type="date" value={projectForm.completion_date} onChange={(event) => setProjectForm({ ...projectForm, completion_date: event.target.value })} />
-              {projectFormErrors?.completion_date ? <span className="field-error-message">{projectFormErrors.completion_date}</span> : null}
-            </div>
-            <textarea className="full-span" placeholder="Owner note" value={projectForm.owner_note} onChange={(event) => setProjectForm({ ...projectForm, owner_note: event.target.value })} />
-            <div className="lead-actions full-span">
-              <button type="submit" disabled={busyAction === "save-project"}>
-                {busyAction === "save-project" ? (editingProjectId ? "Updating Project..." : "Creating Project...") : editingProjectId ? "Update Project" : "Create Project"}
-              </button>
-              {editingProjectId ? (
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => {
-                    setEditingProjectId(null);
-                    setProjectForm(emptyProject);
-                    setProjectFormErrors({});
-                  }}
-                >
-                  Cancel
+              <div className="form-field">
+                <input data-field="start_date" className={getFieldErrorClass(projectFormErrors, "start_date")} type="date" value={projectForm.start_date} onChange={(event) => setProjectForm({ ...projectForm, start_date: event.target.value })} />
+                {projectFormErrors?.start_date ? <span className="field-error-message">{projectFormErrors.start_date}</span> : null}
+              </div>
+              <div className="form-field">
+                <input data-field="expected_delivery_date" className={getFieldErrorClass(projectFormErrors, "expected_delivery_date")} type="date" value={projectForm.expected_delivery_date} onChange={(event) => setProjectForm({ ...projectForm, expected_delivery_date: event.target.value })} />
+                {projectFormErrors?.expected_delivery_date ? <span className="field-error-message">{projectFormErrors.expected_delivery_date}</span> : null}
+              </div>
+              <div className="form-field">
+                <input data-field="completion_date" className={getFieldErrorClass(projectFormErrors, "completion_date")} type="date" value={projectForm.completion_date} onChange={(event) => setProjectForm({ ...projectForm, completion_date: event.target.value })} />
+                {projectFormErrors?.completion_date ? <span className="field-error-message">{projectFormErrors.completion_date}</span> : null}
+              </div>
+              <textarea className="full-span" placeholder="Owner note" value={projectForm.owner_note} onChange={(event) => setProjectForm({ ...projectForm, owner_note: event.target.value })} />
+              <div className="lead-actions full-span">
+                <button type="submit" disabled={busyAction === "save-project"}>
+                  {busyAction === "save-project" ? (editingProjectId ? "Updating Project..." : "Creating Project...") : editingProjectId ? "Update Project" : "Create Project"}
                 </button>
-              ) : null}
-            </div>
-          </form>
-        ) : null}
-        <ListLoadControls count={projects.length} limit={listLimits.projects} onLoadMore={() => increaseListLimit("projects")} disabled={loading} />
-        <div className="list">
-          {filteredProjects.map((project) => (
-            <ProjectCard
-              key={project.id}
-              project={project}
-              selected={selectedProject?.id === project.id}
-              onSelect={() => setSelectedProject(project)}
-              onEdit={() => startEditingProject(project)}
-              canEdit={hasAnyRole(user, ["admin", "manager", "operations"])}
-              labelize={labelize}
-            />
-          ))}
-          {filteredProjects.length === 0 ? <EmptyState title="No projects yet" message="Converted leads will show up here once a project is created." /> : null}
-        </div>
-      </section>
+                {editingProjectId ? (
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => {
+                      setEditingProjectId(null);
+                      setProjectForm(emptyProject);
+                      setProjectFormErrors({});
+                    }}
+                  >
+                    Cancel
+                  </button>
+                ) : null}
+              </div>
+            </form>
+          ) : (
+            <EmptyState title="Project entry is operations-controlled" message="Manager and operations users can create and update projects from converted leads." />
+          )}
+        </section>
+      ) : null}
 
-      <ProjectDetailPanel
-        project={selectedProject}
-        dispatchDraft={dispatchDrafts[selectedProject?.id] || emptyDispatch}
-        updateDispatchDraft={updateDispatchDraft}
-        handleSaveDispatch={handleSaveDispatch}
-        handleUpdateDispatchStatus={requestDispatchStatusUpdate}
-        canManageDispatch={hasAnyRole(user, ["admin", "manager", "operations"])}
-        busyAction={busyAction}
-        BadgeCard={BadgeCard}
-        HighlightRow={HighlightRow}
-        labelize={labelize}
-        formatDateTime={formatDateTime}
-        getProjectInvoicePdfUrl={getProjectInvoicePdfUrl}
-        dispatchStatuses={dispatchStatuses}
-      />
+      {activeTab === "ledger" ? (
+        <>
+          <section className="panel">
+            <div className="section-head">
+              <h2>Project ledger</h2>
+              <span>{filteredProjects.length} visible projects</span>
+            </div>
+            <ListLoadControls count={projects.length} limit={listLimits.projects} onLoadMore={() => increaseListLimit("projects")} disabled={loading} />
+            <div className="list">
+              {filteredProjects.map((project) => (
+                <ProjectCard
+                  key={project.id}
+                  project={project}
+                  selected={selectedProject?.id === project.id}
+                  onSelect={() => setSelectedProject(project)}
+                  onEdit={() => startEditingProject(project)}
+                  canEdit={hasAnyRole(user, ["admin", "manager", "operations"])}
+                  labelize={labelize}
+                />
+              ))}
+              {filteredProjects.length === 0 ? <EmptyState title="No projects yet" message="Converted leads will show up here once a project is created." /> : null}
+            </div>
+          </section>
+
+          <ProjectDetailPanel
+            project={selectedProject}
+            dispatchDraft={dispatchDrafts[selectedProject?.id] || emptyDispatch}
+            updateDispatchDraft={updateDispatchDraft}
+            handleSaveDispatch={handleSaveDispatch}
+            handleUpdateDispatchStatus={requestDispatchStatusUpdate}
+            canManageDispatch={hasAnyRole(user, ["admin", "manager", "operations"])}
+            busyAction={busyAction}
+            BadgeCard={BadgeCard}
+            HighlightRow={HighlightRow}
+            labelize={labelize}
+            formatDateTime={formatDateTime}
+            getProjectInvoicePdfUrl={getProjectInvoicePdfUrl}
+            dispatchStatuses={dispatchStatuses}
+          />
+        </>
+      ) : null}
+
+      {activeTab === "reports" ? (
+        <section className="panel">
+          <div className="section-head">
+            <h2>Project reports</h2>
+            <span>Profitability, dispatch, and execution watch</span>
+          </div>
+          <div className="tabs-row">
+            <BadgeCard title="Active" count={projectSummary?.active_projects ?? 0} tone="accent" />
+            <BadgeCard title="Completed" count={projectSummary?.completed_projects ?? 0} />
+            <BadgeCard title="Pending Dispatch" count={projectSummary?.pending_dispatch_items ?? 0} tone="danger" />
+            <BadgeCard title="Pending Plumbing" count={projectSummary?.pending_plumbing_jobs ?? 0} />
+          </div>
+          <div className="report-grid">
+            <HighlightRow label="Projects with pending payment" value={projectAlerts.pendingPayment} />
+            <HighlightRow label="Low margin projects" value={projectAlerts.lowMargin} />
+            <HighlightRow label="Dispatch bottlenecks" value={projectAlerts.pendingDispatch} />
+            <HighlightRow label="Pending adhesive payout" value={`Rs ${projectSummary?.total_pending_token_amount ?? 0}`} />
+          </div>
+        </section>
+      ) : null}
     </section>
   );
 }

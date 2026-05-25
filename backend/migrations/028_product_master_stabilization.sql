@@ -1,0 +1,12 @@
+ALTER TABLE products
+  ADD COLUMN IF NOT EXISTS company_name VARCHAR(140) NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS unit VARCHAR(20) NOT NULL DEFAULT 'pcs',
+  ADD COLUMN IF NOT EXISTS product_size VARCHAR(60) NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS pieces_per_box NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (pieces_per_box >= 0),
+  ADD COLUMN IF NOT EXISTS sqft_per_box NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (sqft_per_box >= 0),
+  ADD COLUMN IF NOT EXISTS weight_per_box NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (weight_per_box >= 0),
+  ADD COLUMN IF NOT EXISTS weight_per_unit NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (weight_per_unit >= 0),
+  ADD COLUMN IF NOT EXISTS purchase_rate NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (purchase_rate >= 0),
+  ADD COLUMN IF NOT EXISTS safety_margin_percent NUMERIC(8, 2) NOT NULL DEFAULT 0 CHECK (safety_margin_percent >= 0),
+  ADD COLUMN IF NOT EXISTS growth_margin_percent NUMERIC(8, 2) NOT NULL DEFAULT 0 CHECK (growth_margin_percent >= 0),
+  ADD COLUMN IF NOT EXISTS pricing_lock BOOLEAN NOT NULL DEFAULT FALSE;

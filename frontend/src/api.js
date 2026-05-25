@@ -115,6 +115,12 @@ export function getProjectInvoicePdfUrl(projectId) {
   return `${API_BASE_URL}/projects/${projectId}/invoice/pdf?token=${encodeURIComponent(token || "")}`;
 }
 
+export function getBillingPdfUrl(invoiceId, type = "gst_invoice") {
+  const token = localStorage.getItem("tiles-crm-token");
+  const normalizedType = type === "estimate" ? "estimate" : "gst_invoice";
+  return `${API_BASE_URL}/billing/${invoiceId}/pdf?type=${encodeURIComponent(normalizedType)}&token=${encodeURIComponent(token || "")}`;
+}
+
 export function getCsvExportUrl(resource) {
   const token = localStorage.getItem("tiles-crm-token");
   return `${API_BASE_URL}/exports/${resource}.csv?token=${encodeURIComponent(token || "")}`;
@@ -178,6 +184,83 @@ export const api = {
   getNotifications: (options) => request("/notifications", options),
   getPlumbingDashboard: (options) => request("/plumbing", options),
   getProjectsDashboard: (options = {}) => request(withQuery("/projects", { limit: options.limit }), options),
+  getBillingDashboard: (options = {}) =>
+    request(
+      withQuery("/billing", {
+        limit: options.limit,
+        search: options.search,
+        status: options.status,
+        payment_status: options.payment_status,
+        from: options.from,
+        to: options.to,
+      }),
+      options
+    ),
+  getBillingInvoiceDetail: (id, options) => request(`/billing/${id}`, options),
+  createBillingInvoice: (payload) =>
+    request("/billing", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateBillingInvoice: (id, payload) =>
+    request(`/billing/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  submitBillingInvoiceApproval: (id, payload = {}) =>
+    request(`/billing/${id}/submit-approval`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  reviewBillingInvoiceApproval: (id, payload) =>
+    request(`/billing/${id}/approval`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  cancelBillingInvoice: (id, payload = {}) =>
+    request(`/billing/${id}/cancel`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  addBillingPayment: (id, payload) =>
+    request(`/billing/${id}/payments`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  deleteBillingInvoice: (id) =>
+    request(`/billing/${id}`, {
+      method: "DELETE",
+    }),
+  getPurchaseCostingDashboard: (options = {}) =>
+    request(
+      withQuery("/purchase-costing", {
+        limit: options.limit,
+        search: options.search,
+        status: options.status,
+      }),
+      options
+    ),
+  getPurchaseCostingLotDetail: (id, options) => request(`/purchase-costing/${id}`, options),
+  createPurchaseCostingLot: (payload) =>
+    request("/purchase-costing", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updatePurchaseCostingLot: (id, payload) =>
+    request(`/purchase-costing/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  approvePurchaseCostingLot: (id, payload = {}) =>
+    request(`/purchase-costing/${id}/approve`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  cancelPurchaseCostingLot: (id, payload = {}) =>
+    request(`/purchase-costing/${id}/cancel`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
   getExpensesDashboard: (options) => request("/expenses", options),
   getLeads: (options = {}) =>
     request(
@@ -316,6 +399,25 @@ export const api = {
     request(`/inventory/${id}`, {
       method: "DELETE",
     }),
+  getSuppliers: (options = {}) =>
+    request(
+      withQuery("/suppliers", {
+        limit: options.limit,
+        status: options.status,
+        search: options.search,
+      }),
+      options
+    ),
+  createSupplier: (payload) =>
+    request("/suppliers", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateSupplier: (id, payload) =>
+    request(`/suppliers/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
   getDealers: (options = {}) => request(withQuery("/dealers", { limit: options.limit }), options),
   createDealer: (payload) =>
     request("/dealers", {
@@ -396,6 +498,21 @@ export const api = {
         from: options.from,
         to: options.to,
         payment_status: options.payment_status,
+      }),
+      options
+    ),
+  getPurchaseProductIntelligence: (productId, options = {}) =>
+    request(
+      withQuery(`/purchases/product-intelligence/${productId}`, {
+        current_rate: options.current_rate,
+      }),
+      options
+    ),
+  getPurchasesByTruck: (options = {}) =>
+    request(
+      withQuery("/purchases/by-truck", {
+        truck_number: options.truck_number,
+        delivery_date: options.delivery_date,
       }),
       options
     ),

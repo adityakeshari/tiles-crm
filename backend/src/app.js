@@ -4,6 +4,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import authRoutes from "./routes/auth.js";
+import billingRoutes from "./routes/billing.js";
 import complaintsRoutes from "./routes/complaints.js";
 import dashboardRoutes from "./routes/dashboard.js";
 import dealersRoutes from "./routes/dealers.js";
@@ -12,11 +13,14 @@ import exportsRoutes from "./routes/exports.js";
 import inventoryRoutes from "./routes/inventory.js";
 import leadsRoutes from "./routes/leads.js";
 import notificationsRoutes from "./routes/notifications.js";
+import ownerSummaryRoutes from "./routes/owner-summary.js";
 import plumbingRoutes from "./routes/plumbing.js";
+import purchaseCostingRoutes from "./routes/purchase-costing.js";
 import projectsRoutes from "./routes/projects.js";
 import purchasesRoutes from "./routes/purchases.js";
 import reportsRoutes from "./routes/reports.js";
 import schemesRoutes from "./routes/schemes.js";
+import suppliersRoutes from "./routes/suppliers.js";
 import usersRoutes from "./routes/users.js";
 import { requireAuth } from "./middleware/auth.js";
 
@@ -67,8 +71,10 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use("/api/billing", requireAuth, billingRoutes);
 app.use("/api/complaints", requireAuth, complaintsRoutes);
 app.use("/api/dashboard", requireAuth, dashboardRoutes);
+app.use("/api/owner-summary", ownerSummaryRoutes);
 app.use("/api/leads", requireAuth, leadsRoutes);
 app.use("/api/dealers", requireAuth, dealersRoutes);
 app.use("/api/expenses", requireAuth, expensesRoutes);
@@ -76,10 +82,12 @@ app.use("/api/exports", requireAuth, exportsRoutes);
 app.use("/api/inventory", requireAuth, inventoryRoutes);
 app.use("/api/notifications", requireAuth, notificationsRoutes);
 app.use("/api/plumbing", requireAuth, plumbingRoutes);
+app.use("/api/purchase-costing", requireAuth, purchaseCostingRoutes);
 app.use("/api/projects", requireAuth, projectsRoutes);
 app.use("/api/purchases", requireAuth, purchasesRoutes);
 app.use("/api/reports", requireAuth, reportsRoutes);
 app.use("/api/schemes", requireAuth, schemesRoutes);
+app.use("/api/suppliers", requireAuth, suppliersRoutes);
 app.use("/api/users", requireAuth, usersRoutes);
 
 // JSON 404 for unmatched API routes. Must come before the SPA fallback so missing

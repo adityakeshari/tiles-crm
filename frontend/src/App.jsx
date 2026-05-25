@@ -1,6 +1,8 @@
 import { Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, getCsvExportUrl, getProjectInvoicePdfUrl, getQuotationPdfUrl } from "./api.js";
+import { api, getBillingPdfUrl, getCsvExportUrl, getProjectInvoicePdfUrl, getQuotationPdfUrl } from "./api.js";
 
+const BillingSection = lazy(() => import("./sections/BillingSection.jsx"));
+const PurchaseCostingSection = lazy(() => import("./sections/PurchaseCostingSection.jsx"));
 const AdhesiveTokensSection = lazy(() => import("./sections/AdhesiveTokensSection.jsx"));
 const RegisteredMasonsSection = lazy(() => import("./sections/RegisteredMasonsSection.jsx"));
 const ProjectsSection = lazy(() => import("./sections/ProjectsSection.jsx"));
@@ -45,7 +47,7 @@ const navGroups = [
     label: "Inventory",
     items: [
       { id: "inventory", label: "Stock" },
-      { id: "purchases", label: "Purchase Entry" },
+      { id: "purchases", label: "Purchase Center" },
     ],
   },
   {
@@ -60,6 +62,7 @@ const navGroups = [
     id: "accounts",
     label: "Accounts",
     items: [
+      { id: "billing", label: "Billing" },
       { id: "expenses", label: "Expenses" },
     ],
   },
@@ -88,7 +91,9 @@ const views = [
   { id: "masons", label: "Registered Masons" },
   { id: "inventory", label: "Inventory" },
   { id: "dealers", label: "Dealers" },
-  { id: "purchases", label: "Purchase Entry" },
+  { id: "purchases", label: "Purchase Center" },
+  { id: "purchase_costing", label: "Purchase Center" },
+  { id: "billing", label: "Billing" },
   { id: "expenses", label: "Expenses" },
   { id: "reports", label: "Reports" },
   { id: "team", label: "Team" },
@@ -156,9 +161,19 @@ const viewMeta = {
     audience: "Manager control",
   },
   purchases: {
-    title: "Purchase Entry",
-    description: "Daily purchase log — supplier, invoice, amount, GST and remarks.",
-    audience: "Operator daily entry",
+    title: "Purchase Center",
+    description: "Supplier bills, truck costing, and purchase history in one workflow.",
+    audience: "Operator / Manager / Inventory",
+  },
+  purchase_costing: {
+    title: "Purchase Center",
+    description: "Truck-wise landed cost, allocation, and stock approval workflow.",
+    audience: "Manager / Inventory / Accounts",
+  },
+  billing: {
+    title: "Billing",
+    description: "Create independent showroom invoices, take payments, print, and share customer bills.",
+    audience: "Operator / Manager / Accounts",
   },
   expenses: {
     title: "Expenses",
@@ -354,6 +369,8 @@ const DEFAULT_LIST_LIMITS = {
   claims: 40,
   masons: 40,
   purchases: 50,
+  purchaseLots: 40,
+  invoices: 50,
 };
 const MAX_LIST_LIMIT = 300;
 
@@ -433,15 +450,42 @@ const emptyQuotation = {
 
 const emptyProduct = {
   name: "",
+  company_name: "",
   design_code: "",
   business_unit: "tiles",
-  category: "flooring",
+  category: "Floor Tiles",
+  unit: "box",
   tile_size: "",
+  product_size: "",
   finish: "",
+  pieces_per_box: "",
+  sqft_per_box: "",
+  weight_per_box: "",
+  weight_per_unit: "",
   stock_sqft: "",
+  purchase_rate: "",
   price_per_sqft: "",
+  last_purchase_rate: "",
+  landed_cost_per_unit: "",
+  minimum_allowed_rate: "",
+  suggested_selling_rate: "",
+  safety_margin_percent: "",
+  growth_margin_percent: "",
+  pricing_lock: false,
   status: "active",
 };
+
+const defaultProductCategories = [
+  "Floor Tiles",
+  "Wall Tiles",
+  "Parking Tiles",
+  "Granite",
+  "Marble",
+  "Adhesive",
+  "Sanitary",
+  "Plumbing",
+  "Other",
+];
 
 const emptySchemeToken = {
   site_name: "",
@@ -482,26 +526,169 @@ const emptyMason = {
 };
 
 const emptyPurchase = {
+  supplier_id: "",
   supplier_name: "",
   supplier_phone: "",
   invoice_number: "",
   purchase_date: "",
+  truck_number: "",
+  delivery_date: "",
   business_unit: "tiles",
-  category: "tiles",
+  payment_status: "pending",
+  remarks: "",
+};
+
+const emptyPurchaseItem = {
+  product_id: "",
   item_name: "",
+  category: "tiles",
   quantity: "",
   unit: "pcs",
   amount: "",
   gst_amount: "",
   total_amount: "",
-  payment_status: "pending",
+  rate_per_unit: "",
+};
+
+const emptyInvoiceItem = {
+  item_type: "tiles",
+  product_id: "",
+  product_name: "",
+  quantity: "",
+  unit: "pcs",
+  suggested_rate: "",
+  minimum_allowed_rate: "",
+  rate: "",
+  discount: "",
+  gst_percent: "0",
+};
+
+const emptyInvoice = {
+  customer_name: "",
+  customer_mobile: "",
+  customer_address: "",
+  lead_id: "",
+  quotation_id: "",
+  project_id: "",
+  site_reference: "",
+  invoice_type: "gst_invoice",
+  invoice_date: new Date().toISOString().slice(0, 10),
+  notes: "",
+  transport_charge: "",
+  additional_charge: "",
+  approval_note: "",
+  system_discount_meta: null,
+  status: "draft",
+  items: [{ ...emptyInvoiceItem }],
+};
+
+const emptyBillingPayment = {
+  amount: "",
+  payment_mode: "cash",
+  note: "",
+};
+
+const emptyPurchaseLotItem = {
+  product_id: "",
+  item_name: "",
+  company_name: "",
+  product_size: "",
+  category: "tiles",
+  quantity: "",
+  unit: "box",
+  boxes: "",
+  pieces_per_box: "",
+  sqft_per_box: "",
+  weight_per_box: "",
+  weight_per_unit: "",
+  basic_purchase_rate: "",
+  damage_quantity: "",
+  manual_allocation_value: "",
+};
+
+const emptyPurchaseLotSupplier = {
+  supplier_name: "",
+  supplier_invoice_number: "",
+  supplier_invoice_date: "",
+  supplier_amount: "",
+  supplier_notes: "",
+  items: [{ ...emptyPurchaseLotItem }],
+};
+
+const emptyPurchaseLot = {
+  lot_number: "",
+  arrival_date: new Date().toISOString().slice(0, 10),
+  vehicle_number: "",
+  transporter_name: "",
+  driver_name: "",
+  driver_mobile: "",
+  allocation_method: "weight_wise",
+  total_freight_cost: "",
+  total_unloading_cost: "",
+  other_charges: "",
+  financed_amount: "",
+  interest_rate_percent: "",
+  holding_days: "",
+  stock_received_date: new Date().toISOString().slice(0, 10),
+  interest_cost_override: "",
+  showroom_overhead_amount: "",
+  monthly_overhead_amount: "",
+  monthly_overhead_allocation_method: "per_box",
+  monthly_sales_boxes: "",
+  monthly_sales_sqft: "",
+  monthly_sales_quantity: "",
+  monthly_sales_value: "",
+  monthly_overhead_rate: "",
+  time_decay_percent: "",
+  marketing_cost_amount: "",
+  marketing_cost_allocation_method: "manual",
+  overhead_period: "",
+  overhead_notes: "",
+  minimum_margin_percent: "5",
+  target_margin_percent: "12",
   remarks: "",
+  suppliers: [{ ...emptyPurchaseLotSupplier }],
 };
 
 const purchasePaymentStatuses = [
   { value: "pending", label: "Pending" },
   { value: "partial", label: "Partial" },
   { value: "paid", label: "Paid" },
+];
+
+const billingInvoiceTypes = [
+  { value: "gst_invoice", label: "GST Invoice" },
+  { value: "estimate", label: "Estimate" },
+];
+
+const billingPaymentStatuses = [
+  { value: "unpaid", label: "Unpaid" },
+  { value: "partial", label: "Partial" },
+  { value: "paid", label: "Paid" },
+];
+
+const billingPaymentModes = [
+  { value: "cash", label: "Cash" },
+  { value: "upi", label: "UPI" },
+  { value: "bank_transfer", label: "Bank Transfer" },
+  { value: "cheque", label: "Cheque" },
+  { value: "mixed", label: "Mixed" },
+];
+
+const billingStatuses = [
+  { value: "draft", label: "Draft" },
+  { value: "pending_approval", label: "Pending Approval" },
+  { value: "approved", label: "Approved" },
+  { value: "rejected", label: "Rejected" },
+  { value: "cancelled", label: "Cancelled" },
+];
+
+const billingItemTypes = [
+  { value: "tiles", label: "Tiles" },
+  { value: "plumbing", label: "Plumbing" },
+  { value: "adhesive", label: "Adhesive" },
+  { value: "granite_marble", label: "Granite / Marble" },
+  { value: "custom_item", label: "Custom Item" },
 ];
 
 const purchaseBusinessUnitOptions = [
@@ -747,12 +934,41 @@ function validateProductForm(form) {
     return "Product name is required.";
   }
 
-  if (!isNonNegativeNumber(form.stock_sqft)) {
-    return "Stock sqft must be 0 or more.";
+  if (!normalizeText(form.business_unit)) {
+    return "Business unit is required.";
   }
 
-  if (!isNonNegativeNumber(form.price_per_sqft)) {
-    return "Price per sqft must be 0 or more.";
+  if (!normalizeText(form.unit)) {
+    return "Unit is required.";
+  }
+
+  if (!normalizeText(form.category)) {
+    return "Category is required.";
+  }
+
+  const numericFields = [
+    ["stock_sqft", "Stock sqft"],
+    ["price_per_sqft", "Price per sqft"],
+    ["purchase_rate", "Purchase rate"],
+    ["last_purchase_rate", "Last purchase rate"],
+    ["landed_cost_per_unit", "Landed cost per unit"],
+    ["minimum_allowed_rate", "Minimum allowed rate"],
+    ["suggested_selling_rate", "Suggested selling rate"],
+    ["pieces_per_box", "Pieces per box"],
+    ["sqft_per_box", "Sqft per box"],
+    ["weight_per_box", "Weight per box"],
+    ["weight_per_unit", "Weight per unit"],
+    ["safety_margin_percent", "Safety margin percent"],
+    ["growth_margin_percent", "Growth margin percent"],
+  ];
+
+  for (const [field, label] of numericFields) {
+    if (normalizeText(form[field]) === "") {
+      continue;
+    }
+    if (!isNonNegativeNumber(form[field])) {
+      return `${label} must be 0 or more.`;
+    }
   }
 
   return "";
@@ -831,6 +1047,178 @@ function validatePurchaseForm(form) {
   }
 
   return "";
+}
+
+function getPurchaseEntryCurrentRate(form) {
+  const quantity = Number(form?.quantity || 0);
+  const amount = Number(form?.amount || 0);
+
+  if (!(quantity > 0) || !(amount > 0)) {
+    return 0;
+  }
+
+  return Number((amount / quantity).toFixed(2));
+}
+
+function getPurchaseRateInsight(intelligence, currentRate) {
+  const averageRate = Number(intelligence?.avg_30_day_rate || 0);
+  const current = Number(currentRate || 0);
+
+  if (!(averageRate > 0) || !(current > 0)) {
+    return {
+      differenceAmount: 0,
+      differencePercentage: 0,
+      status: "normal",
+      approvalRequired: false,
+    };
+  }
+
+  const differenceAmount = Number((current - averageRate).toFixed(2));
+  const differencePercentage = Number(((differenceAmount / averageRate) * 100).toFixed(2));
+
+  if (differencePercentage > 8) {
+    return {
+      differenceAmount,
+      differencePercentage,
+      status: "approval_required",
+      approvalRequired: true,
+    };
+  }
+
+  if (differencePercentage > 3) {
+    return {
+      differenceAmount,
+      differencePercentage,
+      status: "review",
+      approvalRequired: false,
+    };
+  }
+
+  return {
+    differenceAmount,
+    differencePercentage,
+    status: "normal",
+    approvalRequired: false,
+  };
+}
+
+function computeBillingItemTotal(item) {
+  const quantity = Number(item.quantity || 0);
+  const rate = Number(item.rate || 0);
+  const discount = Number(item.discount || 0);
+  const gstPercent = Number(item.gst_percent || 0);
+  const taxable = Math.max(quantity * rate - discount, 0);
+  return Number((taxable + taxable * (gstPercent / 100)).toFixed(2));
+}
+
+function getBillingTotals(form) {
+  const items = Array.isArray(form.items) ? form.items : [];
+  const subtotal = items.reduce(
+    (sum, item) => sum + Math.max(Number(item.quantity || 0) * Number(item.rate || 0) - Number(item.discount || 0), 0),
+    0
+  );
+  const totalDiscount = items.reduce((sum, item) => sum + Number(item.discount || 0), 0);
+  const gstAmount = items.reduce((sum, item) => {
+    const taxable = Math.max(Number(item.quantity || 0) * Number(item.rate || 0) - Number(item.discount || 0), 0);
+    return sum + taxable * (Number(item.gst_percent || 0) / 100);
+  }, 0);
+  const transportCharge = Number(form.transport_charge || 0);
+  const additionalCharge = Number(form.additional_charge || 0);
+  const grandTotal = subtotal + gstAmount + transportCharge + additionalCharge;
+
+  return {
+    subtotal: Number(subtotal.toFixed(2)),
+    total_discount: Number(totalDiscount.toFixed(2)),
+    gst_amount: Number(gstAmount.toFixed(2)),
+    grand_total: Number(grandTotal.toFixed(2)),
+  };
+}
+
+function clearSystemDiscountFromInvoice(form) {
+  if (!form?.system_discount_meta) {
+    return form;
+  }
+
+  return {
+    ...form,
+    system_discount_meta: null,
+    approval_note: "",
+    items: (form.items || []).map((item) => ({
+      ...item,
+      discount: "",
+    })),
+  };
+}
+
+function validateBillingForm(form) {
+  if (!normalizeText(form.customer_name)) {
+    return "Customer name is required.";
+  }
+
+  if (form.customer_mobile && !isPhoneLike(form.customer_mobile)) {
+    return "Customer mobile must be 7 to 15 characters.";
+  }
+
+  if (!isValidDateInput(form.invoice_date)) {
+    return "Invoice date is invalid.";
+  }
+
+  if (!Array.isArray(form.items) || !form.items.length) {
+    return "At least one invoice item is required.";
+  }
+
+  for (const item of form.items) {
+    if (!normalizeText(item.product_name)) {
+      return "Invoice item name is required.";
+    }
+
+    if (!isPositiveNumber(item.quantity)) {
+      return "Invoice item quantity must be greater than zero.";
+    }
+
+    if (!normalizeText(item.unit)) {
+      return "Invoice item unit is required.";
+    }
+
+    if (!isNonNegativeNumber(item.rate) || !isNonNegativeNumber(item.discount) || !isNonNegativeNumber(item.gst_percent)) {
+      return "Invoice item values must be non-negative.";
+    }
+  }
+
+  if (!isNonNegativeNumber(form.transport_charge || 0) || !isNonNegativeNumber(form.additional_charge || 0)) {
+    return "Transport and additional charges must be non-negative.";
+  }
+
+  return "";
+}
+
+function getBillingInvoiceRequiredErrors(form) {
+  const errors = validateRequiredFields(form, {
+    customer_name: "Customer name is required.",
+    invoice_date: {
+      message: "Invoice date is required.",
+      validate: (value) => Boolean(value),
+    },
+  });
+
+  if (!Array.isArray(form.items) || !form.items.length) {
+    errors.items = "At least one invoice item is required.";
+    return errors;
+  }
+
+  form.items.forEach((item, index) => {
+    if (!item.product_id) {
+      errors[`items.${index}.product_id`] = "Product is required";
+    }
+    if (normalizeText(item.quantity) === "") {
+      errors[`items.${index}.quantity`] = "Quantity is required";
+    }
+    if (normalizeText(item.rate) === "") {
+      errors[`items.${index}.rate`] = "Rate is required";
+    }
+  });
+
+  return errors;
 }
 
 function validateSchemeTokenForm(form) {
@@ -1074,10 +1462,6 @@ function getSchemeTokenRequiredErrors(form) {
       message: "Registered mason is required.",
       validate: (value) => Number.isInteger(Number(value)) && Number(value) > 0,
     },
-    sale_date: {
-      message: "Sale date is required.",
-      validate: (value) => Boolean(value),
-    },
     adhesive_company: "Adhesive company is required.",
     adhesive_type: "Adhesive type is required.",
     sold_bag_quantity: {
@@ -1315,6 +1699,8 @@ export default function App() {
   const [editingDealerId, setEditingDealerId] = useState(null);
   const [productForm, setProductForm] = useState(emptyProduct);
   const [editingProductId, setEditingProductId] = useState(null);
+  const [customProductCategories, setCustomProductCategories] = useState([]);
+  const [isAddingCustomProductCategory, setIsAddingCustomProductCategory] = useState(false);
   const [masonForm, setMasonForm] = useState(emptyMason);
   const [masonFormErrors, setMasonFormErrors] = useState({});
   const [editingMasonId, setEditingMasonId] = useState(null);
@@ -1337,16 +1723,62 @@ export default function App() {
   const [purchases, setPurchases] = useState([]);
   const [purchaseSummary, setPurchaseSummary] = useState(null);
   const [purchaseForm, setPurchaseForm] = useState(emptyPurchase);
+  const [purchaseItems, setPurchaseItems] = useState([{ ...emptyPurchaseItem }]);
   const [purchaseFormErrors, setPurchaseFormErrors] = useState({});
   const [editingPurchaseId, setEditingPurchaseId] = useState(null);
   const [purchaseSearch, setPurchaseSearch] = useState("");
   const [purchaseFromFilter, setPurchaseFromFilter] = useState("");
   const [purchaseToFilter, setPurchaseToFilter] = useState("");
   const [purchasePaymentFilter, setPurchasePaymentFilter] = useState("all");
+  const [purchaseIntelligenceCache, setPurchaseIntelligenceCache] = useState({});
+  const [purchaseIntelligenceLoading, setPurchaseIntelligenceLoading] = useState({});
+  const [purchaseSupplierFilter, setPurchaseSupplierFilter] = useState("all");
+  const [purchaseInvoiceFilter, setPurchaseInvoiceFilter] = useState("");
+  const [purchaseProductFilter, setPurchaseProductFilter] = useState("all");
+  const [purchaseSupplierHistory, setPurchaseSupplierHistory] = useState(null);
+  const [suppliers, setSuppliers] = useState([]);
+  const [supplierQuickAddOpen, setSupplierQuickAddOpen] = useState(false);
+  const [supplierQuickForm, setSupplierQuickForm] = useState({
+    name: "",
+    mobile: "",
+    city: "",
+    gstin: "",
+    category: "general",
+  });
+  const [supplierQuickSaving, setSupplierQuickSaving] = useState(false);
+  const [purchaseLots, setPurchaseLots] = useState([]);
+  const [purchaseCostingSummary, setPurchaseCostingSummary] = useState(null);
+  const [purchaseCostingReports, setPurchaseCostingReports] = useState({});
+  const [purchaseCostingReferences, setPurchaseCostingReferences] = useState({ products: [] });
+  const [purchaseCostingForm, setPurchaseCostingForm] = useState(emptyPurchaseLot);
+  const [purchaseCostingFormErrors, setPurchaseCostingFormErrors] = useState({});
+  const [editingPurchaseLotId, setEditingPurchaseLotId] = useState(null);
+  const [selectedPurchaseLot, setSelectedPurchaseLot] = useState(null);
+  const [linkedPurchaseBills, setLinkedPurchaseBills] = useState([]);
+  const [linkedPurchaseBillsLoading, setLinkedPurchaseBillsLoading] = useState(false);
+  const [purchaseLotSearch, setPurchaseLotSearch] = useState("");
+  const [purchaseLotStatusFilter, setPurchaseLotStatusFilter] = useState("all");
+  const [invoices, setInvoices] = useState([]);
+  const [billingSummary, setBillingSummary] = useState(null);
+  const [billingReports, setBillingReports] = useState({});
+  const [billingReferences, setBillingReferences] = useState({ leads: [], quotations: [], projects: [], products: [] });
+  const [invoiceForm, setInvoiceForm] = useState(emptyInvoice);
+  const [invoiceFormErrors, setInvoiceFormErrors] = useState({});
+  const [editingInvoiceId, setEditingInvoiceId] = useState(null);
+  const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [billingPaymentForm, setBillingPaymentForm] = useState(emptyBillingPayment);
+  const [billingSearch, setBillingSearch] = useState("");
+  const [billingStatusFilter, setBillingStatusFilter] = useState("all");
+  const [billingPaymentFilter, setBillingPaymentFilter] = useState("all");
+  const [billingFromFilter, setBillingFromFilter] = useState("");
+  const [billingToFilter, setBillingToFilter] = useState("");
   const [dashboardSummary, setDashboardSummary] = useState(null);
   const [dailyReport, setDailyReport] = useState(null);
   const [dailyReportDate, setDailyReportDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [reportsView, setReportsView] = useState("overview");
+  const [inventoryWorkspaceTab, setInventoryWorkspaceTab] = useState("new");
+  const [purchaseWorkspaceTab, setPurchaseWorkspaceTab] = useState("new_bill");
+  const [expenseWorkspaceTab, setExpenseWorkspaceTab] = useState("new");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [isSavingComplaint, setIsSavingComplaint] = useState(false);
@@ -1356,6 +1788,7 @@ export default function App() {
   const [toasts, setToasts] = useState([]);
   const [listLimits, setListLimits] = useState(DEFAULT_LIST_LIMITS);
   const dashboardLoadRef = useRef(0);
+  const purchasePostSaveActionRef = useRef("draft");
 
   const visibleViews = useMemo(() => {
     if (!user || isAdmin(user) || hasRole(user, "manager")) {
@@ -1367,7 +1800,7 @@ export default function App() {
     const allowedViews = new Set();
 
     if (hasRole(user, "sales")) {
-      ["overview", "pipeline", "followups", "quotations"].forEach((item) => allowedViews.add(item));
+      ["overview", "pipeline", "followups", "quotations", "billing"].forEach((item) => allowedViews.add(item));
     }
 
     if (hasRole(user, "operations")) {
@@ -1381,19 +1814,19 @@ export default function App() {
     }
 
     if (hasRole(user, "inventory")) {
-      allowedViews.add("inventory");
+      ["inventory", "purchase_costing"].forEach((item) => allowedViews.add(item));
     }
 
     if (hasRole(user, "accounts")) {
-      ["projects", "expenses", "purchases"].forEach((item) => allowedViews.add(item));
+      ["projects", "expenses", "purchases", "purchase_costing", "billing"].forEach((item) => allowedViews.add(item));
     }
 
     if (hasRole(user, "operator")) {
-      ["overview", "purchases", "expenses", "masons"].forEach((item) => allowedViews.add(item));
+      ["overview", "purchases", "expenses", "masons", "billing"].forEach((item) => allowedViews.add(item));
     }
 
     if (hasRole(user, "reports")) {
-      ["reports", "purchases", "expenses"].forEach((item) => allowedViews.add(item));
+      ["reports", "purchases", "purchase_costing", "expenses"].forEach((item) => allowedViews.add(item));
     }
 
     return views.filter((item) => allowedViews.has(item.id));
@@ -1426,6 +1859,13 @@ export default function App() {
       setCurrentView(visibleViews[0].id);
     }
   }, [visibleViews, currentView]);
+
+  useEffect(() => {
+    if (currentView === "purchase_costing") {
+      setCurrentView("purchases");
+      setPurchaseWorkspaceTab("costing");
+    }
+  }, [currentView]);
 
   useEffect(() => {
     if (!error) {
@@ -1546,6 +1986,183 @@ export default function App() {
     () => products.filter((product) => matchesBusinessUnitFilter(product.business_unit, unitFilter)),
     [products, unitFilter]
   );
+  const productHealthSummary = useMemo(() => {
+    const allProducts = products || [];
+    const summary = {
+      averageCompleteness: 0,
+      missingCompanyCount: 0,
+      missingSizeCount: 0,
+      missingWeightCount: 0,
+      missingPricingCount: 0,
+      missingPackagingCount: 0,
+      lowMarginCount: 0,
+      highStockCount: 0,
+    };
+
+    if (!allProducts.length) {
+      return summary;
+    }
+
+    let completenessTotal = 0;
+
+    allProducts.forEach((product) => {
+      const gaps = getProductDataGaps(product);
+      completenessTotal += getProductCompletenessPercent(product);
+
+      if (gaps.includes("company")) summary.missingCompanyCount += 1;
+      if (gaps.includes("size")) summary.missingSizeCount += 1;
+      if (gaps.includes("weight")) summary.missingWeightCount += 1;
+      if (gaps.includes("pricing")) summary.missingPricingCount += 1;
+      if (gaps.includes("packaging")) summary.missingPackagingCount += 1;
+
+      const liveSellingRate = Number(product.suggested_selling_rate || product.price_per_sqft || 0);
+      const minimumRate = Number(product.minimum_allowed_rate || product.landed_cost_per_unit || 0);
+      if (minimumRate > 0 && liveSellingRate > 0 && liveSellingRate <= minimumRate) {
+        summary.lowMarginCount += 1;
+      }
+
+      if (Number(product.stock_sqft || 0) >= 1000) {
+        summary.highStockCount += 1;
+      }
+    });
+
+    summary.averageCompleteness = Math.round(completenessTotal / allProducts.length);
+    return summary;
+  }, [products]);
+  const pendingInvoiceApprovalCount = useMemo(
+    () => (invoices || []).filter((invoice) => invoice.status === "pending_approval").length,
+    [invoices]
+  );
+  const draftInvoiceCount = useMemo(
+    () => (invoices || []).filter((invoice) => invoice.status === "draft").length,
+    [invoices]
+  );
+  const customerMissingMobileCount = useMemo(
+    () => (leads || []).filter((lead) => !normalizeText(lead.phone)).length,
+    [leads]
+  );
+  const expenseCategorySummary = useMemo(() => {
+    const totals = new Map();
+    (expenses || []).forEach((expense) => {
+      const key = expense.category || "miscellaneous";
+      totals.set(key, (totals.get(key) || 0) + Number(expense.amount || 0));
+    });
+    return [...totals.entries()]
+      .map(([category, amount]) => ({ category, amount }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 6);
+  }, [expenses]);
+  const safePurchases = useMemo(() => (Array.isArray(purchases) ? purchases : []), [purchases]);
+  const safeProducts = useMemo(() => (Array.isArray(products) ? products : []), [products]);
+  const safeSuppliers = useMemo(() => (Array.isArray(suppliers) ? suppliers : []), [suppliers]);
+  const safePurchaseItems = useMemo(
+    () => (Array.isArray(purchaseItems) && purchaseItems.length ? purchaseItems : [{ ...emptyPurchaseItem }]),
+    [purchaseItems]
+  );
+  const selectedPurchaseSupplier = useMemo(
+    () => safeSuppliers.find((supplier) => String(supplier.id) === String(purchaseForm.supplier_id || "")) || null,
+    [safeSuppliers, purchaseForm.supplier_id]
+  );
+  const filteredPurchaseLedger = useMemo(() => {
+    return safePurchases.filter((purchase) => {
+      const matchesSearch =
+        !purchaseSearch ||
+        [purchase.supplier_name, purchase.invoice_number, purchase.item_name]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(String(purchaseSearch).toLowerCase());
+      const matchesSupplier =
+        purchaseSupplierFilter === "all" || String(purchase.supplier_id || "") === String(purchaseSupplierFilter);
+      const matchesInvoice =
+        !purchaseInvoiceFilter ||
+        String(purchase.invoice_number || "").toLowerCase().includes(String(purchaseInvoiceFilter).toLowerCase());
+      const matchesProduct =
+        purchaseProductFilter === "all" || String(purchase.product_id || "") === String(purchaseProductFilter);
+      const matchesFrom = !purchaseFromFilter || String(purchase.purchase_date || "").slice(0, 10) >= purchaseFromFilter;
+      const matchesTo = !purchaseToFilter || String(purchase.purchase_date || "").slice(0, 10) <= purchaseToFilter;
+      return matchesSearch && matchesSupplier && matchesInvoice && matchesProduct && matchesFrom && matchesTo;
+    });
+  }, [
+    purchaseFromFilter,
+    purchaseInvoiceFilter,
+    purchaseProductFilter,
+    purchaseSearch,
+    purchaseSupplierFilter,
+    purchaseToFilter,
+    safePurchases,
+  ]);
+  const purchaseSupplierSummary = useMemo(() => {
+    const totals = new Map();
+    filteredPurchaseLedger.forEach((purchase) => {
+      const key = `${purchase.supplier_id || "unknown"}::${purchase.supplier_name || "Unknown Supplier"}`;
+      const current = totals.get(key) || {
+        supplier_id: purchase.supplier_id || "",
+        supplier_name: purchase.supplier_name || "Unknown Supplier",
+        amount: 0,
+        entries: 0,
+      };
+      current.amount += Number(purchase.total_amount || 0);
+      current.entries += 1;
+      totals.set(key, current);
+    });
+    return [...totals.values()].sort((a, b) => b.amount - a.amount).slice(0, 8);
+  }, [filteredPurchaseLedger]);
+  const purchaseCategorySummary = useMemo(() => {
+    const totals = new Map();
+    safePurchases.forEach((purchase) => {
+      const key = purchase.category || "uncategorized";
+      totals.set(key, (totals.get(key) || 0) + Number(purchase.total_amount || 0));
+    });
+    return [...totals.entries()]
+      .map(([category, amount]) => ({ category, amount }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 6);
+  }, [safePurchases]);
+  const productWarningList = useMemo(
+    () => (filteredProducts || []).filter((product) => getProductDataGaps(product).length),
+    [filteredProducts]
+  );
+  const productCategoryOptions = useMemo(
+    () =>
+      [...new Set([...defaultProductCategories, ...products.map((product) => normalizeText(product.category)).filter(Boolean), ...customProductCategories])]
+        .filter(Boolean)
+        .sort((left, right) => left.localeCompare(right)),
+    [products, customProductCategories]
+  );
+  const derivedWeightPerUnit = useMemo(() => {
+    const piecesPerBox = Number(productForm.pieces_per_box || 0);
+    const weightPerBox = Number(productForm.weight_per_box || 0);
+
+    if (piecesPerBox > 0 && weightPerBox > 0) {
+      return Number((weightPerBox / piecesPerBox).toFixed(4));
+    }
+
+    return null;
+  }, [productForm.pieces_per_box, productForm.weight_per_box]);
+  const derivedSqftPerUnit = useMemo(() => {
+    const piecesPerBox = Number(productForm.pieces_per_box || 0);
+    const sqftPerBox = Number(productForm.sqft_per_box || 0);
+
+    if (piecesPerBox > 0 && sqftPerBox > 0) {
+      return Number((sqftPerBox / piecesPerBox).toFixed(4));
+    }
+
+    return null;
+  }, [productForm.pieces_per_box, productForm.sqft_per_box]);
+
+  useEffect(() => {
+    const nextWeightValue = derivedWeightPerUnit != null ? String(derivedWeightPerUnit) : "";
+
+    if ((productForm.weight_per_unit || "") === nextWeightValue) {
+      return;
+    }
+
+    setProductForm((current) => ({
+      ...current,
+      weight_per_unit: nextWeightValue,
+    }));
+  }, [derivedWeightPerUnit, productForm.weight_per_unit]);
 
   const filteredProjects = useMemo(
     () =>
@@ -1560,6 +2177,64 @@ export default function App() {
       }),
     [projects, unitFilter, workspaceFilter]
   );
+
+  const filteredInvoices = useMemo(() => {
+    return (invoices || []).filter((invoice) => {
+      const haystack = [
+        invoice.customer_name,
+        invoice.customer_mobile,
+        invoice.invoice_number,
+        invoice.site_reference,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      const matchesSearch = !billingSearch || haystack.includes(String(billingSearch).toLowerCase());
+      const matchesStatus = billingStatusFilter === "all" || invoice.status === billingStatusFilter;
+      const matchesPayment = billingPaymentFilter === "all" || invoice.payment_status === billingPaymentFilter;
+      const matchesFrom = !billingFromFilter || String(invoice.invoice_date || "").slice(0, 10) >= billingFromFilter;
+      const matchesTo = !billingToFilter || String(invoice.invoice_date || "").slice(0, 10) <= billingToFilter;
+      return matchesSearch && matchesStatus && matchesPayment && matchesFrom && matchesTo;
+    });
+  }, [billingFromFilter, billingPaymentFilter, billingSearch, billingStatusFilter, billingToFilter, invoices]);
+
+  const billingReferenceOptions = useMemo(() => {
+    return {
+      leads: billingReferences.leads || [],
+      quotations: billingReferences.quotations || [],
+      projects: billingReferences.projects || [],
+      products: billingReferences.products || [],
+    };
+  }, [billingReferences]);
+  const purchaseCostingProductOptions = useMemo(
+    () => purchaseCostingReferences.products || [],
+    [purchaseCostingReferences]
+  );
+  const purchaseEntryProductOptions = useMemo(
+    () =>
+      safeProducts.filter((product) =>
+        purchaseForm.business_unit === "both"
+          ? true
+          : matchesBusinessUnitFilter(product.business_unit, purchaseForm.business_unit)
+      ),
+    [safeProducts, purchaseForm.business_unit]
+  );
+  const purchaseEntryProductMap = useMemo(
+    () => new Map(purchaseEntryProductOptions.map((product) => [product.id, product])),
+    [purchaseEntryProductOptions]
+  );
+  const filteredPurchaseLots = useMemo(() => {
+    return (purchaseLots || []).filter((lot) => {
+      const haystack = [lot.lot_number, lot.vehicle_number, lot.transporter_name]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      const matchesSearch = !purchaseLotSearch || haystack.includes(String(purchaseLotSearch).toLowerCase());
+      const matchesStatus = purchaseLotStatusFilter === "all" || lot.status === purchaseLotStatusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [purchaseLots, purchaseLotSearch, purchaseLotStatusFilter]);
 
   const convertedLeadOptions = useMemo(
     () =>
@@ -1882,7 +2557,8 @@ export default function App() {
       overview: { id: "pipeline", label: "+ New Lead" },
       pipeline: { id: "pipeline", label: "+ New Lead" },
       projects: { id: "projects", label: "+ New Project" },
-      purchases: { id: "purchases", label: "+ Purchase Entry" },
+      purchases: { id: "purchases", label: "+ New Bill" },
+      billing: { id: "billing", label: "+ New Invoice" },
       masons: { id: "masons", label: "+ Registered Mason" },
       expenses: { id: "expenses", label: "+ Expense" },
     };
@@ -1975,16 +2651,25 @@ export default function App() {
       const requestOptions = createRequestOptions(signal);
 
       if (view === "overview") {
-        const [statsData, leadsData, summaryData] = await Promise.all([
+        const [statsData, leadsData, summaryData, _usersData, inventoryData, billingData] = await Promise.all([
           api.getStats(requestOptions),
           api.getLeads({ ...requestOptions, limit: listLimits.leads }),
           api.getDashboardSummary(requestOptions).catch(() => null),
           loadUsersForView(view, signal),
+          api.getInventory({ ...requestOptions, limit: listLimits.products }).catch(() => ({ products: [], summary: null })),
+          api
+            .getBillingDashboard({ ...requestOptions, limit: listLimits.invoices })
+            .catch(() => ({ invoices: [], summary: null, reports: {}, references: {} })),
         ]);
 
         setStats(statsData);
         setLeads(leadsData);
         setDashboardSummary(summaryData);
+        setProducts(inventoryData.products || []);
+        setInventorySummary(inventoryData.summary || null);
+        setInvoices(billingData.invoices || []);
+        setBillingSummary(billingData.summary || null);
+        setBillingReports(billingData.reports || {});
         syncSelectedLeadState(leadsData);
       } else if (view === "pipeline") {
         const leadsData = await api.getLeads({ ...requestOptions, limit: listLimits.leads });
@@ -2072,18 +2757,78 @@ export default function App() {
         setExpenses(expensesData.expenses || []);
         setExpenseSummary(expensesData.summary || null);
       } else if (view === "purchases") {
-        const purchasesData = await api
-          .getPurchases({
-            ...requestOptions,
-            limit: listLimits.purchases,
-            search: purchaseSearch,
-            from: purchaseFromFilter,
-            to: purchaseToFilter,
-            payment_status: purchasePaymentFilter === "all" ? "" : purchasePaymentFilter,
-          })
-          .catch(() => ({ purchases: [], summary: null }));
+        const [purchasesData, inventoryData, suppliersData] = await Promise.all([
+          api
+            .getPurchases({
+              ...requestOptions,
+              limit: listLimits.purchases,
+              search: purchaseSearch,
+              from: purchaseFromFilter,
+              to: purchaseToFilter,
+              payment_status: purchasePaymentFilter === "all" ? "" : purchasePaymentFilter,
+            })
+            .catch(() => ({ purchases: [], summary: null })),
+          api.getInventory({ ...requestOptions, limit: listLimits.products }).catch(() => ({ products: [] })),
+          api.getSuppliers({ ...requestOptions, status: "active", limit: 500 }).catch(() => []),
+        ]);
         setPurchases(purchasesData.purchases || []);
         setPurchaseSummary(purchasesData.summary || null);
+        setProducts(inventoryData.products || []);
+        setSuppliers(Array.isArray(suppliersData) ? suppliersData : []);
+      } else if (view === "purchase_costing") {
+        const costingData = await api
+          .getPurchaseCostingDashboard({
+            ...requestOptions,
+            limit: listLimits.purchaseLots,
+            search: purchaseLotSearch,
+            status: purchaseLotStatusFilter === "all" ? "" : purchaseLotStatusFilter,
+          })
+          .catch(() => ({ lots: [], summary: null, reports: {}, references: { products: [] } }));
+        setPurchaseLots(costingData.lots || []);
+        setPurchaseCostingSummary(costingData.summary || null);
+        setPurchaseCostingReports(costingData.reports || {});
+        setPurchaseCostingReferences(costingData.references || { products: [] });
+        setSelectedPurchaseLot((current) => {
+          if (!costingData.lots?.length) {
+            return null;
+          }
+
+          if (current) {
+            const matchingLot = costingData.lots.find((lot) => lot.id === current.id);
+            return matchingLot ? { ...current, ...matchingLot } : costingData.lots[0];
+          }
+
+          return costingData.lots[0];
+        });
+      } else if (view === "billing") {
+        const billingData = await api
+          .getBillingDashboard({
+            ...requestOptions,
+            limit: listLimits.invoices,
+            search: billingSearch,
+            status: billingStatusFilter === "all" ? "" : billingStatusFilter,
+            payment_status: billingPaymentFilter === "all" ? "" : billingPaymentFilter,
+            from: billingFromFilter,
+            to: billingToFilter,
+          })
+          .catch(() => ({ invoices: [], summary: null, reports: {}, references: { leads: [], quotations: [], projects: [], products: [] } }));
+        setInvoices(billingData.invoices || []);
+        setBillingSummary(billingData.summary || null);
+        setBillingReports(billingData.reports || {});
+        setBillingReferences(
+          billingData.references || { leads: [], quotations: [], projects: [], products: [] }
+        );
+        setSelectedInvoice((current) => {
+          if (!billingData.invoices?.length) {
+            return null;
+          }
+
+          if (current) {
+            return billingData.invoices.find((invoice) => invoice.id === current.id) || billingData.invoices[0];
+          }
+
+          return billingData.invoices[0];
+        });
       } else if (view === "reports") {
         const [statsData, projectsData, expensesData, summaryData, dailyData] = await Promise.all([
           api.getStats(requestOptions),
@@ -2141,6 +2886,13 @@ export default function App() {
     purchaseFromFilter,
     purchaseToFilter,
     purchasePaymentFilter,
+    purchaseLotSearch,
+    purchaseLotStatusFilter,
+    billingSearch,
+    billingStatusFilter,
+    billingPaymentFilter,
+    billingFromFilter,
+    billingToFilter,
     dailyReportDate,
   ]);
 
@@ -2507,6 +3259,13 @@ export default function App() {
 
   async function handleSaveProduct(event) {
     event.preventDefault();
+    if (isAddingCustomProductCategory && normalizeText(productForm.category)) {
+      setCustomProductCategories((current) =>
+        current.includes(normalizeText(productForm.category))
+          ? current
+          : [...current, normalizeText(productForm.category)]
+      );
+    }
     const validationError = validateProductForm(productForm);
     if (validationError) {
       setError(validationError);
@@ -2521,6 +3280,7 @@ export default function App() {
       }
       setProductForm(emptyProduct);
       setEditingProductId(null);
+      setIsAddingCustomProductCategory(false);
       await loadDashboard();
     }, editingProductId ? "Inventory item updated." : "Inventory item saved.");
   }
@@ -2760,42 +3520,363 @@ export default function App() {
     }, editingExpenseId ? "Expense updated." : "Expense saved.");
   }
 
+  const fetchPurchaseProductIntelligence = useCallback(
+    async (productId) => {
+      const normalizedProductId = Number(productId || 0);
+
+      if (!normalizedProductId) {
+        return null;
+      }
+
+      if (purchaseIntelligenceCache[normalizedProductId]) {
+        return purchaseIntelligenceCache[normalizedProductId];
+      }
+
+      if (purchaseIntelligenceLoading[normalizedProductId]) {
+        return null;
+      }
+
+      setPurchaseIntelligenceLoading((current) => ({ ...current, [normalizedProductId]: true }));
+
+      try {
+        const data = await api.getPurchaseProductIntelligence(normalizedProductId);
+        setPurchaseIntelligenceCache((current) => ({ ...current, [normalizedProductId]: data }));
+        return data;
+      } catch (error) {
+        return null;
+      } finally {
+        setPurchaseIntelligenceLoading((current) => ({ ...current, [normalizedProductId]: false }));
+      }
+    },
+    [purchaseIntelligenceCache, purchaseIntelligenceLoading]
+  );
+
+  const fetchLinkedPurchaseBills = useCallback(
+    async (truckNumber, deliveryDate) => {
+      const normalizedTruck = String(truckNumber || "").trim();
+      const normalizedDate = String(deliveryDate || "").trim();
+
+      if (!normalizedTruck || !normalizedDate) {
+        setLinkedPurchaseBills([]);
+        return [];
+      }
+
+      setLinkedPurchaseBillsLoading(true);
+      try {
+        const data = await api.getPurchasesByTruck({
+          truck_number: normalizedTruck,
+          delivery_date: normalizedDate,
+        });
+        const bills = Array.isArray(data?.bills) ? data.bills : [];
+        setLinkedPurchaseBills(bills);
+        return bills;
+      } catch (error) {
+        setLinkedPurchaseBills([]);
+        return [];
+      } finally {
+        setLinkedPurchaseBillsLoading(false);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (editingPurchaseLotId) {
+      return;
+    }
+
+    const truckNumber = String(purchaseCostingForm.lot_number || "").trim();
+    const deliveryDate = String(purchaseCostingForm.arrival_date || "").trim();
+
+    if (!truckNumber || !deliveryDate) {
+      setLinkedPurchaseBills([]);
+      return;
+    }
+
+    let cancelled = false;
+    fetchLinkedPurchaseBills(truckNumber, deliveryDate).then((bills) => {
+      if (cancelled) {
+        return;
+      }
+
+      const nextSuppliers = (bills || []).map((bill) => ({
+        ...emptyPurchaseLotSupplier,
+        supplier_name: bill.supplier_name || "",
+        supplier_invoice_number: bill.invoice_number || "",
+        supplier_invoice_date: bill.purchase_date ? String(bill.purchase_date).slice(0, 10) : deliveryDate,
+        supplier_amount: String(Number(bill.total_amount || 0)),
+        items: (bill.items || []).map((item) => ({
+          ...emptyPurchaseLotItem,
+          product_id: item.product_id ? String(item.product_id) : "",
+          item_name: item.item_name || "",
+          company_name: item.company_name || "",
+          product_size: item.product_size || "",
+          category: item.category || "tiles",
+          quantity: item.quantity != null ? String(item.quantity) : "",
+          unit: item.unit || "pcs",
+          boxes: item.unit && String(item.unit).toLowerCase().includes("box") ? String(item.quantity || "") : "",
+          pieces_per_box: item.pieces_per_box != null && item.pieces_per_box !== "" ? String(item.pieces_per_box) : "",
+          sqft_per_box: item.sqft_per_box != null && item.sqft_per_box !== "" ? String(item.sqft_per_box) : "",
+          weight_per_box: item.weight_per_box != null && item.weight_per_box !== "" ? String(item.weight_per_box) : "",
+          weight_per_unit: item.weight_per_unit != null && item.weight_per_unit !== "" ? String(item.weight_per_unit) : "",
+          basic_purchase_rate: Number(item.quantity || 0) > 0 ? String(Number(item.amount || 0) / Number(item.quantity || 1)) : String(item.last_purchase_rate || ""),
+          damage_quantity: "",
+          manual_allocation_value: "",
+        })) || [{ ...emptyPurchaseLotItem }],
+      }));
+
+      setPurchaseCostingForm((current) => ({
+        ...current,
+        suppliers: nextSuppliers.length ? nextSuppliers : [{ ...emptyPurchaseLotSupplier, items: [{ ...emptyPurchaseLotItem }] }],
+      }));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [editingPurchaseLotId, fetchLinkedPurchaseBills, purchaseCostingForm.arrival_date, purchaseCostingForm.lot_number]);
+
+  function updatePurchaseItem(index, patch) {
+    setPurchaseItems((current) =>
+      current.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item))
+    );
+  }
+
+  function addPurchaseItemRow() {
+    setPurchaseItems((current) => [...current, { ...emptyPurchaseItem, unit: purchaseForm.business_unit === "tiles" ? "box" : "pcs" }]);
+  }
+
+  function removePurchaseItemRow(index) {
+    setPurchaseItems((current) => (current.length <= 1 ? current : current.filter((_, itemIndex) => itemIndex !== index)));
+    clearFieldErrorState(setPurchaseFormErrors, `items.${index}.product_id`);
+    clearFieldErrorState(setPurchaseFormErrors, `items.${index}.quantity`);
+    clearFieldErrorState(setPurchaseFormErrors, `items.${index}.amount`);
+  }
+
+  function handlePurchaseProductSelect(index, productIdValue) {
+    const product = purchaseEntryProductOptions.find((item) => item.id === Number(productIdValue || 0)) || null;
+    const nextRate = product?.last_purchase_rate ? String(product.last_purchase_rate) : "";
+    const currentRow = purchaseItems[index] || emptyPurchaseItem;
+    const quantity = Number(currentRow.quantity || 0);
+    const autoAmount = recalcPurchaseNetFromRate(quantity, nextRate);
+
+    updatePurchaseItem(index, {
+      product_id: productIdValue,
+      item_name: product?.name || currentRow.item_name,
+      category: product?.category || currentRow.category,
+      unit: product?.unit || currentRow.unit,
+      rate_per_unit: nextRate,
+      amount: autoAmount != null ? String(autoAmount) : currentRow.amount,
+    });
+
+    if (product?.business_unit) {
+      setPurchaseForm((current) => ({
+        ...current,
+        business_unit: product.business_unit || current.business_unit || "tiles",
+      }));
+    }
+
+    if (productIdValue) {
+      fetchPurchaseProductIntelligence(productIdValue);
+    }
+  }
+
+  async function handlePurchaseSupplierLookup() {
+    const supplier = String(purchaseForm.supplier_name || "").trim();
+    if (!supplier || supplier.length < 3) {
+      setPurchaseSupplierHistory(null);
+      return;
+    }
+    try {
+      const data = await api.getPurchases({ search: supplier, limit: 5 });
+      const matches = Array.isArray(data?.purchases) ? data.purchases : [];
+      const exact = matches.find(
+        (row) => String(row.supplier_name || "").trim().toLowerCase() === supplier.toLowerCase()
+      );
+      const last = exact || matches[0] || null;
+      if (last) {
+        setPurchaseSupplierHistory({
+          supplier_name: last.supplier_name,
+          supplier_phone: last.supplier_phone || "",
+          last_invoice: last.invoice_number || "",
+          last_date: last.purchase_date,
+          last_item: last.item_name || "",
+          last_amount: last.amount,
+          count: matches.length,
+        });
+        // Auto-fill phone if empty
+        if (!purchaseForm.supplier_phone && last.supplier_phone) {
+          setPurchaseForm((current) =>
+            current.supplier_phone ? current : { ...current, supplier_phone: last.supplier_phone }
+          );
+        }
+      } else {
+        setPurchaseSupplierHistory({ supplier_name: supplier, isNew: true });
+      }
+    } catch (_err) {
+      // Best-effort helper — do not block save flow if lookup fails.
+      setPurchaseSupplierHistory(null);
+    }
+  }
+
+  function recalcPurchaseNetFromRate(qty, rate) {
+    const q = Number(qty || 0);
+    const r = Number(rate || 0);
+    if (!Number.isFinite(q) || !Number.isFinite(r) || q <= 0 || r <= 0) return null;
+    return Number((q * r).toFixed(2));
+  }
+
+  async function loadSuppliers() {
+    try {
+      const list = await api.getSuppliers({ status: "active", limit: 500 });
+      setSuppliers(Array.isArray(list) ? list : []);
+    } catch (_err) {
+      // soft-fail: empty list still allows quick-add
+    }
+  }
+
+  function handleSupplierSelect(supplierIdValue) {
+    const id = Number(supplierIdValue || 0);
+    const supplier = safeSuppliers.find((s) => s.id === id) || null;
+    setPurchaseForm((current) => ({
+      ...current,
+      supplier_id: supplierIdValue,
+      supplier_name: supplier?.name || "",
+      supplier_phone: supplier?.mobile || "",
+    }));
+  }
+
+  async function handleQuickAddSupplier(event) {
+    event.preventDefault();
+    if (supplierQuickSaving) return;
+    const name = String(supplierQuickForm.name || "").trim();
+    const mobile = String(supplierQuickForm.mobile || "").trim();
+    if (!name || !mobile) {
+      setError("Supplier name and mobile are required");
+      return;
+    }
+    setSupplierQuickSaving(true);
+    try {
+      const created = await api.createSupplier({
+        name,
+        mobile,
+        city: supplierQuickForm.city,
+        gstin: supplierQuickForm.gstin,
+        category: supplierQuickForm.category || "general",
+        status: "active",
+      });
+      setSuppliers((prev) => [created, ...prev]);
+      // Auto-select the freshly created supplier
+      setPurchaseForm((current) => ({
+        ...current,
+        supplier_id: String(created.id),
+        supplier_name: created.name,
+        supplier_phone: created.mobile || "",
+      }));
+      setSupplierQuickAddOpen(false);
+      setSupplierQuickForm({ name: "", mobile: "", city: "", gstin: "", category: "general" });
+      pushToast("Supplier registered.");
+    } catch (err) {
+      setError(err?.message || "Unable to create supplier");
+    } finally {
+      setSupplierQuickSaving(false);
+    }
+  }
+
   function handleEditPurchase(record) {
     setEditingPurchaseId(record.id);
     setPurchaseFormErrors({});
+    const matchedProduct =
+      safeProducts.find(
+        (product) =>
+          String(product.name || "").trim().toLowerCase() ===
+          String(record.item_name || "").trim().toLowerCase()
+      ) || null;
     setPurchaseForm({
+      supplier_id: record.supplier_id ? String(record.supplier_id) : "",
       supplier_name: record.supplier_name || "",
       supplier_phone: record.supplier_phone || "",
       invoice_number: record.invoice_number || "",
       purchase_date: record.purchase_date ? String(record.purchase_date).slice(0, 10) : "",
+      truck_number: record.truck_number || "",
+      delivery_date: record.delivery_date ? String(record.delivery_date).slice(0, 10) : "",
       business_unit: record.business_unit || "tiles",
-      category: record.category || "tiles",
-      item_name: record.item_name || "",
-      quantity: record.quantity != null ? String(record.quantity) : "",
-      unit: record.unit || "pcs",
-      amount: record.amount != null ? String(record.amount) : "",
-      gst_amount: record.gst_amount != null ? String(record.gst_amount) : "",
-      total_amount: record.total_amount != null ? String(record.total_amount) : "",
       payment_status: record.payment_status || "pending",
       remarks: record.remarks || "",
     });
+    setPurchaseItems([
+      {
+        ...emptyPurchaseItem,
+        product_id: matchedProduct ? String(matchedProduct.id) : "",
+        item_name: record.item_name || "",
+        category: record.category || "tiles",
+        quantity: record.quantity != null ? String(record.quantity) : "",
+        unit: record.unit || "pcs",
+        amount: record.amount != null ? String(record.amount) : "",
+        gst_amount: record.gst_amount != null ? String(record.gst_amount) : "",
+        total_amount: record.total_amount != null ? String(record.total_amount) : "",
+        rate_per_unit:
+          record.quantity && Number(record.quantity) > 0
+            ? String(Number((Number(record.amount || 0) / Number(record.quantity)).toFixed(2)))
+            : matchedProduct?.last_purchase_rate
+              ? String(matchedProduct.last_purchase_rate)
+              : "",
+      },
+    ]);
+
+    if (matchedProduct) {
+      fetchPurchaseProductIntelligence(matchedProduct.id);
+    }
   }
 
   function handleCancelEditPurchase() {
     setEditingPurchaseId(null);
-    setPurchaseForm(emptyPurchase);
+    setPurchaseForm({ ...emptyPurchase, purchase_date: new Date().toISOString().slice(0, 10) });
+    setPurchaseItems([{ ...emptyPurchaseItem }]);
     setPurchaseFormErrors({});
+    setPurchaseSupplierHistory(null);
+    setLinkedPurchaseBills([]);
   }
 
   async function handleSavePurchase(event) {
     event.preventDefault();
     const requiredErrors = validateRequiredFields(purchaseForm, {
-      supplier_name: "Supplier name is required.",
+      supplier_id: {
+        message: "Registered supplier is required.",
+        validate: (value) => Boolean(value),
+      },
+      invoice_number: {
+        message: "Invoice number is required.",
+        validate: (value) => Boolean(normalizeText(value)),
+      },
       purchase_date: {
         message: "Purchase date is required.",
         validate: (value) => Boolean(value),
       },
+      truck_number: {
+        message: "Truck number is required.",
+        validate: (value) => Boolean(normalizeText(value)),
+      },
+      delivery_date: {
+        message: "Delivery date is required.",
+        validate: (value) => Boolean(value),
+      },
     });
+    if (!Array.isArray(purchaseItems) || purchaseItems.length === 0) {
+      requiredErrors.items = "At least one product row is required.";
+    } else {
+      purchaseItems.forEach((item, index) => {
+        if (!item.product_id) {
+          requiredErrors[`items.${index}.product_id`] = "Inventory product is required.";
+        }
+        if (normalizeText(item.quantity) === "") {
+          requiredErrors[`items.${index}.quantity`] = "Quantity is required.";
+        }
+        if (normalizeText(item.amount) === "" && normalizeText(item.rate_per_unit) === "") {
+          requiredErrors[`items.${index}.amount`] = "Rate or net amount is required.";
+        }
+      });
+    }
     setPurchaseFormErrors(requiredErrors);
     if (Object.keys(requiredErrors).length) {
       setError("");
@@ -2803,29 +3884,71 @@ export default function App() {
       return;
     }
 
-    const validationError = validatePurchaseForm(purchaseForm);
+    const firstItem = purchaseItems[0] || emptyPurchaseItem;
+    const validationError = validatePurchaseForm({
+      ...purchaseForm,
+      item_name: firstItem.item_name,
+      quantity: firstItem.quantity,
+      amount: firstItem.amount,
+      gst_amount: firstItem.gst_amount,
+    });
     if (validationError) {
       setError(validationError);
       return;
     }
 
     await runBusyAction("save-purchase", async () => {
-      const amount = Number(purchaseForm.amount || 0);
-      const gst = Number(purchaseForm.gst_amount || 0);
-      const computedTotal = amount + gst;
-      const payload = {
-        ...purchaseForm,
-        quantity: Number(purchaseForm.quantity || 0),
-        amount,
-        gst_amount: gst,
-        total_amount: purchaseForm.total_amount === "" ? computedTotal : Number(purchaseForm.total_amount),
-      };
-
+      const postSaveAction = purchasePostSaveActionRef.current || "draft";
+      const selectedSupplier = safeSuppliers.find((supplier) => String(supplier.id) === String(purchaseForm.supplier_id || "")) || null;
+      const firstProductRow = purchaseItems[0] || emptyPurchaseItem;
+      const firstSelectedProduct =
+        firstProductRow.product_id
+          ? purchaseEntryProductMap.get(Number(firstProductRow.product_id)) || null
+          : null;
       try {
         if (editingPurchaseId) {
+          const row = purchaseItems[0] || emptyPurchaseItem;
+          const amount = Number(row.amount || 0);
+          const gst = Number(row.gst_amount || 0);
+          const computedTotal = amount + gst;
+          const payload = {
+            ...purchaseForm,
+            supplier_id: Number(purchaseForm.supplier_id || 0),
+            product_id: Number(row.product_id || 0),
+            item_name: row.item_name,
+            category: row.category,
+            purchase_date: purchaseForm.purchase_date || new Date().toISOString().slice(0, 10),
+            truck_number: purchaseForm.truck_number || "",
+            delivery_date: purchaseForm.delivery_date || null,
+            quantity: Number(row.quantity || 0),
+            unit: row.unit || "pcs",
+            amount,
+            gst_amount: gst,
+            total_amount: row.total_amount === "" ? computedTotal : Number(row.total_amount),
+          };
           await api.updatePurchase(editingPurchaseId, payload);
         } else {
-          await api.createPurchase(payload);
+          for (const row of purchaseItems) {
+            const amount = Number(row.amount || 0);
+            const gst = Number(row.gst_amount || 0);
+            const computedTotal = amount + gst;
+            const payload = {
+              ...purchaseForm,
+              supplier_id: Number(purchaseForm.supplier_id || 0),
+              product_id: Number(row.product_id || 0),
+              item_name: row.item_name,
+              category: row.category,
+              purchase_date: purchaseForm.purchase_date || new Date().toISOString().slice(0, 10),
+              truck_number: purchaseForm.truck_number || "",
+              delivery_date: purchaseForm.delivery_date || null,
+              quantity: Number(row.quantity || 0),
+              unit: row.unit || "pcs",
+              amount,
+              gst_amount: gst,
+              total_amount: row.total_amount === "" ? computedTotal : Number(row.total_amount),
+            };
+            await api.createPurchase(payload);
+          }
         }
       } catch (err) {
         if (err && err.status === 409) {
@@ -2835,9 +3958,69 @@ export default function App() {
         throw err;
       }
 
-      setPurchaseForm(emptyPurchase);
+      if (postSaveAction === "approval") {
+        setPurchaseCostingForm((current) => {
+          const currentSupplier = (current.suppliers || [])[0] || { ...emptyPurchaseLotSupplier, items: [{ ...emptyPurchaseLotItem }] };
+          const currentItem = (currentSupplier.items || [])[0] || { ...emptyPurchaseLotItem };
+          return {
+            ...current,
+            lot_number: purchaseForm.truck_number || current.lot_number,
+            arrival_date: purchaseForm.delivery_date || purchaseForm.purchase_date || current.arrival_date,
+            vehicle_number: current.vehicle_number || purchaseForm.truck_number || "",
+            total_freight_cost: current.total_freight_cost || "",
+            total_unloading_cost: current.total_unloading_cost || "",
+            interest_cost_override: current.interest_cost_override || "",
+            showroom_overhead_amount: current.showroom_overhead_amount || "",
+            suppliers: [
+              {
+                ...currentSupplier,
+                supplier_name: currentSupplier.supplier_name || selectedSupplier?.name || purchaseForm.supplier_name || "",
+                supplier_invoice_number: currentSupplier.supplier_invoice_number || purchaseForm.invoice_number || "",
+                supplier_invoice_date: currentSupplier.supplier_invoice_date || purchaseForm.purchase_date || current.arrival_date,
+                items: [
+                  {
+                    ...currentItem,
+                    product_id: currentItem.product_id || firstProductRow.product_id || "",
+                    item_name: currentItem.item_name || firstSelectedProduct?.name || firstProductRow.item_name || "",
+                    company_name: currentItem.company_name || firstSelectedProduct?.company_name || "",
+                    product_size: currentItem.product_size || firstSelectedProduct?.product_size || "",
+                    category: currentItem.category || firstSelectedProduct?.category || firstProductRow.category || "tiles",
+                    quantity: currentItem.quantity || firstProductRow.quantity || "",
+                    unit: currentItem.unit || firstSelectedProduct?.unit || firstProductRow.unit || "box",
+                    basic_purchase_rate: currentItem.basic_purchase_rate || firstProductRow.rate_per_unit || "",
+                    pieces_per_box: currentItem.pieces_per_box || firstSelectedProduct?.pieces_per_box || "",
+                    sqft_per_box: currentItem.sqft_per_box || firstSelectedProduct?.sqft_per_box || "",
+                    weight_per_box: currentItem.weight_per_box || firstSelectedProduct?.weight_per_box || "",
+                    weight_per_unit: currentItem.weight_per_unit || firstSelectedProduct?.weight_per_unit || "",
+                  },
+                ],
+              },
+            ],
+          };
+        });
+        setPurchaseWorkspaceTab("costing");
+      }
+
+      const shouldClearInvoiceHeader = editingPurchaseId || postSaveAction === "new";
+      setPurchaseForm((current) => ({
+        ...emptyPurchase,
+        supplier_id: shouldClearInvoiceHeader ? "" : current.supplier_id,
+        supplier_name: shouldClearInvoiceHeader ? "" : current.supplier_name,
+        supplier_phone: shouldClearInvoiceHeader ? "" : current.supplier_phone,
+        invoice_number: shouldClearInvoiceHeader ? "" : current.invoice_number,
+        truck_number: shouldClearInvoiceHeader ? "" : current.truck_number || "",
+        delivery_date: shouldClearInvoiceHeader ? "" : current.delivery_date || current.purchase_date || "",
+        purchase_date: shouldClearInvoiceHeader
+          ? new Date().toISOString().slice(0, 10)
+          : current.purchase_date || new Date().toISOString().slice(0, 10),
+        business_unit: shouldClearInvoiceHeader ? "tiles" : current.business_unit || "tiles",
+        payment_status: shouldClearInvoiceHeader ? "pending" : current.payment_status || "pending",
+        remarks: shouldClearInvoiceHeader ? "" : current.remarks || "",
+      }));
+      setPurchaseItems([{ ...emptyPurchaseItem }]);
       setPurchaseFormErrors({});
       setEditingPurchaseId(null);
+      purchasePostSaveActionRef.current = "draft";
       await loadDashboard();
     }, editingPurchaseId ? "Purchase updated." : "Purchase saved.");
   }
@@ -2848,10 +4031,540 @@ export default function App() {
       await api.deletePurchase(id);
       if (editingPurchaseId === id) {
         setEditingPurchaseId(null);
-        setPurchaseForm(emptyPurchase);
+        setPurchaseForm({ ...emptyPurchase, purchase_date: new Date().toISOString().slice(0, 10) });
+        setPurchaseItems([{ ...emptyPurchaseItem }]);
+        setLinkedPurchaseBills([]);
       }
       await loadDashboard();
     }, "Purchase deleted.");
+  }
+
+  function updatePurchaseCostingField(field, value) {
+    setPurchaseCostingForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+    clearFieldErrorState(setPurchaseCostingFormErrors, field);
+  }
+
+  function updatePurchaseCostingSupplier(index, field, value) {
+    setPurchaseCostingForm((current) => ({
+      ...current,
+      suppliers: (current.suppliers || []).map((supplier, supplierIndex) =>
+        supplierIndex === index ? { ...supplier, [field]: value } : supplier
+      ),
+    }));
+    clearFieldErrorState(setPurchaseCostingFormErrors, `suppliers.${index}.${field}`);
+  }
+
+  function updatePurchaseCostingItem(supplierIndex, itemIndex, field, value) {
+    setPurchaseCostingForm((current) => ({
+      ...current,
+      suppliers: (current.suppliers || []).map((supplier, currentSupplierIndex) =>
+        currentSupplierIndex === supplierIndex
+          ? {
+              ...supplier,
+              items: (supplier.items || []).map((item, currentItemIndex) =>
+                currentItemIndex === itemIndex ? { ...item, [field]: value } : item
+              ),
+            }
+          : supplier
+      ),
+    }));
+    clearFieldErrorState(setPurchaseCostingFormErrors, `suppliers.${supplierIndex}.items.${itemIndex}.${field}`);
+  }
+
+  function handlePurchaseCostingProductChange(supplierIndex, itemIndex, productIdValue) {
+    const product =
+      purchaseCostingProductOptions.find((item) => item.id === Number(productIdValue || 0)) || null;
+    setPurchaseCostingForm((current) => ({
+      ...current,
+      suppliers: (current.suppliers || []).map((supplier, currentSupplierIndex) =>
+        currentSupplierIndex === supplierIndex
+          ? {
+              ...supplier,
+              items: (supplier.items || []).map((item, currentItemIndex) =>
+                currentItemIndex === itemIndex
+                  ? {
+                      ...item,
+                      product_id: productIdValue,
+                      item_name: product?.name || item.item_name,
+                      company_name: product?.company_name || item.company_name,
+                      product_size: product?.product_size || product?.tile_size || item.product_size,
+                      category: product?.category || item.category,
+                      unit: product?.unit || item.unit,
+                      pieces_per_box:
+                        product?.pieces_per_box != null && product.pieces_per_box !== ""
+                          ? String(product.pieces_per_box)
+                          : item.pieces_per_box,
+                      sqft_per_box:
+                        product?.sqft_per_box != null && product.sqft_per_box !== ""
+                          ? String(product.sqft_per_box)
+                          : item.sqft_per_box,
+                      weight_per_box:
+                        product?.weight_per_box != null && product.weight_per_box !== ""
+                          ? String(product.weight_per_box)
+                          : item.weight_per_box,
+                      weight_per_unit:
+                        product?.weight_per_unit != null && product.weight_per_unit !== ""
+                          ? String(product.weight_per_unit)
+                          : item.weight_per_unit,
+                      basic_purchase_rate:
+                        product?.last_purchase_rate != null && product.last_purchase_rate !== ""
+                          ? String(product.last_purchase_rate)
+                          : item.basic_purchase_rate,
+                    }
+                  : item
+              ),
+            }
+          : supplier
+      ),
+    }));
+    clearFieldErrorState(setPurchaseCostingFormErrors, `suppliers.${supplierIndex}.items.${itemIndex}.item_name`);
+  }
+
+  function addPurchaseCostingSupplier() {
+    setPurchaseCostingForm((current) => ({
+      ...current,
+      suppliers: [...(current.suppliers || []), { ...emptyPurchaseLotSupplier, items: [{ ...emptyPurchaseLotItem }] }],
+    }));
+  }
+
+  function removePurchaseCostingSupplier(index) {
+    setPurchaseCostingForm((current) => {
+      const nextSuppliers = (current.suppliers || []).filter((_, supplierIndex) => supplierIndex !== index);
+      return {
+        ...current,
+        suppliers: nextSuppliers.length
+          ? nextSuppliers
+          : [{ ...emptyPurchaseLotSupplier, items: [{ ...emptyPurchaseLotItem }] }],
+      };
+    });
+  }
+
+  function addPurchaseCostingItem(supplierIndex) {
+    setPurchaseCostingForm((current) => ({
+      ...current,
+      suppliers: (current.suppliers || []).map((supplier, currentSupplierIndex) =>
+        currentSupplierIndex === supplierIndex
+          ? {
+              ...supplier,
+              items: [...(supplier.items || []), { ...emptyPurchaseLotItem }],
+            }
+          : supplier
+      ),
+    }));
+  }
+
+  function removePurchaseCostingItem(supplierIndex, itemIndex) {
+    setPurchaseCostingForm((current) => ({
+      ...current,
+      suppliers: (current.suppliers || []).map((supplier, currentSupplierIndex) => {
+        if (currentSupplierIndex !== supplierIndex) {
+          return supplier;
+        }
+
+        const nextItems = (supplier.items || []).filter((_, currentItemIndex) => currentItemIndex !== itemIndex);
+        return {
+          ...supplier,
+          items: nextItems.length ? nextItems : [{ ...emptyPurchaseLotItem }],
+        };
+      }),
+    }));
+  }
+
+  async function handleOpenPurchaseLotDetail(lotId) {
+    if (!lotId) {
+      return;
+    }
+
+    await runBusyAction("load-purchase-lot-detail", async () => {
+      const detail = await api.getPurchaseCostingLotDetail(lotId);
+      setSelectedPurchaseLot(detail || null);
+    });
+  }
+
+  async function startEditingPurchaseCostingLot(lot) {
+    if (!lot?.id) {
+      return;
+    }
+
+    await runBusyAction("edit-purchase-lot", async () => {
+      const detail = await api.getPurchaseCostingLotDetail(lot.id);
+      setEditingPurchaseLotId(lot.id);
+      setPurchaseCostingForm(mapPurchaseLotToForm(detail || lot));
+      setPurchaseCostingFormErrors({});
+      setSelectedPurchaseLot(detail || lot);
+    });
+  }
+
+  function handleCancelPurchaseCostingEdit() {
+    setEditingPurchaseLotId(null);
+    setPurchaseCostingForm(emptyPurchaseLot);
+    setPurchaseCostingFormErrors({});
+  }
+
+  async function handleSavePurchaseCostingLot(event) {
+    event.preventDefault();
+
+    const requiredErrors = {
+      ...validateRequiredFields(purchaseCostingForm, {
+        lot_number: "Lot / truck number is required.",
+        arrival_date: "Arrival date is required.",
+      }),
+    };
+
+    (purchaseCostingForm.suppliers || []).forEach((supplier, supplierIndex) => {
+      if (!normalizeText(supplier.supplier_name)) {
+        requiredErrors[`suppliers.${supplierIndex}.supplier_name`] = "Supplier name is required.";
+      }
+
+      (supplier.items || []).forEach((item, itemIndex) => {
+        if (!normalizeText(item.item_name) && !item.product_id) {
+          requiredErrors[`suppliers.${supplierIndex}.items.${itemIndex}.item_name`] = "Product / item is required.";
+        }
+      });
+    });
+
+    setPurchaseCostingFormErrors(requiredErrors);
+    if (Object.keys(requiredErrors).length) {
+      setError("");
+      focusFirstInvalidField(event.currentTarget, requiredErrors);
+      return;
+    }
+
+    await runBusyAction("save-purchase-costing", async () => {
+      const payload = normalizePurchaseCostingPayload(purchaseCostingForm);
+      const detail = editingPurchaseLotId
+        ? await api.updatePurchaseCostingLot(editingPurchaseLotId, payload)
+        : await api.createPurchaseCostingLot(payload);
+
+      setPurchaseCostingForm(emptyPurchaseLot);
+      setPurchaseCostingFormErrors({});
+      setEditingPurchaseLotId(null);
+      setSelectedPurchaseLot(detail || null);
+      await loadDashboard({ forceView: "purchase_costing" });
+    }, editingPurchaseLotId ? "Purchase lot updated." : "Purchase lot saved.");
+  }
+
+  async function handleApprovePurchaseLot(lot) {
+    if (!lot?.id) {
+      return;
+    }
+
+    await runBusyAction("approve-purchase-costing", async () => {
+      const detail = await api.approvePurchaseCostingLot(lot.id, { approval_note: "Approved from CRM" });
+      setSelectedPurchaseLot(detail || null);
+      await loadDashboard({ forceView: "purchase_costing" });
+    }, "Purchase lot approved and stock updated.");
+  }
+
+  async function handleCancelPurchaseLot(lot) {
+    if (!lot?.id) {
+      return;
+    }
+
+    await runBusyAction("cancel-purchase-costing", async () => {
+      const detail = await api.cancelPurchaseCostingLot(lot.id, { cancel_note: "Cancelled from CRM" });
+      setSelectedPurchaseLot(detail || null);
+      await loadDashboard({ forceView: "purchase_costing" });
+    }, "Purchase lot cancelled.");
+  }
+
+  function handleBillingLeadReferenceChange(leadIdValue) {
+    const lead = billingReferenceOptions.leads.find((item) => item.id === Number(leadIdValue || 0)) || null;
+    setInvoiceForm((current) => ({
+      ...clearSystemDiscountFromInvoice(current),
+      lead_id: leadIdValue,
+      customer_name: lead?.name || current.customer_name,
+      customer_mobile: lead?.phone || current.customer_mobile,
+      customer_address: lead?.location || current.customer_address,
+      site_reference: current.site_reference || lead?.location || "",
+    }));
+  }
+
+  function handleBillingQuotationReferenceChange(quotationIdValue) {
+    const quotation = billingReferenceOptions.quotations.find((item) => item.id === Number(quotationIdValue || 0)) || null;
+    setInvoiceForm((current) => ({
+      ...clearSystemDiscountFromInvoice(current),
+      quotation_id: quotationIdValue,
+      lead_id: quotation?.lead_id ? String(quotation.lead_id) : current.lead_id,
+      customer_name: quotation?.lead_name || current.customer_name,
+      customer_mobile: quotation?.lead_phone || current.customer_mobile,
+    }));
+  }
+
+  function handleBillingProjectReferenceChange(projectIdValue) {
+    const project = billingReferenceOptions.projects.find((item) => item.id === Number(projectIdValue || 0)) || null;
+    setInvoiceForm((current) => ({
+      ...clearSystemDiscountFromInvoice(current),
+      project_id: projectIdValue,
+      lead_id: project?.lead_id ? String(project.lead_id) : current.lead_id,
+      site_reference: project?.project_name || current.site_reference,
+    }));
+  }
+
+  function handleBillingInvoiceItemChange(index, field, value) {
+    setInvoiceForm((current) => {
+      const normalized = clearSystemDiscountFromInvoice(current);
+      return {
+        ...normalized,
+        items: (normalized.items || []).map((item, itemIndex) =>
+        itemIndex === index ? { ...item, [field]: value } : item
+        ),
+      };
+    });
+    clearFieldErrorState(setInvoiceFormErrors, `items.${index}.${field}`);
+  }
+
+  function handleBillingInventoryProductChange(index, productIdValue) {
+    const product = billingReferenceOptions.products.find((item) => item.id === Number(productIdValue || 0)) || null;
+    setInvoiceForm((current) => {
+      const normalized = clearSystemDiscountFromInvoice(current);
+      return {
+      ...normalized,
+      items: (normalized.items || []).map((item, itemIndex) =>
+        itemIndex === index
+          ? {
+              ...item,
+              product_id: productIdValue,
+              product_name: product?.name || item.product_name,
+              item_type:
+                product?.category === "adhesive"
+                  ? "adhesive"
+                  : product?.category === "plumbing"
+                    ? "plumbing"
+                    : product?.category === "sanitary"
+                      ? "sanitary"
+                      : "tiles",
+              unit: product?.unit || item.unit || "pcs",
+              suggested_rate:
+                product?.suggested_selling_rate != null && product.suggested_selling_rate !== ""
+                  ? String(product.suggested_selling_rate)
+                  : item.suggested_rate,
+              minimum_allowed_rate:
+                product?.minimum_allowed_rate != null && product.minimum_allowed_rate !== ""
+                  ? String(product.minimum_allowed_rate)
+                  : item.minimum_allowed_rate,
+              rate:
+                product?.suggested_selling_rate != null && product.suggested_selling_rate !== ""
+                  ? String(product.suggested_selling_rate)
+                  : product?.price_per_sqft != null && product.price_per_sqft !== ""
+                    ? String(product.price_per_sqft)
+                  : item.rate,
+            }
+          : item
+      ),
+    };
+    });
+    clearFieldErrorState(setInvoiceFormErrors, `items.${index}.product_id`);
+  }
+
+  function addBillingInvoiceItem() {
+    setInvoiceForm((current) => {
+      const normalized = clearSystemDiscountFromInvoice(current);
+      return {
+        ...normalized,
+        items: [...(normalized.items || []), { ...emptyInvoiceItem }],
+      };
+    });
+  }
+
+  function removeBillingInvoiceItem(index) {
+    setInvoiceForm((current) => {
+      const normalized = clearSystemDiscountFromInvoice(current);
+      const nextItems = (normalized.items || []).filter((_, itemIndex) => itemIndex !== index);
+      return {
+        ...normalized,
+        items: nextItems.length ? nextItems : [{ ...emptyInvoiceItem }],
+      };
+    });
+  }
+
+  async function handleOpenBillingInvoiceDetail(invoiceId) {
+    if (!invoiceId) {
+      return;
+    }
+
+    await runBusyAction("load-billing-detail", async () => {
+      const detail = await api.getBillingInvoiceDetail(invoiceId);
+      setSelectedInvoice(detail || null);
+    });
+  }
+
+  async function startEditingBillingInvoice(invoice) {
+    if (!invoice?.id) {
+      return;
+    }
+
+    await runBusyAction("edit-billing-invoice", async () => {
+      const detail = invoice.items ? invoice : await api.getBillingInvoiceDetail(invoice.id);
+      setEditingInvoiceId(detail.id);
+      setInvoiceFormErrors({});
+      setInvoiceForm(mapInvoiceToForm(detail));
+      setSelectedInvoice(detail);
+    });
+  }
+
+  function handleCancelBillingEdit() {
+    setEditingInvoiceId(null);
+    setInvoiceForm(emptyInvoice);
+    setInvoiceFormErrors({});
+  }
+
+  async function handleSaveBillingInvoice(event) {
+    event.preventDefault();
+    const requiredErrors = getBillingInvoiceRequiredErrors(invoiceForm);
+    setInvoiceFormErrors(requiredErrors);
+    if (Object.keys(requiredErrors).length) {
+      setError("");
+      focusFirstInvalidField(event.currentTarget, requiredErrors);
+      return;
+    }
+
+    const validationError = validateBillingForm(invoiceForm);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    let savedDetail = null;
+    const didSave = await runBusyAction("save-billing-invoice", async () => {
+      const payload = normalizeBillingInvoicePayload(invoiceForm);
+      const detail = editingInvoiceId
+        ? await api.updateBillingInvoice(editingInvoiceId, payload)
+        : await api.createBillingInvoice(payload);
+      savedDetail = detail || null;
+
+      setInvoiceForm(emptyInvoice);
+      setInvoiceFormErrors({});
+      setEditingInvoiceId(null);
+      setSelectedInvoice(detail || null);
+      await loadDashboard({ forceView: "billing" });
+    }, editingInvoiceId ? "Invoice updated." : "Invoice saved.");
+
+    return didSave ? savedDetail : null;
+  }
+
+  function requestSubmitBillingInvoiceApproval(invoice) {
+    openActionConfirmation({
+      title: "Submit invoice for approval?",
+      message: `This will submit invoice ${invoice.invoice_number} for manager approval.`,
+      confirmLabel: "Submit Approval",
+      onConfirm: () => handleSubmitBillingInvoiceApproval(invoice),
+      subtext: `${invoice.customer_name || "Walk-in customer"} | Rs ${invoice.grand_total || 0}`,
+    });
+  }
+
+  async function handleSubmitBillingInvoiceApproval(invoice) {
+    await runBusyAction("submit-billing-approval", async () => {
+      const detail = await api.submitBillingInvoiceApproval(invoice.id, { note: "Submitted from billing module." });
+      setSelectedInvoice(detail || null);
+      await loadDashboard({ forceView: "billing" });
+    }, "Invoice submitted for approval.");
+  }
+
+  function requestReviewBillingInvoice(invoice, action) {
+    const isApprove = action === "approved";
+    openActionConfirmation({
+      title: isApprove ? "Approve invoice?" : "Reject invoice?",
+      message: isApprove
+        ? `This will approve invoice ${invoice.invoice_number}.`
+        : `This will reject invoice ${invoice.invoice_number}.`,
+      confirmLabel: isApprove ? "Approve Invoice" : "Reject Invoice",
+      tone: isApprove ? "secondary" : "danger",
+      onConfirm: () => handleReviewBillingInvoice(invoice, action),
+      subtext: `${invoice.customer_name || "Walk-in customer"} | ${labelize(invoice.status)}`,
+    });
+  }
+
+  async function handleReviewBillingInvoice(invoice, action) {
+    await runBusyAction(`review-billing-${action}`, async () => {
+      const detail = await api.reviewBillingInvoiceApproval(invoice.id, {
+        action,
+        note: action === "approved" ? "Approved from billing control." : "Rejected from billing control.",
+      });
+      setSelectedInvoice(detail || null);
+      await loadDashboard({ forceView: "billing" });
+    }, action === "approved" ? "Invoice approved." : "Invoice rejected.");
+  }
+
+  function requestCancelBillingInvoice(invoice) {
+    openActionConfirmation({
+      title: "Cancel invoice?",
+      message: `This will cancel invoice ${invoice.invoice_number} or send it for cancellation approval based on your access.`,
+      confirmLabel: "Cancel Invoice",
+      tone: "danger",
+      onConfirm: () => handleCancelBillingInvoice(invoice),
+      subtext: `${invoice.customer_name || "Walk-in customer"} | Rs ${invoice.grand_total || 0}`,
+    });
+  }
+
+  async function handleCancelBillingInvoice(invoice) {
+    await runBusyAction("cancel-billing-invoice", async () => {
+      const detail = await api.cancelBillingInvoice(invoice.id, { note: "Cancellation requested from billing module." });
+      setSelectedInvoice(detail || null);
+      await loadDashboard({ forceView: "billing" });
+    }, "Invoice cancellation updated.");
+  }
+
+  function requestDeleteBillingInvoice(invoice) {
+    openActionConfirmation({
+      title: "Delete invoice permanently?",
+      message: `This will permanently delete invoice ${invoice.invoice_number} and restore stock if it was applied.`,
+      confirmLabel: "Delete Invoice",
+      tone: "danger",
+      onConfirm: () => handleDeleteBillingInvoice(invoice.id),
+      subtext: `${invoice.customer_name || "Walk-in customer"} | ${invoice.invoice_number}`,
+    });
+  }
+
+  async function handleDeleteBillingInvoice(invoiceId) {
+    await runBusyAction("delete-billing-invoice", async () => {
+      await api.deleteBillingInvoice(invoiceId);
+      setSelectedInvoice((current) => (current?.id === invoiceId ? null : current));
+      if (editingInvoiceId === invoiceId) {
+        setEditingInvoiceId(null);
+        setInvoiceForm(emptyInvoice);
+        setInvoiceFormErrors({});
+      }
+      await loadDashboard({ forceView: "billing" });
+    }, "Invoice deleted.");
+  }
+
+  async function handleSaveBillingPayment(event, invoiceOverride = null) {
+    event.preventDefault();
+    const targetInvoice = invoiceOverride || selectedInvoice;
+    if (!targetInvoice?.id) {
+      return;
+    }
+
+    const requiredErrors = validateRequiredFields(billingPaymentForm, {
+      amount: {
+        message: "Payment amount is required.",
+        validate: (value) => normalizeText(value) !== "",
+      },
+    });
+    if (Object.keys(requiredErrors).length) {
+      setError(requiredErrors.amount || "Payment amount is required.");
+      focusFirstInvalidField(event.currentTarget, requiredErrors);
+      return;
+    }
+
+    let paymentDetail = null;
+    const didSave = await runBusyAction("save-billing-payment", async () => {
+      const detail = await api.addBillingPayment(targetInvoice.id, {
+        amount: Number(billingPaymentForm.amount || 0),
+        payment_mode: billingPaymentForm.payment_mode || "cash",
+        note: normalizeText(billingPaymentForm.note),
+      });
+      paymentDetail = detail || null;
+      setBillingPaymentForm(emptyBillingPayment);
+      setSelectedInvoice(detail || null);
+      await loadDashboard({ forceView: "billing" });
+    }, "Payment recorded.");
+
+    return didSave ? paymentDetail : null;
   }
 
   async function handleIssueSchemeToken(event) {
@@ -3328,6 +5041,7 @@ export default function App() {
       if (editingProductId === productId) {
         setEditingProductId(null);
         setProductForm(emptyProduct);
+        setIsAddingCustomProductCategory(false);
       }
       await loadDashboard();
     }, "Inventory item deleted.");
@@ -3560,17 +5274,37 @@ export default function App() {
 
   function startEditingProduct(product) {
     setEditingProductId(product.id);
+    setIsAddingCustomProductCategory(false);
     setProductForm({
       name: product.name,
+      company_name: product.company_name || "",
       design_code: product.design_code || "",
       business_unit: product.business_unit || "tiles",
-      category: product.category || "flooring",
+      category: product.category || "Floor Tiles",
+      unit: product.unit || "box",
       tile_size: product.tile_size || "",
+      product_size: product.product_size || product.tile_size || "",
       finish: product.finish || "",
+      pieces_per_box: product.pieces_per_box || "",
+      sqft_per_box: product.sqft_per_box || "",
+      weight_per_box: product.weight_per_box || "",
+      weight_per_unit: product.weight_per_unit || "",
       stock_sqft: product.stock_sqft || "",
+      purchase_rate: product.purchase_rate || "",
       price_per_sqft: product.price_per_sqft || "",
+      last_purchase_rate: product.last_purchase_rate || "",
+      landed_cost_per_unit: product.landed_cost_per_unit || "",
+      minimum_allowed_rate: product.minimum_allowed_rate || "",
+      suggested_selling_rate: product.suggested_selling_rate || "",
+      safety_margin_percent: product.safety_margin_percent || "",
+      growth_margin_percent: product.growth_margin_percent || "",
+      pricing_lock: Boolean(product.pricing_lock),
       status: product.status || "active",
     });
+    if (product.category && !defaultProductCategories.includes(product.category)) {
+      setCustomProductCategories((current) => (current.includes(product.category) ? current : [...current, product.category]));
+      setIsAddingCustomProductCategory(true);
+    }
     setCurrentView("inventory");
   }
 
@@ -3709,10 +5443,46 @@ export default function App() {
     setDealers([]);
     setProducts([]);
     setInventorySummary(null);
+    setPurchases([]);
+    setPurchaseSummary(null);
+    setPurchaseForm({ ...emptyPurchase, purchase_date: new Date().toISOString().slice(0, 10) });
+    setPurchaseItems([{ ...emptyPurchaseItem }]);
+    setPurchaseFormErrors({});
+    setEditingPurchaseId(null);
+    setPurchaseSearch("");
+    setPurchaseFromFilter("");
+    setPurchaseToFilter("");
+    setPurchasePaymentFilter("all");
+    setPurchaseLots([]);
+    setPurchaseCostingSummary(null);
+    setPurchaseCostingReports({});
+    setPurchaseCostingReferences({ products: [] });
+    setPurchaseCostingForm(emptyPurchaseLot);
+    setPurchaseCostingFormErrors({});
+    setEditingPurchaseLotId(null);
+    setSelectedPurchaseLot(null);
+    setLinkedPurchaseBills([]);
+    setPurchaseLotSearch("");
+    setPurchaseLotStatusFilter("all");
+    setInvoices([]);
+    setBillingSummary(null);
+    setBillingReports({});
+    setBillingReferences({ leads: [], quotations: [], projects: [], products: [] });
+    setInvoiceForm(emptyInvoice);
+    setInvoiceFormErrors({});
+    setEditingInvoiceId(null);
+    setSelectedInvoice(null);
+    setBillingPaymentForm(emptyBillingPayment);
+    setBillingSearch("");
+    setBillingStatusFilter("all");
+    setBillingPaymentFilter("all");
+    setBillingFromFilter("");
+    setBillingToFilter("");
     setDealerForm(emptyDealer);
     setEditingDealerId(null);
     setProductForm(emptyProduct);
     setEditingProductId(null);
+    setIsAddingCustomProductCategory(false);
     setPlumberForm(emptyPlumber);
     setEditingPlumberId(null);
     setPlumbingJobForm(emptyPlumbingJob);
@@ -3953,7 +5723,7 @@ export default function App() {
         </aside>
 
         <div className="app-main">
-          {["overview", "pipeline", "followups", "operations", "projects", "complaints"].includes(currentView) ? (
+          {["overview", "pipeline", "followups", "operations", "complaints"].includes(currentView) ? (
             <section className="filters-bar panel">
               <div className="control-group">
                 <span className="control-label">Workspace</span>
@@ -4057,6 +5827,152 @@ export default function App() {
             {summaryCards.map((card) => (
               <StatCard key={card.label} label={card.label} value={card.value} tone={card.tone || "default"} />
             ))}
+          </section>
+
+          <section className="panel">
+            <div className="section-head">
+              <h2>Owner mission control</h2>
+              <span>One-screen business health for owner, manager, and cashier flow</span>
+            </div>
+            <div className="report-grid">
+              <StatCard label="Today sales" value={`Rs ${Number(dashboardSummary?.sales_today?.amount || 0).toLocaleString("en-IN")}`} tone="accent" />
+              <StatCard label="Today collection" value={`Rs ${Number(dashboardSummary?.collection_today?.amount || 0).toLocaleString("en-IN")}`} tone="accent" />
+              <StatCard label="Pending billing" value={billingSummary?.pending_bills ?? 0} tone="danger" />
+              <StatCard label="Pending approvals" value={pendingInvoiceApprovalCount} tone="danger" />
+              <StatCard label="Stock alerts" value={productHealthSummary.highStockCount} />
+              <StatCard label="Missing product data" value={productHealthSummary.missingPricingCount + productHealthSummary.missingWeightCount + productHealthSummary.missingPackagingCount} tone="danger" />
+              <StatCard label="Low margin products" value={productHealthSummary.lowMarginCount} tone="danger" />
+              <StatCard label="Daily purchase" value={`Rs ${Number(dashboardSummary?.purchases_today?.amount || 0).toLocaleString("en-IN")}`} />
+              <StatCard label="Daily expense" value={`Rs ${Number(dashboardSummary?.expenses_today?.amount || 0).toLocaleString("en-IN")}`} />
+              <StatCard label="Monthly overhead" value={`Rs ${Number(billingSummary?.monthly_overhead || 0).toLocaleString("en-IN")}`} />
+              <StatCard label="Overhead / box" value={`Rs ${Number(billingSummary?.overhead_per_box || 0).toLocaleString("en-IN")}`} />
+              <StatCard label="Outstanding" value={`Rs ${Number(dashboardSummary?.pending_payments?.amount || 0).toLocaleString("en-IN")}`} />
+              <StatCard label="Gross profit" value={`Rs ${Number(billingSummary?.gross_profit || 0).toLocaleString("en-IN")}`} />
+              <StatCard label="Net profit" value={`Rs ${Number(billingSummary?.net_profit || 0).toLocaleString("en-IN")}`} />
+            </div>
+            <div className="report-grid">
+              <article className="detail-card">
+                <span className="audience-tag">Operator Entry</span>
+                <h3>Poonam workflow</h3>
+                <p className="muted">Lead → Billing → Purchase Entry → Expense → Token</p>
+                <div className="chip-row">
+                  <span className="legend-chip">Draft bills {draftInvoiceCount}</span>
+                  <span className="legend-chip">Pending purchase value Rs {Number(dashboardSummary?.purchases_today?.amount || 0).toLocaleString("en-IN")}</span>
+                </div>
+              </article>
+              <article className="detail-card">
+                <span className="audience-tag">Manager Approval</span>
+                <h3>Ayush workflow</h3>
+                <p className="muted">Lead review → Approval → Pricing → Collection → Pending work</p>
+                <div className="chip-row">
+                  <span className="legend-chip">Invoice approvals {pendingInvoiceApprovalCount}</span>
+                  <span className="legend-chip">Follow-ups pending {dashboardSummary?.followups_pending?.count ?? 0}</span>
+                </div>
+              </article>
+              <article className="detail-card">
+                <span className="audience-tag">Owner Control</span>
+                <h3>Escalation watch</h3>
+                <p className="muted">Low margin, missing product master data, and outstanding payment focus.</p>
+                <div className="chip-row">
+                  <span className="legend-chip">Low margin {productHealthSummary.lowMarginCount}</span>
+                  <span className="legend-chip">Outstanding Rs {Number(dashboardSummary?.pending_payments?.amount || 0).toLocaleString("en-IN")}</span>
+                </div>
+              </article>
+            </div>
+            <div className="content-grid compact-grid">
+              <section className="panel">
+                <div className="section-head">
+                  <h3>Top profitable products</h3>
+                  <span>This month</span>
+                </div>
+                <div className="mini-list">
+                  {(billingReports?.top_profitable_products || []).slice(0, 5).map((item) => (
+                    <div key={`profit-${item.product_name}`} className="timeline-item">
+                      <strong>{item.product_name}</strong>
+                      <p className="muted">
+                        Sales Rs {Number(item.sales_total || 0).toLocaleString("en-IN")} | Profit Rs {Number(item.estimated_profit || 0).toLocaleString("en-IN")}
+                      </p>
+                    </div>
+                  ))}
+                  {!(billingReports?.top_profitable_products || []).length ? (
+                    <p className="muted">No profitable products snapshot available yet.</p>
+                  ) : null}
+                </div>
+              </section>
+              <section className="panel">
+                <div className="section-head">
+                  <h3>Low-profit products</h3>
+                  <span>Watchlist</span>
+                </div>
+                <div className="mini-list">
+                  {(billingReports?.low_profit_products || []).slice(0, 5).map((item) => (
+                    <div key={`low-profit-${item.product_name}`} className="timeline-item">
+                      <strong>{item.product_name}</strong>
+                      <p className="muted">
+                        Sales Rs {Number(item.sales_total || 0).toLocaleString("en-IN")} | Profit Rs {Number(item.estimated_profit || 0).toLocaleString("en-IN")}
+                      </p>
+                    </div>
+                  ))}
+                  {billingSummary?.overhead_warning ? <p className="field-error-message">{billingSummary.overhead_warning}</p> : null}
+                  {!(billingReports?.low_profit_products || []).length ? (
+                    <p className="muted">No low-profit product snapshot available yet.</p>
+                  ) : null}
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <section className="content-grid">
+            <section className="panel">
+              <div className="section-head">
+                <h2>Data quality monitor</h2>
+                <span>Fix the basics before costing and approvals scale up</span>
+              </div>
+              <div className="stack">
+                <HighlightRow label="Products missing company" value={inventorySummary?.missing_company_count ?? productHealthSummary.missingCompanyCount} />
+                <HighlightRow label="Products missing size" value={inventorySummary?.missing_size_count ?? productHealthSummary.missingSizeCount} />
+                <HighlightRow label="Products missing weight" value={inventorySummary?.missing_weight_count ?? productHealthSummary.missingWeightCount} tone="danger" />
+                <HighlightRow label="Products missing pricing" value={inventorySummary?.missing_pricing_count ?? productHealthSummary.missingPricingCount} tone="danger" />
+                <HighlightRow label="Products missing packaging" value={inventorySummary?.missing_packaging_count ?? productHealthSummary.missingPackagingCount} />
+                <HighlightRow label="Customers missing mobile" value={customerMissingMobileCount} />
+                <HighlightRow label="Pending approvals" value={pendingInvoiceApprovalCount} tone="danger" />
+                <HighlightRow label="Low margin items" value={productHealthSummary.lowMarginCount} tone="danger" />
+              </div>
+              <div className="lead-actions">
+                <button type="button" className="secondary" onClick={() => setCurrentView("inventory")}>Open Product Master</button>
+                {visibleViews.some((view) => view.id === "billing") ? (
+                  <button type="button" className="secondary" onClick={() => setCurrentView("billing")}>Open Billing / Approval</button>
+                ) : null}
+                <button type="button" className="secondary" onClick={() => setCurrentView("pipeline")}>Open Leads</button>
+              </div>
+            </section>
+
+            <section className="panel">
+              <div className="section-head">
+                <h2>Foundation warnings</h2>
+                <span>Pricing should not be trusted until the product master is complete</span>
+              </div>
+              <div className="list">
+                {filteredProducts
+                  .filter((product) => getProductDataGaps(product).length)
+                  .slice(0, 5)
+                  .map((product) => (
+                    <article key={product.id} className="detail-card">
+                      <div className="section-head">
+                        <div>
+                          <h3>{product.name}</h3>
+                          <p className="muted">{product.company_name || "Company missing"} | {product.product_size || product.tile_size || "Size missing"}</p>
+                        </div>
+                        <span className="legend-chip product-completeness-chip">{getProductCompletenessPercent(product)}%</span>
+                      </div>
+                      <p className="muted">Missing: {getProductDataGaps(product).map(formatProductDataGapLabel).join(", ")}</p>
+                    </article>
+                  ))}
+                {!filteredProducts.filter((product) => getProductDataGaps(product).length).length ? (
+                  <EmptyState title="Product master looks healthy" message="No immediate product data gaps are blocking costing prep." compact />
+                ) : null}
+              </div>
+            </section>
           </section>
 
           <main className="feature-grid">
@@ -4617,203 +6533,349 @@ export default function App() {
         </section>
       ) : null}
 
-      {currentView === "expenses" ? (
-        <section className="content-grid">
-          <section className="panel">
-            <div className="section-head">
-              <h2>Expense management</h2>
-              <span>Monthly net profit after expenses Rs {expenseSummary?.monthly_net_profit_after_expenses ?? 0}</span>
-            </div>
-            <div className="tabs-row">
-              <BadgeCard title="Gross Profit" count={`Rs ${expenseSummary?.gross_project_profit ?? 0}`} tone="accent" />
-              <BadgeCard title="Monthly Expenses" count={`Rs ${expenseSummary?.monthly_expenses ?? 0}`} />
-              <BadgeCard title="Net After Expenses" count={`Rs ${expenseSummary?.monthly_net_profit_after_expenses ?? 0}`} tone="accent" />
-            </div>
-            <form
-              className="form-grid"
-              onSubmit={handleSaveExpense}
-              onInputCapture={(event) => clearFieldErrorFromEvent(event, setExpenseFormErrors)}
-              onChangeCapture={(event) => clearFieldErrorFromEvent(event, setExpenseFormErrors)}
-            >
-              <select
-                value={expenseForm.category}
-                onChange={(event) => setExpenseForm({ ...expenseForm, category: event.target.value })}
-              >
-                {expenseCategories.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-              <div className="form-field">
-                <input
-                  data-field="expense_date"
-                  className={getFieldErrorClass(expenseFormErrors, "expense_date")}
-                  type="date"
-                  value={expenseForm.expense_date}
-                  onChange={(event) => setExpenseForm({ ...expenseForm, expense_date: event.target.value })}
-                />
-                {expenseFormErrors.expense_date ? <span className="field-error-message">{expenseFormErrors.expense_date}</span> : null}
-              </div>
-              <div className="form-field">
-                <input
-                  data-field="amount"
-                  className={getFieldErrorClass(expenseFormErrors, "amount")}
-                  type="number"
-                  placeholder="Amount"
-                  value={expenseForm.amount}
-                  onChange={(event) => setExpenseForm({ ...expenseForm, amount: event.target.value })}
-                />
-                {expenseFormErrors.amount ? <span className="field-error-message">{expenseFormErrors.amount}</span> : null}
-              </div>
-              <select
-                value={expenseForm.paid_by}
-                onChange={(event) => setExpenseForm({ ...expenseForm, paid_by: event.target.value })}
-              >
-                {expensePaymentModes.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    Paid by: {item.label}
-                  </option>
-                ))}
-              </select>
-              <textarea
-                className="full-span"
-                placeholder="Expense note"
-                value={expenseForm.note}
-                onChange={(event) => setExpenseForm({ ...expenseForm, note: event.target.value })}
-              />
-              <div className="lead-actions full-span">
-                <button type="submit" disabled={busyAction === "save-expense"}>
-                  {busyAction === "save-expense"
-                    ? editingExpenseId
-                      ? "Updating Expense..."
-                      : "Saving Expense..."
-                    : editingExpenseId
-                      ? "Update Expense"
-                      : "Add Expense"}
-                </button>
-                {editingExpenseId ? (
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => {
-                      setEditingExpenseId(null);
-                      setExpenseForm(emptyExpense);
-                      setExpenseFormErrors({});
-                    }}
-                  >
-                    Cancel
-                  </button>
-                ) : null}
-              </div>
-            </form>
-          </section>
+      {currentView === "billing" ? (
+        <Suspense fallback={<LazySectionFallback label="billing" />}>
+          <BillingSection
+            billingSummary={billingSummary}
+            billingReports={billingReports}
+            billingReferenceOptions={billingReferenceOptions}
+            billingInvoiceTypes={billingInvoiceTypes}
+            billingItemTypes={billingItemTypes}
+            billingStatuses={billingStatuses}
+            billingPaymentStatuses={billingPaymentStatuses}
+            billingPaymentModes={billingPaymentModes}
+            invoiceForm={invoiceForm}
+            setInvoiceForm={setInvoiceForm}
+            invoiceFormErrors={invoiceFormErrors}
+            setInvoiceFormErrors={setInvoiceFormErrors}
+            editingInvoiceId={editingInvoiceId}
+            handleSaveBillingInvoice={handleSaveBillingInvoice}
+            handleCancelBillingEdit={handleCancelBillingEdit}
+            addBillingInvoiceItem={addBillingInvoiceItem}
+            removeBillingInvoiceItem={removeBillingInvoiceItem}
+            handleBillingInvoiceItemChange={handleBillingInvoiceItemChange}
+            handleBillingInventoryProductChange={handleBillingInventoryProductChange}
+            handleBillingLeadReferenceChange={handleBillingLeadReferenceChange}
+            handleBillingQuotationReferenceChange={handleBillingQuotationReferenceChange}
+            handleBillingProjectReferenceChange={handleBillingProjectReferenceChange}
+            getBillingTotals={getBillingTotals}
+            computeBillingItemTotal={computeBillingItemTotal}
+            busyAction={busyAction}
+            filteredInvoices={filteredInvoices}
+            invoices={invoices}
+            ListLoadControls={ListLoadControls}
+            listLimits={listLimits}
+            increaseListLimit={increaseListLimit}
+            loading={loading}
+            billingSearch={billingSearch}
+            setBillingSearch={setBillingSearch}
+            billingStatusFilter={billingStatusFilter}
+            setBillingStatusFilter={setBillingStatusFilter}
+            billingPaymentFilter={billingPaymentFilter}
+            setBillingPaymentFilter={setBillingPaymentFilter}
+            billingFromFilter={billingFromFilter}
+            setBillingFromFilter={setBillingFromFilter}
+            billingToFilter={billingToFilter}
+            setBillingToFilter={setBillingToFilter}
+            selectedInvoice={selectedInvoice}
+            handleOpenBillingInvoiceDetail={handleOpenBillingInvoiceDetail}
+            startEditingBillingInvoice={startEditingBillingInvoice}
+            requestSubmitBillingInvoiceApproval={requestSubmitBillingInvoiceApproval}
+            requestReviewBillingInvoice={requestReviewBillingInvoice}
+            requestCancelBillingInvoice={requestCancelBillingInvoice}
+            requestDeleteBillingInvoice={requestDeleteBillingInvoice}
+            billingPaymentForm={billingPaymentForm}
+            setBillingPaymentForm={setBillingPaymentForm}
+            handleSaveBillingPayment={handleSaveBillingPayment}
+            formatDate={formatDate}
+            formatDateTime={formatDateTime}
+            labelize={labelize}
+            getBillingPdfUrl={getBillingPdfUrl}
+            getCsvExportUrl={getCsvExportUrl}
+            shareOnWhatsApp={shareOnWhatsApp}
+            user={user}
+            hasAnyRole={hasAnyRole}
+            EmptyState={EmptyState}
+            HighlightRow={HighlightRow}
+            BadgeCard={BadgeCard}
+            StatCard={StatCard}
+            clearFieldErrorFromEvent={clearFieldErrorFromEvent}
+            getFieldErrorClass={getFieldErrorClass}
+          />
+        </Suspense>
+      ) : null}
 
-          <section className="panel">
-            <div className="section-head">
-              <h2>Expense ledger</h2>
-              <span>{expenses.length} entries</span>
-            </div>
-            <div className="list">
-              {expenses.map((expense) => (
-                <article key={expense.id} className="lead-card">
-                  <div className="section-head">
-                    <div>
-                      <h3>{labelize(expense.category)}</h3>
-                      <p className="muted">{formatDate(expense.expense_date)}</p>
-                    </div>
-                    <span className="status-chip">Rs {expense.amount}</span>
-                  </div>
-                  <p>{expense.note || "No note added."}</p>
-                  <div className="lead-actions">
-                    <button type="button" className="secondary" onClick={() => startEditingExpense(expense)}>
-                      Edit
-                    </button>
+      {currentView === "purchase_costing" ? null : null}
+
+      {currentView === "expenses" ? (
+        <section className="stack workspace-stack">
+          <div className="module-nav workspace-tab-nav">
+            <button type="button" className={expenseWorkspaceTab === "new" ? "active-nav" : "nav-btn"} onClick={() => setExpenseWorkspaceTab("new")}>
+              New Entry
+            </button>
+            <button type="button" className={expenseWorkspaceTab === "ledger" ? "active-nav" : "nav-btn"} onClick={() => setExpenseWorkspaceTab("ledger")}>
+              Ledger
+            </button>
+            <button type="button" className={expenseWorkspaceTab === "reports" ? "active-nav" : "nav-btn"} onClick={() => setExpenseWorkspaceTab("reports")}>
+              Reports
+            </button>
+          </div>
+
+          {expenseWorkspaceTab === "new" ? (
+            <section className="panel">
+              <div className="section-head">
+                <h2>Expense management</h2>
+                <span>Operator and accounts entry</span>
+              </div>
+              <form
+                className="form-grid"
+                onSubmit={handleSaveExpense}
+                onInputCapture={(event) => clearFieldErrorFromEvent(event, setExpenseFormErrors)}
+                onChangeCapture={(event) => clearFieldErrorFromEvent(event, setExpenseFormErrors)}
+              >
+                <select
+                  value={expenseForm.category}
+                  onChange={(event) => setExpenseForm({ ...expenseForm, category: event.target.value })}
+                >
+                  {expenseCategories.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+                <div className="form-field">
+                  <input
+                    data-field="expense_date"
+                    className={getFieldErrorClass(expenseFormErrors, "expense_date")}
+                    type="date"
+                    value={expenseForm.expense_date}
+                    onChange={(event) => setExpenseForm({ ...expenseForm, expense_date: event.target.value })}
+                  />
+                  {expenseFormErrors.expense_date ? <span className="field-error-message">{expenseFormErrors.expense_date}</span> : null}
+                </div>
+                <div className="form-field">
+                  <input
+                    data-field="amount"
+                    className={getFieldErrorClass(expenseFormErrors, "amount")}
+                    type="number"
+                    placeholder="Amount"
+                    value={expenseForm.amount}
+                    onChange={(event) => setExpenseForm({ ...expenseForm, amount: event.target.value })}
+                  />
+                  {expenseFormErrors.amount ? <span className="field-error-message">{expenseFormErrors.amount}</span> : null}
+                </div>
+                <select
+                  value={expenseForm.paid_by}
+                  onChange={(event) => setExpenseForm({ ...expenseForm, paid_by: event.target.value })}
+                >
+                  {expensePaymentModes.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      Paid by: {item.label}
+                    </option>
+                  ))}
+                </select>
+                <textarea
+                  className="full-span"
+                  placeholder="Expense note"
+                  value={expenseForm.note}
+                  onChange={(event) => setExpenseForm({ ...expenseForm, note: event.target.value })}
+                />
+                <div className="lead-actions full-span">
+                  <button type="submit" disabled={busyAction === "save-expense"}>
+                    {busyAction === "save-expense"
+                      ? editingExpenseId
+                        ? "Updating Expense..."
+                        : "Saving Expense..."
+                      : editingExpenseId
+                        ? "Update Expense"
+                        : "Add Expense"}
+                  </button>
+                  {editingExpenseId ? (
                     <button
                       type="button"
-                      className="danger"
-                      onClick={() =>
-                        setPendingDelete({
-                          type: "expense",
-                          id: expense.id,
-                          entityLabel: "Expense",
-                          message: `This will permanently remove the ${labelize(expense.category)} expense entry.`,
-                          subtext: `${formatDate(expense.expense_date)} | Rs ${expense.amount}`,
-                        })
-                      }
+                      className="secondary"
+                      onClick={() => {
+                        setEditingExpenseId(null);
+                        setExpenseForm(emptyExpense);
+                        setExpenseFormErrors({});
+                      }}
                     >
-                      Delete
+                      Cancel
                     </button>
+                  ) : null}
+                </div>
+              </form>
+            </section>
+          ) : null}
+
+          {expenseWorkspaceTab === "ledger" ? (
+            <section className="panel">
+              <div className="section-head">
+                <h2>Expense ledger</h2>
+                <span>{expenses.length} entries</span>
+              </div>
+              <div className="list">
+                {expenses.map((expense) => (
+                  <article key={expense.id} className="lead-card">
+                    <div className="section-head">
+                      <div>
+                        <h3>{labelize(expense.category)}</h3>
+                        <p className="muted">{formatDate(expense.expense_date)}</p>
+                      </div>
+                      <span className="status-chip">Rs {expense.amount}</span>
+                    </div>
+                    <p>{expense.note || "No note added."}</p>
+                    <div className="lead-actions">
+                      <button type="button" className="secondary" onClick={() => startEditingExpense(expense)}>
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="danger"
+                        onClick={() =>
+                          setPendingDelete({
+                            type: "expense",
+                            id: expense.id,
+                            entityLabel: "Expense",
+                            message: `This will permanently remove the ${labelize(expense.category)} expense entry.`,
+                            subtext: `${formatDate(expense.expense_date)} | Rs ${expense.amount}`,
+                          })
+                        }
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </article>
+                ))}
+                {expenses.length === 0 ? (
+                  <EmptyState title="No expenses logged yet" message="Monthly costs like rent, salary, and transport will appear here." />
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+
+          {expenseWorkspaceTab === "reports" ? (
+            <section className="panel">
+              <div className="section-head">
+                <h2>Expense reports</h2>
+                <span>Profit impact and category watch</span>
+              </div>
+              <div className="tabs-row">
+                <BadgeCard title="Gross Profit" count={`Rs ${expenseSummary?.gross_project_profit ?? 0}`} tone="accent" />
+                <BadgeCard title="Monthly Expenses" count={`Rs ${expenseSummary?.monthly_expenses ?? 0}`} />
+                <BadgeCard title="Net After Expenses" count={`Rs ${expenseSummary?.monthly_net_profit_after_expenses ?? 0}`} tone="accent" />
+              </div>
+              <div className="mini-list">
+                {expenseCategorySummary.map((item) => (
+                  <div key={item.category} className="timeline-item">
+                    <strong>{labelize(item.category)}</strong>
+                    <p className="muted">Expense category total</p>
+                    <p>Rs {Number(item.amount || 0).toLocaleString("en-IN")}</p>
                   </div>
-                </article>
-              ))}
-              {expenses.length === 0 ? (
-                <EmptyState title="No expenses logged yet" message="Monthly costs like rent, salary, and transport will appear here." />
-              ) : null}
-            </div>
-          </section>
+                ))}
+                {!expenseCategorySummary.length ? <p className="muted">No expense analytics yet.</p> : null}
+              </div>
+            </section>
+          ) : null}
         </section>
       ) : null}
 
       {currentView === "purchases" ? (
-        <section className="content-grid">
+        <section className="stack workspace-stack">
+          <div className="module-nav workspace-tab-nav">
+            <button type="button" className={purchaseWorkspaceTab === "new_bill" ? "active-nav" : "nav-btn"} onClick={() => setPurchaseWorkspaceTab("new_bill")}>
+              New Bill
+            </button>
+            <button type="button" className={purchaseWorkspaceTab === "costing" ? "active-nav" : "nav-btn"} onClick={() => setPurchaseWorkspaceTab("costing")}>
+              Costing / Lot
+            </button>
+            <button type="button" className={purchaseWorkspaceTab === "ledger_reports" ? "active-nav" : "nav-btn"} onClick={() => setPurchaseWorkspaceTab("ledger_reports")}>
+              Ledger & Reports
+            </button>
+          </div>
+
+          {purchaseWorkspaceTab === "new_bill" ? (
           <section className="panel">
             <div className="section-head">
-              <h2>Purchase entry</h2>
-              <span>
-                {purchaseSummary
-                  ? `${purchaseSummary.total_count || 0} entries | Total Rs ${Number(purchaseSummary.total_amount || 0).toLocaleString("en-IN")}`
-                  : "Daily showroom purchase log"}
-              </span>
+              <h2>Purchase Center · New Bill</h2>
+              <span>Supplier invoice entry with multiple product rows.</span>
             </div>
-            <div className="tabs-row">
-              <BadgeCard
-                title="Total Value"
-                count={`Rs ${Number(purchaseSummary?.total_amount || 0).toLocaleString("en-IN")}`}
-                tone="accent"
-              />
-              <BadgeCard
-                title="Pending Payment"
-                count={`Rs ${Number(purchaseSummary?.pending_amount || 0).toLocaleString("en-IN")}`}
-              />
-              <BadgeCard
-                title="Paid"
-                count={`Rs ${Number(purchaseSummary?.paid_amount || 0).toLocaleString("en-IN")}`}
-                tone="accent"
-              />
-              <BadgeCard
-                title="GST"
-                count={`Rs ${Number(purchaseSummary?.gst_amount || 0).toLocaleString("en-IN")}`}
-              />
-            </div>
-
             <form
               className="form-grid"
               onSubmit={handleSavePurchase}
               onInputCapture={(event) => clearFieldErrorFromEvent(event, setPurchaseFormErrors)}
               onChangeCapture={(event) => clearFieldErrorFromEvent(event, setPurchaseFormErrors)}
             >
-              <div className="form-field">
-                <input
-                  data-field="supplier_name"
-                  className={getFieldErrorClass(purchaseFormErrors, "supplier_name")}
-                  placeholder="Supplier name"
-                  value={purchaseForm.supplier_name}
-                  onChange={(event) =>
-                    setPurchaseForm({ ...purchaseForm, supplier_name: event.target.value })
-                  }
-                />
-                {purchaseFormErrors.supplier_name ? <span className="field-error-message">{purchaseFormErrors.supplier_name}</span> : null}
+              <div className="form-field full-span">
+                <select
+                  data-field="supplier_id"
+                  className={getFieldErrorClass(purchaseFormErrors, "supplier_id")}
+                  value={purchaseForm.supplier_id || ""}
+                  onChange={(event) => handleSupplierSelect(event.target.value)}
+                >
+                  <option value="">Select Registered Supplier *</option>
+                  {safeSuppliers.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}{s.city ? ` — ${s.city}` : ""}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="secondary"
+                  style={{ marginTop: "0.35rem", alignSelf: "flex-start", fontSize: "0.78rem", padding: "0.3rem 0.7rem" }}
+                  onClick={() => setSupplierQuickAddOpen((prev) => !prev)}
+                >
+                  {supplierQuickAddOpen ? "Cancel new supplier" : "+ Add Supplier"}
+                </button>
+                {supplierQuickAddOpen ? (
+                  <div className="purchase-intelligence-panel inline compact full-span" style={{ display: "grid", gap: "0.4rem" }}>
+                    <strong style={{ fontSize: "0.85rem" }}>Register a new supplier</strong>
+                    <input
+                      placeholder="Supplier name *"
+                      value={supplierQuickForm.name}
+                      onChange={(e) => setSupplierQuickForm({ ...supplierQuickForm, name: e.target.value })}
+                    />
+                    <input
+                      placeholder="Mobile *"
+                      value={supplierQuickForm.mobile}
+                      onChange={(e) => setSupplierQuickForm({ ...supplierQuickForm, mobile: e.target.value })}
+                    />
+                    <input
+                      placeholder="City"
+                      value={supplierQuickForm.city}
+                      onChange={(e) => setSupplierQuickForm({ ...supplierQuickForm, city: e.target.value })}
+                    />
+                    <input
+                      placeholder="GSTIN (optional)"
+                      value={supplierQuickForm.gstin}
+                      onChange={(e) => setSupplierQuickForm({ ...supplierQuickForm, gstin: e.target.value })}
+                    />
+                    <button type="button" onClick={handleQuickAddSupplier} disabled={supplierQuickSaving}>
+                      {supplierQuickSaving ? "Saving..." : "Save & Use"}
+                    </button>
+                  </div>
+                ) : null}
+                {purchaseFormErrors.supplier_id ? (
+                  <span className="field-error-message">{purchaseFormErrors.supplier_id}</span>
+                ) : null}
+              </div>
+              <div className="mini-list full-span">
+                <div className="timeline-item">
+                  <strong>Supplier Mobile</strong>
+                  <p>{selectedPurchaseSupplier?.mobile || purchaseForm.supplier_phone || "Not available"}</p>
+                </div>
+                <div className="timeline-item">
+                  <strong>City</strong>
+                  <p>{selectedPurchaseSupplier?.city || "Not available"}</p>
+                </div>
+                <div className="timeline-item">
+                  <strong>GSTIN</strong>
+                  <p>{selectedPurchaseSupplier?.gstin || "Not available"}</p>
+                </div>
               </div>
               <input
-                placeholder="Supplier phone"
-                value={purchaseForm.supplier_phone}
-                onChange={(event) =>
-                  setPurchaseForm({ ...purchaseForm, supplier_phone: event.target.value })
-                }
-              />
-              <input
-                placeholder="Invoice number"
+                placeholder="Invoice No *"
                 value={purchaseForm.invoice_number}
                 onChange={(event) =>
                   setPurchaseForm({ ...purchaseForm, invoice_number: event.target.value })
@@ -4824,82 +6886,33 @@ export default function App() {
                   data-field="purchase_date"
                   className={getFieldErrorClass(purchaseFormErrors, "purchase_date")}
                   type="date"
-                  value={purchaseForm.purchase_date}
+                  value={purchaseForm.purchase_date || new Date().toISOString().slice(0, 10)}
                   onChange={(event) =>
                     setPurchaseForm({ ...purchaseForm, purchase_date: event.target.value })
                   }
                 />
                 {purchaseFormErrors.purchase_date ? <span className="field-error-message">{purchaseFormErrors.purchase_date}</span> : null}
               </div>
-              <select
-                value={purchaseForm.business_unit}
-                onChange={(event) =>
-                  setPurchaseForm({ ...purchaseForm, business_unit: event.target.value })
-                }
-              >
-                {purchaseBusinessUnitOptions.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-              <input
-                placeholder="Category (e.g. tiles, adhesive, plumbing)"
-                value={purchaseForm.category}
-                onChange={(event) =>
-                  setPurchaseForm({ ...purchaseForm, category: event.target.value })
-                }
-              />
-              <input
-                placeholder="Item / product name"
-                value={purchaseForm.item_name}
-                onChange={(event) =>
-                  setPurchaseForm({ ...purchaseForm, item_name: event.target.value })
-                }
-              />
-              <input
-                type="number"
-                step="0.01"
-                placeholder="Quantity"
-                value={purchaseForm.quantity}
-                onChange={(event) =>
-                  setPurchaseForm({ ...purchaseForm, quantity: event.target.value })
-                }
-              />
-              <input
-                placeholder="Unit (pcs / box / sqft)"
-                value={purchaseForm.unit}
-                onChange={(event) =>
-                  setPurchaseForm({ ...purchaseForm, unit: event.target.value })
-                }
-              />
-              <input
-                type="number"
-                step="0.01"
-                placeholder="Net amount"
-                value={purchaseForm.amount}
-                onChange={(event) =>
-                  setPurchaseForm({ ...purchaseForm, amount: event.target.value })
-                }
-              />
-              <input
-                type="number"
-                step="0.01"
-                placeholder="GST amount"
-                value={purchaseForm.gst_amount}
-                onChange={(event) =>
-                  setPurchaseForm({ ...purchaseForm, gst_amount: event.target.value })
-                }
-              />
-              <input
-                type="number"
-                step="0.01"
-                placeholder="Total amount (auto = net + GST if blank)"
-                value={purchaseForm.total_amount}
-                onChange={(event) =>
-                  setPurchaseForm({ ...purchaseForm, total_amount: event.target.value })
-                }
-              />
+              <div className="form-field">
+                <input
+                  data-field="truck_number"
+                  className={getFieldErrorClass(purchaseFormErrors, "truck_number")}
+                  placeholder="Truck Number *"
+                  value={purchaseForm.truck_number}
+                  onChange={(event) => setPurchaseForm({ ...purchaseForm, truck_number: event.target.value })}
+                />
+                {purchaseFormErrors.truck_number ? <span className="field-error-message">{purchaseFormErrors.truck_number}</span> : null}
+              </div>
+              <div className="form-field">
+                <input
+                  data-field="delivery_date"
+                  className={getFieldErrorClass(purchaseFormErrors, "delivery_date")}
+                  type="date"
+                  value={purchaseForm.delivery_date || purchaseForm.purchase_date || new Date().toISOString().slice(0, 10)}
+                  onChange={(event) => setPurchaseForm({ ...purchaseForm, delivery_date: event.target.value })}
+                />
+                {purchaseFormErrors.delivery_date ? <span className="field-error-message">{purchaseFormErrors.delivery_date}</span> : null}
+              </div>
               <select
                 value={purchaseForm.payment_status}
                 onChange={(event) =>
@@ -4920,16 +6933,231 @@ export default function App() {
                   setPurchaseForm({ ...purchaseForm, remarks: event.target.value })
                 }
               />
+              <section className="panel panel-nested full-span">
+                <div className="section-head">
+                  <div>
+                    <h3>Purchase Items</h3>
+                    <p className="muted">One supplier invoice can contain multiple products.</p>
+                  </div>
+                  {!editingPurchaseId ? (
+                    <button type="button" className="secondary" onClick={addPurchaseItemRow}>
+                      + Add Product Row
+                    </button>
+                  ) : null}
+                </div>
+                <div className="stack">
+                  {safePurchaseItems.map((item, index) => {
+                    const selectedProduct = item.product_id ? purchaseEntryProductMap.get(Number(item.product_id)) || null : null;
+
+                    return (
+                      <div key={`purchase-item-${index}`} className="mini-card stack">
+                        <div className="section-head">
+                          <strong>Product Row {index + 1}</strong>
+                          {!editingPurchaseId && safePurchaseItems.length > 1 ? (
+                            <button type="button" className="secondary danger-soft" onClick={() => removePurchaseItemRow(index)}>
+                              Remove Row
+                            </button>
+                          ) : null}
+                        </div>
+                        <div className="form-grid">
+                          <div className="form-field">
+                            <select
+                              data-field={`items.${index}.product_id`}
+                              className={getFieldErrorClass(purchaseFormErrors, `items.${index}.product_id`)}
+                              value={item.product_id}
+                              onChange={(event) => handlePurchaseProductSelect(index, event.target.value)}
+                            >
+                              <option value="">Select Inventory Product *</option>
+                              {purchaseEntryProductOptions.map((product) => (
+                                <option key={product.id} value={product.id}>
+                                  {product.name}
+                                </option>
+                              ))}
+                            </select>
+                            {selectedProduct ? (
+                              <p className="muted" style={{ marginTop: "0.35rem" }}>
+                                {labelize(selectedProduct.category || "tiles")} · {selectedProduct.company_name || "No company"} · {selectedProduct.product_size || "No size"} · {(selectedProduct.unit || item.unit || "pcs").toUpperCase()} · Last rate Rs {Number(selectedProduct.last_purchase_rate || 0).toLocaleString("en-IN")}
+                              </p>
+                            ) : null}
+                            {purchaseFormErrors[`items.${index}.product_id`] ? (
+                              <span className="field-error-message">{purchaseFormErrors[`items.${index}.product_id`]}</span>
+                            ) : null}
+                          </div>
+                          <input
+                            data-field={`items.${index}.quantity`}
+                            className={getFieldErrorClass(purchaseFormErrors, `items.${index}.quantity`)}
+                            type="number"
+                            step="0.01"
+                            placeholder="Quantity"
+                            value={item.quantity}
+                            onChange={(event) => {
+                              const newQty = event.target.value;
+                              const auto = recalcPurchaseNetFromRate(newQty, item.rate_per_unit);
+                              updatePurchaseItem(index, {
+                                quantity: newQty,
+                                amount: auto != null ? String(auto) : item.amount,
+                                total_amount:
+                                  auto != null
+                                    ? String(Number((auto + Number(item.gst_amount || 0)).toFixed(2)))
+                                    : item.total_amount,
+                              });
+                            }}
+                          />
+                          <input
+                            type="text"
+                            placeholder="Unit"
+                            value={selectedProduct?.unit || item.unit || ""}
+                            readOnly
+                          />
+                          <input
+                            data-field={`items.${index}.rate_per_unit`}
+                            type="number"
+                            step="0.01"
+                            placeholder="Rate / unit"
+                            value={item.rate_per_unit}
+                            onChange={(event) => {
+                              const newRate = event.target.value;
+                              const auto = recalcPurchaseNetFromRate(item.quantity, newRate);
+                              updatePurchaseItem(index, {
+                                rate_per_unit: newRate,
+                                amount: auto != null ? String(auto) : item.amount,
+                                total_amount:
+                                  auto != null
+                                    ? String(Number((auto + Number(item.gst_amount || 0)).toFixed(2)))
+                                    : item.total_amount,
+                              });
+                            }}
+                          />
+                          <div className="form-field">
+                            <input
+                              data-field={`items.${index}.amount`}
+                              className={getFieldErrorClass(purchaseFormErrors, `items.${index}.amount`)}
+                              type="number"
+                              step="0.01"
+                              placeholder="Net amount"
+                              value={item.amount}
+                              onChange={(event) =>
+                                updatePurchaseItem(index, {
+                                  amount: event.target.value,
+                                  total_amount: String(
+                                    Number((Number(event.target.value || 0) + Number(item.gst_amount || 0)).toFixed(2))
+                                  ),
+                                })
+                              }
+                            />
+                            {purchaseFormErrors[`items.${index}.amount`] ? (
+                              <span className="field-error-message">{purchaseFormErrors[`items.${index}.amount`]}</span>
+                            ) : null}
+                          </div>
+                          <input
+                            type="number"
+                            step="0.01"
+                            placeholder="GST (optional)"
+                            value={item.gst_amount}
+                            onChange={(event) =>
+                              updatePurchaseItem(index, {
+                                gst_amount: event.target.value,
+                                total_amount: String(
+                                  Number((Number(item.amount || 0) + Number(event.target.value || 0)).toFixed(2))
+                                ),
+                              })
+                            }
+                          />
+                          <input
+                            type="number"
+                            step="0.01"
+                            placeholder="Total"
+                            value={item.total_amount}
+                            onChange={(event) => updatePurchaseItem(index, { total_amount: event.target.value })}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {purchaseFormErrors.items ? <span className="field-error-message">{purchaseFormErrors.items}</span> : null}
+                </div>
+              </section>
+              <section className="panel panel-nested full-span">
+                <div className="section-head">
+                  <div>
+                    <h3>Truck Strip</h3>
+                    <p className="muted">Freight and handling values can flow directly into Costing / Lot.</p>
+                  </div>
+                  {Number(purchaseCostingForm.total_freight_cost || 0) > 0 ? (
+                    <span className="status-chip status-pending">Freight entered · costing lot ready</span>
+                  ) : null}
+                </div>
+                <div className="form-grid">
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="Freight"
+                    value={purchaseCostingForm.total_freight_cost}
+                    onChange={(event) => updatePurchaseCostingField("total_freight_cost", event.target.value)}
+                  />
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="Unloading"
+                    value={purchaseCostingForm.total_unloading_cost}
+                    onChange={(event) => updatePurchaseCostingField("total_unloading_cost", event.target.value)}
+                  />
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="Interest"
+                    value={purchaseCostingForm.interest_cost_override}
+                    onChange={(event) => updatePurchaseCostingField("interest_cost_override", event.target.value)}
+                  />
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="Overhead"
+                    value={purchaseCostingForm.showroom_overhead_amount}
+                    onChange={(event) => updatePurchaseCostingField("showroom_overhead_amount", event.target.value)}
+                  />
+                </div>
+              </section>
               <div className="lead-actions full-span">
-                <button type="submit" disabled={busyAction === "save-purchase"}>
+                <button
+                  type="submit"
+                  disabled={busyAction === "save-purchase"}
+                  onClick={() => {
+                    purchasePostSaveActionRef.current = editingPurchaseId ? "draft" : "draft";
+                  }}
+                >
                   {busyAction === "save-purchase"
                     ? editingPurchaseId
                       ? "Updating Purchase..."
-                      : "Saving Purchase..."
+                      : "Saving Draft..."
                     : editingPurchaseId
                       ? "Update Purchase"
-                      : "Add Purchase"}
+                      : "Save Draft"}
                 </button>
+                {!editingPurchaseId ? (
+                  <>
+                    <button
+                      type="submit"
+                      className="secondary"
+                      disabled={busyAction === "save-purchase"}
+                      onClick={() => {
+                        purchasePostSaveActionRef.current = "new";
+                      }}
+                    >
+                      Save & New
+                    </button>
+                    <button
+                      type="submit"
+                      className="secondary"
+                      disabled={busyAction === "save-purchase"}
+                      onClick={() => {
+                        purchasePostSaveActionRef.current = "approval";
+                      }}
+                    >
+                      Send for Approval
+                    </button>
+                  </>
+                ) : null}
                 {editingPurchaseId ? (
                   <button type="button" className="secondary" onClick={handleCancelEditPurchase}>
                     Cancel
@@ -4938,18 +7166,37 @@ export default function App() {
               </div>
             </form>
           </section>
+          ) : null}
 
-          <section className="panel">
+          {purchaseWorkspaceTab === "ledger_reports" ? (
+          <section className="stack">
+            <section className="panel">
             <div className="section-head">
-              <h2>Purchase ledger</h2>
-              <span>{purchases.length} entries shown</span>
+              <h2>Ledger & Reports</h2>
+              <span>{filteredPurchaseLedger.length} entries shown</span>
             </div>
             <div className="filter-row">
+              <select value={purchaseSupplierFilter} onChange={(event) => setPurchaseSupplierFilter(event.target.value)}>
+                <option value="all">All suppliers</option>
+                {safeSuppliers.map((supplier) => (
+                  <option key={supplier.id} value={supplier.id}>
+                    {supplier.name}
+                  </option>
+                ))}
+              </select>
               <input
-                placeholder="Search supplier, invoice, item"
-                value={purchaseSearch}
-                onChange={(event) => setPurchaseSearch(event.target.value)}
+                placeholder="Invoice filter"
+                value={purchaseInvoiceFilter}
+                onChange={(event) => setPurchaseInvoiceFilter(event.target.value)}
               />
+              <select value={purchaseProductFilter} onChange={(event) => setPurchaseProductFilter(event.target.value)}>
+                <option value="all">All products</option>
+                {purchaseEntryProductOptions.map((product) => (
+                  <option key={product.id} value={product.id}>
+                    {product.name}
+                  </option>
+                ))}
+              </select>
               <input
                 type="date"
                 value={purchaseFromFilter}
@@ -4959,6 +7206,13 @@ export default function App() {
                 type="date"
                 value={purchaseToFilter}
                 onChange={(event) => setPurchaseToFilter(event.target.value)}
+              />
+            </div>
+            <div className="filter-row">
+              <input
+                placeholder="Search supplier, invoice, item"
+                value={purchaseSearch}
+                onChange={(event) => setPurchaseSearch(event.target.value)}
               />
               <select
                 value={purchasePaymentFilter}
@@ -4989,7 +7243,7 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {purchases.map((record) => (
+                  {filteredPurchaseLedger.map((record) => (
                     <tr key={record.id}>
                       <td>{formatDate(record.purchase_date)}</td>
                       <td>
@@ -5042,7 +7296,7 @@ export default function App() {
                       </td>
                     </tr>
                   ))}
-                  {purchases.length === 0 ? (
+                  {filteredPurchaseLedger.length === 0 ? (
                     <tr>
                       <td colSpan={10}>
                         <EmptyState
@@ -5055,7 +7309,100 @@ export default function App() {
                 </tbody>
               </table>
             </div>
+            </section>
+            <section className="panel">
+              <div className="section-head">
+                <h2>Supplier ledger</h2>
+                <span>Top supplier spend from current filters</span>
+              </div>
+              <div className="mini-list">
+                {purchaseSupplierSummary.map((item) => (
+                  <div key={`${item.supplier_id}-${item.supplier_name}`} className="timeline-item">
+                    <strong>{item.supplier_name}</strong>
+                    <p className="muted">{item.entries} invoice rows</p>
+                    <p>Rs {Number(item.amount || 0).toLocaleString("en-IN")}</p>
+                  </div>
+                ))}
+                {!purchaseSupplierSummary.length ? <p className="muted">No supplier summary for the current filters.</p> : null}
+              </div>
+            </section>
+            <section className="panel">
+              <div className="section-head">
+                <h2>Purchase reports</h2>
+                <span>Supplier spend and payment mix</span>
+              </div>
+              <div className="tabs-row">
+                <BadgeCard title="Total Value" count={`Rs ${Number(purchaseSummary?.total_amount || 0).toLocaleString("en-IN")}`} tone="accent" />
+                <BadgeCard title="Pending Payment" count={`Rs ${Number(purchaseSummary?.pending_amount || 0).toLocaleString("en-IN")}`} />
+                <BadgeCard title="Paid" count={`Rs ${Number(purchaseSummary?.paid_amount || 0).toLocaleString("en-IN")}`} tone="accent" />
+                <BadgeCard title="GST" count={`Rs ${Number(purchaseSummary?.gst_amount || 0).toLocaleString("en-IN")}`} />
+              </div>
+              <div className="mini-list">
+                {purchaseCategorySummary.map((item) => (
+                  <div key={item.category} className="timeline-item">
+                    <strong>{labelize(item.category)}</strong>
+                    <p className="muted">Purchase category total</p>
+                    <p>Rs {Number(item.amount || 0).toLocaleString("en-IN")}</p>
+                  </div>
+                ))}
+                {!purchaseCategorySummary.length ? <p className="muted">No purchase analytics yet.</p> : null}
+              </div>
+            </section>
           </section>
+          ) : null}
+
+          {purchaseWorkspaceTab === "costing" ? (
+          <Suspense fallback={<LazySectionFallback label="purchase costing" />}>
+            <PurchaseCostingSection
+              purchaseCostingSummary={purchaseCostingSummary}
+              purchaseCostingReports={purchaseCostingReports}
+              purchaseCostingProductOptions={purchaseCostingProductOptions}
+              purchaseIntelligenceCache={purchaseIntelligenceCache}
+              purchaseIntelligenceLoading={purchaseIntelligenceLoading}
+              purchaseCostingForm={purchaseCostingForm}
+              purchaseCostingFormErrors={purchaseCostingFormErrors}
+              editingPurchaseLotId={editingPurchaseLotId}
+              selectedPurchaseLot={selectedPurchaseLot}
+              setSelectedPurchaseLot={setSelectedPurchaseLot}
+              updatePurchaseCostingField={updatePurchaseCostingField}
+              updatePurchaseCostingSupplier={updatePurchaseCostingSupplier}
+              updatePurchaseCostingItem={updatePurchaseCostingItem}
+              handlePurchaseCostingProductChange={handlePurchaseCostingProductChange}
+              fetchPurchaseProductIntelligence={fetchPurchaseProductIntelligence}
+              addPurchaseCostingSupplier={addPurchaseCostingSupplier}
+              removePurchaseCostingSupplier={removePurchaseCostingSupplier}
+              addPurchaseCostingItem={addPurchaseCostingItem}
+              removePurchaseCostingItem={removePurchaseCostingItem}
+              handleSavePurchaseCostingLot={handleSavePurchaseCostingLot}
+              handleCancelPurchaseCostingEdit={handleCancelPurchaseCostingEdit}
+              handleOpenPurchaseLotDetail={handleOpenPurchaseLotDetail}
+              startEditingPurchaseCostingLot={startEditingPurchaseCostingLot}
+              handleApprovePurchaseLot={handleApprovePurchaseLot}
+              handleCancelPurchaseLot={handleCancelPurchaseLot}
+              filteredPurchaseLots={filteredPurchaseLots}
+              purchaseLotSearch={purchaseLotSearch}
+              setPurchaseLotSearch={setPurchaseLotSearch}
+              purchaseLotStatusFilter={purchaseLotStatusFilter}
+              setPurchaseLotStatusFilter={setPurchaseLotStatusFilter}
+              linkedPurchaseBills={linkedPurchaseBills}
+              linkedPurchaseBillsLoading={linkedPurchaseBillsLoading}
+              listLimits={listLimits}
+              increaseListLimit={increaseListLimit}
+              ListLoadControls={ListLoadControls}
+              busyAction={busyAction}
+              loading={loading}
+              formatDate={formatDate}
+              formatDateTime={formatDateTime}
+              EmptyState={EmptyState}
+              HighlightRow={HighlightRow}
+              StatCard={StatCard}
+              clearFieldErrorFromEvent={clearFieldErrorFromEvent}
+              getFieldErrorClass={getFieldErrorClass}
+              user={user}
+              hasAnyRole={hasAnyRole}
+            />
+          </Suspense>
+          ) : null}
         </section>
       ) : null}
 
@@ -5476,6 +7823,7 @@ export default function App() {
             formatDateTime={formatDateTime}
             selectedAdhesiveToken={selectedAdhesiveToken}
             adhesiveTokenActivities={adhesiveTokenActivities}
+            EmptyState={EmptyState}
             clearFieldErrorFromEvent={clearFieldErrorFromEvent}
             getFieldErrorClass={getFieldErrorClass}
           />
@@ -5528,75 +7876,337 @@ export default function App() {
         </Suspense>
       ) : null}
 
-        {currentView === "inventory" ? (
-        <section className="content-grid">
+      {currentView === "inventory" ? (
+        <section className="stack workspace-stack">
+          <div className="module-nav workspace-tab-nav">
+            <button type="button" className={inventoryWorkspaceTab === "new" ? "active-nav" : "nav-btn"} onClick={() => setInventoryWorkspaceTab("new")}>
+              New Entry
+            </button>
+            <button type="button" className={inventoryWorkspaceTab === "ledger" ? "active-nav" : "nav-btn"} onClick={() => setInventoryWorkspaceTab("ledger")}>
+              Ledger
+            </button>
+            <button type="button" className={inventoryWorkspaceTab === "reports" ? "active-nav" : "nav-btn"} onClick={() => setInventoryWorkspaceTab("reports")}>
+              Reports
+            </button>
+          </div>
+
+          {inventoryWorkspaceTab === "new" ? (
           <section className="panel">
             <div className="section-head">
-              <h2>Inventory link</h2>
-              <span>
-                {inventorySummary?.total_products ?? 0} products | {inventorySummary?.total_stock_sqft ?? 0} sqft
-              </span>
+              <h2>Product master</h2>
+              <span>Create and maintain product foundation fields</span>
             </div>
             <form className="form-grid" onSubmit={handleSaveProduct}>
-              <input
-                placeholder="Product name"
-                value={productForm.name}
-                onChange={(event) => setProductForm({ ...productForm, name: event.target.value })}
-              />
-              <input
-                placeholder="Design code"
-                value={productForm.design_code}
-                onChange={(event) =>
-                  setProductForm({ ...productForm, design_code: event.target.value })
-                }
-              />
-              <select
-                value={productForm.business_unit}
-                onChange={(event) =>
-                  setProductForm({ ...productForm, business_unit: event.target.value })
-                }
-              >
-                <option value="tiles">Tiles</option>
-                <option value="plumbing">Plumbing</option>
-                <option value="both">Tiles + Plumbing</option>
-              </select>
-              <input
-                placeholder="Category"
-                value={productForm.category}
-                onChange={(event) => setProductForm({ ...productForm, category: event.target.value })}
-              />
-              <input
-                placeholder="Tile size"
-                value={productForm.tile_size}
-                onChange={(event) => setProductForm({ ...productForm, tile_size: event.target.value })}
-              />
-              <input
-                placeholder="Finish"
-                value={productForm.finish}
-                onChange={(event) => setProductForm({ ...productForm, finish: event.target.value })}
-              />
-              <input
-                type="number"
-                placeholder="Stock sqft"
-                value={productForm.stock_sqft}
-                onChange={(event) => setProductForm({ ...productForm, stock_sqft: event.target.value })}
-              />
-              <input
-                type="number"
-                placeholder="Price per sqft"
-                value={productForm.price_per_sqft}
-                onChange={(event) =>
-                  setProductForm({ ...productForm, price_per_sqft: event.target.value })
-                }
-              />
-              <select
-                value={productForm.status}
-                onChange={(event) => setProductForm({ ...productForm, status: event.target.value })}
-              >
-                <option value="active">Active</option>
-                <option value="fast_moving">Fast Moving</option>
-                <option value="dead_stock">Dead Stock</option>
-              </select>
+              <div className="form-section full-span">
+                <span className="form-section-title">Identity</span>
+                <p className="muted product-form-note">
+                  Required now: Product name, business unit, unit, and category. Company, size, and packaging can be completed as stock data becomes available.
+                </p>
+                <div className="form-grid">
+                  <div className="form-field">
+                    <label>
+                      Product name <span className="required-marker">*</span>
+                    </label>
+                    <input
+                      placeholder="Product name"
+                      value={productForm.name}
+                      onChange={(event) => setProductForm({ ...productForm, name: event.target.value })}
+                    />
+                  </div>
+                  <div className="form-field">
+                    <label>Company name</label>
+                    <input
+                      placeholder="Company name"
+                      value={productForm.company_name}
+                      onChange={(event) => setProductForm({ ...productForm, company_name: event.target.value })}
+                    />
+                  </div>
+                  <div className="form-field">
+                    <label>Design code</label>
+                    <input
+                      placeholder="Design code"
+                      value={productForm.design_code}
+                      onChange={(event) =>
+                        setProductForm({ ...productForm, design_code: event.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="form-field">
+                    <label>
+                      Business unit <span className="required-marker">*</span>
+                    </label>
+                    <select
+                      value={productForm.business_unit}
+                      onChange={(event) =>
+                        setProductForm({ ...productForm, business_unit: event.target.value })
+                      }
+                    >
+                      <option value="tiles">Tiles</option>
+                      <option value="plumbing">Plumbing</option>
+                      <option value="both">Tiles + Plumbing</option>
+                    </select>
+                  </div>
+                  <div className="form-field">
+                    <label>
+                      Category <span className="required-marker">*</span>
+                    </label>
+                    <div className="inline-add-row">
+                      <select
+                        value={isAddingCustomProductCategory ? "__custom__" : productForm.category}
+                        onChange={(event) => {
+                          if (event.target.value === "__custom__") {
+                            setIsAddingCustomProductCategory(true);
+                            setProductForm({ ...productForm, category: "" });
+                            return;
+                          }
+
+                          setIsAddingCustomProductCategory(false);
+                          setProductForm({ ...productForm, category: event.target.value });
+                        }}
+                      >
+                        {productCategoryOptions.map((category) => (
+                          <option key={category} value={category}>
+                            {category}
+                          </option>
+                        ))}
+                        <option value="__custom__">+ Add Category</option>
+                      </select>
+                    </div>
+                    {isAddingCustomProductCategory ? (
+                      <>
+                        <input
+                          placeholder="New category name"
+                          value={productForm.category}
+                          onChange={(event) => setProductForm({ ...productForm, category: event.target.value })}
+                          onBlur={(event) => {
+                            const value = normalizeText(event.target.value);
+                            if (!value) {
+                              return;
+                            }
+                            setCustomProductCategories((current) => (current.includes(value) ? current : [...current, value]));
+                          }}
+                        />
+                        <span className="input-helper">Quick custom category for this session.</span>
+                      </>
+                    ) : null}
+                  </div>
+                  <div className="form-field">
+                    <label>Product size</label>
+                    <input
+                      placeholder="Product size"
+                      value={productForm.product_size}
+                      onChange={(event) =>
+                        setProductForm({
+                          ...productForm,
+                          product_size: event.target.value,
+                          tile_size: event.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="form-field">
+                    <label>Finish</label>
+                    <input
+                      placeholder="Finish"
+                      value={productForm.finish}
+                      onChange={(event) => setProductForm({ ...productForm, finish: event.target.value })}
+                    />
+                  </div>
+                  <div className="form-field">
+                    <label>
+                      Unit <span className="required-marker">*</span>
+                    </label>
+                    <select
+                      value={productForm.unit}
+                      onChange={(event) => setProductForm({ ...productForm, unit: event.target.value })}
+                    >
+                      <option value="box">Box</option>
+                      <option value="sqft">Sqft</option>
+                      <option value="pcs">Pieces</option>
+                      <option value="kg">Kg</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="form-section full-span">
+                <span className="form-section-title">Packaging and weight</span>
+                <p className="muted product-form-note">
+                  Recommended for costing later: pieces per box, sqft per box, and weight per box.
+                </p>
+                <div className="form-grid">
+                  <div className="form-field">
+                    <label>Pieces per box</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Pieces per box"
+                      value={productForm.pieces_per_box}
+                      onChange={(event) => setProductForm({ ...productForm, pieces_per_box: event.target.value })}
+                    />
+                  </div>
+                  <div className="form-field">
+                    <label>Sqft per box</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Sqft per box"
+                      value={productForm.sqft_per_box}
+                      onChange={(event) => setProductForm({ ...productForm, sqft_per_box: event.target.value })}
+                    />
+                  </div>
+                  <div className="form-field">
+                    <label>Weight per box</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Weight per box"
+                      value={productForm.weight_per_box}
+                      onChange={(event) => setProductForm({ ...productForm, weight_per_box: event.target.value })}
+                    />
+                  </div>
+                  <div className="form-field">
+                    <label>Weight per unit (auto)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.0001"
+                      placeholder="Auto after pieces/box and weight/box"
+                      value={productForm.weight_per_unit}
+                      readOnly
+                    />
+                    <span className="input-helper">
+                      {derivedWeightPerUnit != null
+                        ? `Auto from ${productForm.weight_per_box || 0} / ${productForm.pieces_per_box || 0}`
+                        : "Auto after pieces/box and weight/box"}
+                    </span>
+                  </div>
+                  <div className="form-field">
+                    <label>Sqft per unit (helper)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.0001"
+                      placeholder="Auto after sqft/box and pieces/box"
+                      value={derivedSqftPerUnit != null ? String(derivedSqftPerUnit) : ""}
+                      readOnly
+                    />
+                    <span className="input-helper">
+                      {derivedSqftPerUnit != null
+                        ? `Auto from ${productForm.sqft_per_box || 0} / ${productForm.pieces_per_box || 0}`
+                        : "Auto after sqft/box and pieces/box"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="form-section full-span">
+                <span className="form-section-title">Owner Pricing Fields</span>
+                <p className="muted product-form-note">
+                  Pricing can be completed later by Owner/Admin after purchase costing.
+                </p>
+                <div className="form-grid">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Purchase rate"
+                    value={productForm.purchase_rate}
+                    onChange={(event) => setProductForm({ ...productForm, purchase_rate: event.target.value })}
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Last purchase rate"
+                    value={productForm.last_purchase_rate}
+                    onChange={(event) => setProductForm({ ...productForm, last_purchase_rate: event.target.value })}
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Landed cost / unit"
+                    value={productForm.landed_cost_per_unit}
+                    onChange={(event) => setProductForm({ ...productForm, landed_cost_per_unit: event.target.value })}
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Minimum allowed rate"
+                    value={productForm.minimum_allowed_rate}
+                    onChange={(event) => setProductForm({ ...productForm, minimum_allowed_rate: event.target.value })}
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Suggested selling rate"
+                    value={productForm.suggested_selling_rate}
+                    onChange={(event) => setProductForm({ ...productForm, suggested_selling_rate: event.target.value })}
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Selling rate"
+                    value={productForm.price_per_sqft}
+                    onChange={(event) =>
+                      setProductForm({ ...productForm, price_per_sqft: event.target.value })
+                    }
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Safety margin %"
+                    value={productForm.safety_margin_percent}
+                    onChange={(event) => setProductForm({ ...productForm, safety_margin_percent: event.target.value })}
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Growth margin %"
+                    value={productForm.growth_margin_percent}
+                    onChange={(event) => setProductForm({ ...productForm, growth_margin_percent: event.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="form-section full-span">
+                <span className="form-section-title">Stock and control</span>
+                <div className="form-grid">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Stock quantity / sqft"
+                    value={productForm.stock_sqft}
+                    onChange={(event) => setProductForm({ ...productForm, stock_sqft: event.target.value })}
+                  />
+                  <select
+                    value={productForm.status}
+                    onChange={(event) => setProductForm({ ...productForm, status: event.target.value })}
+                  >
+                    <option value="active">Active</option>
+                    <option value="fast_moving">Fast Moving</option>
+                    <option value="dead_stock">Dead Stock</option>
+                  </select>
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(productForm.pricing_lock)}
+                      onChange={(event) => setProductForm({ ...productForm, pricing_lock: event.target.checked })}
+                    />
+                    <span>Pricing lock enabled</span>
+                  </label>
+                </div>
+              </div>
               <div className="lead-actions full-span">
                 <button type="submit" disabled={busyAction === "save-product"}>
                   {busyAction === "save-product"
@@ -5614,6 +8224,7 @@ export default function App() {
                     onClick={() => {
                       setEditingProductId(null);
                       setProductForm(emptyProduct);
+                      setIsAddingCustomProductCategory(false);
                     }}
                   >
                     Cancel
@@ -5622,11 +8233,13 @@ export default function App() {
               </div>
             </form>
           </section>
+          ) : null}
 
+          {inventoryWorkspaceTab === "ledger" ? (
           <section className="panel">
             <div className="section-head">
-              <h2>Stock visibility</h2>
-              <span>{inventorySummary?.fast_moving_count ?? 0} fast moving</span>
+              <h2>Product ledger</h2>
+              <span>{filteredProducts.length} products</span>
             </div>
             <ListLoadControls
               label="Products"
@@ -5637,20 +8250,37 @@ export default function App() {
             />
             <div className="list">
               {filteredProducts.map((product) => (
-                <article key={product.id} className="lead-card">
+                <article key={product.id} className="lead-card product-master-card">
                   <div className="section-head">
                     <div>
                       <h3>{product.name}</h3>
-                      <p className="muted">{product.design_code || product.category}</p>
+                      <p className="muted">
+                        {product.company_name || "Company missing"} | {product.design_code || product.category}
+                      </p>
                     </div>
                     <span className={`status-chip status-${product.status}`}>{labelize(product.status)}</span>
                   </div>
-                  <p>
-                    {product.tile_size || "Standard"} | {product.finish || "Default finish"}
-                  </p>
-                  <p>
-                    Stock {product.stock_sqft} sqft | Rs {product.price_per_sqft}/sqft
-                  </p>
+                  <div className="product-meta-grid">
+                    <span>Size {product.product_size || product.tile_size || "Missing"}</span>
+                    <span>Unit {product.unit || "Missing"}</span>
+                    <span>Stock {product.stock_sqft || 0}</span>
+                    <span>Selling Rs {Number(product.price_per_sqft || 0).toLocaleString("en-IN")}</span>
+                    <span>Landed Rs {Number(product.landed_cost_per_unit || 0).toLocaleString("en-IN")}</span>
+                    <span>Min Rs {Number(product.minimum_allowed_rate || 0).toLocaleString("en-IN")}</span>
+                  </div>
+                  <div className="chip-row">
+                    <span className="legend-chip product-completeness-chip">
+                      Product Completeness: {getProductCompletenessPercent(product)}%
+                    </span>
+                    {Boolean(product.pricing_lock) ? <span className="status-chip status-approved">Pricing locked</span> : null}
+                  </div>
+                  {getProductDataGaps(product).length ? (
+                    <p className="muted product-gap-text">
+                      Missing: {getProductDataGaps(product).map(formatProductDataGapLabel).join(", ")}
+                    </p>
+                  ) : (
+                    <p className="muted product-gap-text">Product master ready for costing and approval workflows.</p>
+                  )}
                   <div className="lead-actions">
                     <button type="button" className="secondary" onClick={() => startEditingProduct(product)}>
                       Edit
@@ -5680,6 +8310,38 @@ export default function App() {
               ) : null}
             </div>
           </section>
+          ) : null}
+
+          {inventoryWorkspaceTab === "reports" ? (
+          <section className="panel">
+            <div className="section-head">
+              <h2>Product master reports</h2>
+              <span>
+                {inventorySummary?.total_products ?? 0} products | {productHealthSummary.averageCompleteness}% complete
+              </span>
+            </div>
+            <div className="report-grid">
+              <StatCard label="Missing company" value={inventorySummary?.missing_company_count ?? productHealthSummary.missingCompanyCount} />
+              <StatCard label="Missing size" value={inventorySummary?.missing_size_count ?? productHealthSummary.missingSizeCount} />
+              <StatCard label="Missing weight" value={inventorySummary?.missing_weight_count ?? productHealthSummary.missingWeightCount} tone="danger" />
+              <StatCard label="Missing pricing" value={inventorySummary?.missing_pricing_count ?? productHealthSummary.missingPricingCount} tone="danger" />
+              <StatCard label="Missing packaging" value={inventorySummary?.missing_packaging_count ?? productHealthSummary.missingPackagingCount} />
+              <StatCard label="High stock products" value={productHealthSummary.highStockCount} />
+            </div>
+            <div className="mini-list">
+              {productWarningList.slice(0, 10).map((product) => (
+                <div key={`warning-${product.id}`} className="timeline-item">
+                  <strong>{product.name}</strong>
+                  <p className="muted">
+                    {product.company_name || "Company missing"} | {product.product_size || product.tile_size || "Size missing"}
+                  </p>
+                  <p>Missing: {getProductDataGaps(product).map(formatProductDataGapLabel).join(", ")}</p>
+                </div>
+              ))}
+              {!productWarningList.length ? <p className="muted">No product master warnings right now.</p> : null}
+            </div>
+          </section>
+          ) : null}
         </section>
       ) : null}
 
@@ -6213,6 +8875,133 @@ export default function App() {
     );
 }
 const ListLoadControls = memo(ListLoadControlsImpl);
+
+function PurchaseIntelligencePanelImpl({
+  intelligence,
+  currentRate,
+  loading = false,
+  formatCurrency,
+}) {
+  if (loading) {
+    return (
+      <section className="panel panel-nested purchase-intelligence-panel compact">
+        <div className="section-head">
+          <div>
+            <h3>Purchase Intelligence</h3>
+            <p className="muted">Loading recent product purchase history...</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (!intelligence) {
+    return (
+      <section className="panel panel-nested purchase-intelligence-panel compact">
+        <div className="section-head">
+          <div>
+            <h3>Purchase Intelligence</h3>
+            <p className="muted">Select an inventory product to compare against recent purchase history.</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  const insight = getPurchaseRateInsight(intelligence, currentRate);
+  const statusLabel =
+    insight.status === "approval_required"
+      ? "Approval Required"
+      : insight.status === "review"
+        ? "Review"
+        : "Normal";
+
+  return (
+    <section className="panel panel-nested purchase-intelligence-panel compact">
+      <div className="section-head">
+        <div>
+          <h3>Purchase Intelligence</h3>
+          <p className="muted">Compare entered purchase rate with recent buying history before finalizing.</p>
+        </div>
+        <span className={`status-chip status-${insight.status === "approval_required" ? "urgent" : insight.status === "review" ? "pending" : "active"}`}>
+          {statusLabel}
+        </span>
+      </div>
+      <div className="purchase-intelligence-grid">
+        <div className="mini-card">
+          <strong>Current Rate</strong>
+          <p>{currentRate > 0 ? formatCurrency(currentRate) : "Enter qty + net amount"}</p>
+        </div>
+        <div className="mini-card">
+          <strong>Last Rate</strong>
+          <p>{formatCurrency(intelligence.last_purchase_rate || 0)}</p>
+        </div>
+        <div className="mini-card">
+          <strong>30-day Avg</strong>
+          <p>{formatCurrency(intelligence.avg_30_day_rate || 0)}</p>
+        </div>
+        <div className="mini-card">
+          <strong>Difference</strong>
+          <p>
+            {currentRate > 0 && intelligence.avg_30_day_rate > 0
+              ? `${insight.differenceAmount >= 0 ? "+" : ""}${formatCurrency(Math.abs(insight.differenceAmount))} / ${insight.differencePercentage >= 0 ? "+" : ""}${insight.differencePercentage}%`
+              : "Waiting for rate"}
+          </p>
+        </div>
+        <div className="mini-card">
+          <strong>Supplier Suggestion</strong>
+          <p>
+            {intelligence.recommended_supplier
+              ? `${intelligence.recommended_supplier} · ${formatCurrency(intelligence.best_supplier_rate || 0)}`
+              : "Not available"}
+          </p>
+        </div>
+        <div className="mini-card">
+          <strong>Trend</strong>
+          <p>{labelize(intelligence.trend || "stable")}</p>
+        </div>
+      </div>
+      <div className="purchase-intelligence-meta">
+        <span>Lowest {formatCurrency(intelligence.min_rate || 0)}</span>
+        <span>Highest {formatCurrency(intelligence.max_rate || 0)}</span>
+        <span>Last Supplier {intelligence.last_supplier || "Not available"}</span>
+      </div>
+      {(intelligence.last_5_rates || []).length ? (
+        <div className="purchase-intelligence-history">
+          <strong>Last 5 purchase rates</strong>
+          <div className="purchase-history-list">
+            {(intelligence.last_5_rates || []).map((entry, index) => (
+              <span key={`${entry.purchase_date || "rate"}-${index}`} className="hero-pill">
+                {formatCurrency(entry.rate)} · {entry.supplier_name || "Supplier"}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {(intelligence.supplier_comparison || []).length ? (
+        <div className="purchase-intelligence-suppliers">
+          <strong>Supplier comparison</strong>
+          <div className="mini-list compact">
+            {intelligence.supplier_comparison.slice(0, 4).map((supplier) => (
+              <div key={`${supplier.supplier_name}-${supplier.last_purchase_date}`} className="timeline-item compact">
+                <strong>{supplier.supplier_name}</strong>
+                <p className="muted">
+                  {formatCurrency(supplier.last_rate)} | Qty {supplier.quantity || 0} | {formatDate(supplier.last_purchase_date)}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {insight.approvalRequired ? (
+        <p className="field-error-message">
+          Current purchase rate is more than 8% above the 30-day average. Draft save is allowed, but manager/admin approval is recommended before final approval.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+const PurchaseIntelligencePanel = memo(PurchaseIntelligencePanelImpl);
 
 function LeadDetailsPanelImpl({
     selectedLead,
@@ -7252,8 +10041,331 @@ function normalizeDealerPayload(dealer) {
 function normalizeProductPayload(product) {
   return {
     ...product,
+    company_name: normalizeText(product.company_name),
+    unit: normalizeText(product.unit) || "pcs",
+    product_size: normalizeText(product.product_size || product.tile_size),
     stock_sqft: Number(product.stock_sqft || 0),
+    pieces_per_box: Number(product.pieces_per_box || 0),
+    sqft_per_box: Number(product.sqft_per_box || 0),
+    weight_per_box: Number(product.weight_per_box || 0),
+    weight_per_unit: Number(product.weight_per_unit || 0),
+    purchase_rate: Number(product.purchase_rate || 0),
     price_per_sqft: Number(product.price_per_sqft || 0),
+    last_purchase_rate: Number(product.last_purchase_rate || 0),
+    landed_cost_per_unit: Number(product.landed_cost_per_unit || 0),
+    minimum_allowed_rate: Number(product.minimum_allowed_rate || 0),
+    suggested_selling_rate: Number(product.suggested_selling_rate || 0),
+    safety_margin_percent: Number(product.safety_margin_percent || 0),
+    growth_margin_percent: Number(product.growth_margin_percent || 0),
+    pricing_lock: Boolean(product.pricing_lock),
+  };
+}
+
+function getProductDataGaps(product) {
+  const gaps = [];
+
+  if (!normalizeText(product?.company_name)) {
+    gaps.push("company");
+  }
+
+  if (!normalizeText(product?.product_size || product?.tile_size)) {
+    gaps.push("size");
+  }
+
+  if (Number(product?.pieces_per_box || 0) <= 0 || Number(product?.sqft_per_box || 0) <= 0) {
+    gaps.push("packaging");
+  }
+
+  if (Number(product?.weight_per_box || 0) <= 0 || Number(product?.weight_per_unit || 0) <= 0) {
+    gaps.push("weight");
+  }
+
+  const pricingFields = [
+    Number(product?.purchase_rate || 0),
+    Number(product?.landed_cost_per_unit || 0),
+    Number(product?.minimum_allowed_rate || 0),
+    Number(product?.suggested_selling_rate || 0),
+  ];
+  if (pricingFields.some((value) => value <= 0)) {
+    gaps.push("pricing");
+  }
+
+  return gaps;
+}
+
+function getProductCompletenessPercent(product) {
+  const checks = [
+    Boolean(normalizeText(product?.company_name)),
+    Boolean(normalizeText(product?.product_size || product?.tile_size)),
+    Number(product?.pieces_per_box || 0) > 0 && Number(product?.sqft_per_box || 0) > 0,
+    Number(product?.weight_per_box || 0) > 0 && Number(product?.weight_per_unit || 0) > 0,
+    Number(product?.purchase_rate || 0) > 0,
+    Number(product?.landed_cost_per_unit || 0) > 0,
+    Number(product?.minimum_allowed_rate || 0) > 0,
+    Number(product?.suggested_selling_rate || 0) > 0,
+  ];
+
+  const completed = checks.filter(Boolean).length;
+  return Math.round((completed / checks.length) * 100);
+}
+
+function formatProductDataGapLabel(code) {
+  switch (code) {
+    case "company":
+      return "company";
+    case "size":
+      return "size";
+    case "packaging":
+      return "packaging";
+    case "weight":
+      return "weight";
+    case "pricing":
+      return "pricing";
+    default:
+      return labelize(code);
+  }
+}
+
+function normalizePurchaseCostingPayload(lot) {
+  return {
+    lot_number: normalizeText(lot.lot_number),
+    arrival_date: lot.arrival_date || null,
+    vehicle_number: normalizeText(lot.vehicle_number),
+    transporter_name: normalizeText(lot.transporter_name),
+    driver_name: normalizeText(lot.driver_name),
+    driver_mobile: normalizeText(lot.driver_mobile),
+    allocation_method: lot.allocation_method || "weight_wise",
+    total_freight_cost: Number(lot.total_freight_cost || 0),
+    total_unloading_cost: Number(lot.total_unloading_cost || 0),
+    other_charges: Number(lot.other_charges || 0),
+    financed_amount: Number(lot.financed_amount || 0),
+    interest_rate_percent: Number(lot.interest_rate_percent || 0),
+    holding_days: Number(lot.holding_days || 0),
+    stock_received_date: lot.stock_received_date || lot.arrival_date || null,
+    interest_cost_override:
+      lot.interest_cost_override === "" || lot.interest_cost_override == null
+        ? null
+        : Number(lot.interest_cost_override || 0),
+    showroom_overhead_amount: Number(lot.showroom_overhead_amount || 0),
+    monthly_overhead_allocation_method:
+      normalizeText(lot.monthly_overhead_allocation_method) || "per_box",
+    time_decay_percent:
+      lot.time_decay_percent === "" || lot.time_decay_percent == null ? null : Number(lot.time_decay_percent || 0),
+    marketing_cost_amount: Number(lot.marketing_cost_amount || 0),
+    marketing_cost_allocation_method: normalizeText(lot.marketing_cost_allocation_method) || "manual",
+    overhead_period: normalizeText(lot.overhead_period),
+    overhead_notes: normalizeText(lot.overhead_notes),
+    minimum_margin_percent: Number(lot.minimum_margin_percent || 0),
+    target_margin_percent: Number(lot.target_margin_percent || 0),
+    remarks: normalizeText(lot.remarks),
+    suppliers: (lot.suppliers || []).map((supplier) => ({
+      supplier_name: normalizeText(supplier.supplier_name),
+      supplier_invoice_number: normalizeText(supplier.supplier_invoice_number),
+      supplier_invoice_date: supplier.supplier_invoice_date || null,
+      supplier_amount:
+        supplier.supplier_amount === "" || supplier.supplier_amount == null
+          ? null
+          : Number(supplier.supplier_amount || 0),
+      supplier_notes: normalizeText(supplier.supplier_notes),
+      items: (supplier.items || []).map((item) => ({
+        product_id: item.product_id ? Number(item.product_id) : null,
+        item_name: normalizeText(item.item_name),
+        company_name: normalizeText(item.company_name),
+        product_size: normalizeText(item.product_size),
+        category: normalizeText(item.category) || "tiles",
+        quantity: Number(item.quantity || 0),
+        unit: normalizeText(item.unit) || "pcs",
+        boxes: Number(item.boxes || 0),
+        pieces_per_box: Number(item.pieces_per_box || 0),
+        sqft_per_box: Number(item.sqft_per_box || 0),
+        weight_per_box: Number(item.weight_per_box || 0),
+        weight_per_unit: Number(item.weight_per_unit || 0),
+        basic_purchase_rate: Number(item.basic_purchase_rate || 0),
+        damage_quantity: Number(item.damage_quantity || 0),
+        manual_allocation_value: Number(item.manual_allocation_value || 0),
+      })),
+    })),
+  };
+}
+
+function mapPurchaseLotToForm(lot) {
+  return {
+    lot_number: lot.lot_number || "",
+    arrival_date: lot.arrival_date ? String(lot.arrival_date).slice(0, 10) : new Date().toISOString().slice(0, 10),
+    vehicle_number: lot.vehicle_number || "",
+    transporter_name: lot.transporter_name || "",
+    driver_name: lot.driver_name || "",
+    driver_mobile: lot.driver_mobile || "",
+    allocation_method: lot.allocation_method || "weight_wise",
+    total_freight_cost:
+      lot.total_freight_cost != null && lot.total_freight_cost !== "" ? String(lot.total_freight_cost) : "",
+    total_unloading_cost:
+      lot.total_unloading_cost != null && lot.total_unloading_cost !== "" ? String(lot.total_unloading_cost) : "",
+    other_charges: lot.other_charges != null && lot.other_charges !== "" ? String(lot.other_charges) : "",
+    financed_amount:
+      lot.financed_amount != null && lot.financed_amount !== "" ? String(lot.financed_amount) : "",
+    interest_rate_percent:
+      lot.interest_rate_percent != null && lot.interest_rate_percent !== ""
+        ? String(lot.interest_rate_percent)
+        : "",
+    holding_days: lot.holding_days != null && lot.holding_days !== "" ? String(lot.holding_days) : "",
+    stock_received_date: lot.stock_received_date ? String(lot.stock_received_date).slice(0, 10) : (lot.arrival_date ? String(lot.arrival_date).slice(0, 10) : new Date().toISOString().slice(0, 10)),
+    interest_cost_override:
+      lot.interest_cost_override != null && lot.interest_cost_override !== ""
+        ? String(lot.interest_cost_override)
+        : "",
+    showroom_overhead_amount:
+      lot.showroom_overhead_amount != null && lot.showroom_overhead_amount !== ""
+        ? String(lot.showroom_overhead_amount)
+        : "",
+    monthly_overhead_amount:
+      lot.monthly_overhead_amount != null && lot.monthly_overhead_amount !== ""
+        ? String(lot.monthly_overhead_amount)
+        : "",
+    monthly_overhead_allocation_method: lot.monthly_overhead_allocation_method || "per_box",
+    monthly_sales_boxes:
+      lot.monthly_sales_boxes != null && lot.monthly_sales_boxes !== "" ? String(lot.monthly_sales_boxes) : "",
+    monthly_sales_sqft:
+      lot.monthly_sales_sqft != null && lot.monthly_sales_sqft !== "" ? String(lot.monthly_sales_sqft) : "",
+    monthly_sales_quantity:
+      lot.monthly_sales_quantity != null && lot.monthly_sales_quantity !== "" ? String(lot.monthly_sales_quantity) : "",
+    monthly_sales_value:
+      lot.monthly_sales_value != null && lot.monthly_sales_value !== "" ? String(lot.monthly_sales_value) : "",
+    monthly_overhead_rate:
+      lot.monthly_overhead_rate != null && lot.monthly_overhead_rate !== "" ? String(lot.monthly_overhead_rate) : "",
+    time_decay_percent:
+      lot.time_decay_percent != null && lot.time_decay_percent !== "" ? String(lot.time_decay_percent) : "",
+    marketing_cost_amount:
+      lot.marketing_cost_amount != null && lot.marketing_cost_amount !== "" ? String(lot.marketing_cost_amount) : "",
+    marketing_cost_allocation_method: lot.marketing_cost_allocation_method || "manual",
+    overhead_period: lot.overhead_period || "",
+    overhead_notes: lot.overhead_notes || "",
+    minimum_margin_percent:
+      lot.minimum_margin_percent != null && lot.minimum_margin_percent !== ""
+        ? String(lot.minimum_margin_percent)
+        : "5",
+    target_margin_percent:
+      lot.target_margin_percent != null && lot.target_margin_percent !== ""
+        ? String(lot.target_margin_percent)
+        : "12",
+    remarks: lot.remarks || "",
+    suppliers:
+      (lot.suppliers || []).map((supplier) => ({
+        supplier_name: supplier.supplier_name || "",
+        supplier_invoice_number: supplier.supplier_invoice_number || "",
+        supplier_invoice_date: supplier.supplier_invoice_date ? String(supplier.supplier_invoice_date).slice(0, 10) : "",
+        supplier_amount:
+          supplier.supplier_amount != null && supplier.supplier_amount !== ""
+            ? String(supplier.supplier_amount)
+            : "",
+        supplier_notes: supplier.supplier_notes || "",
+        items:
+          (supplier.items || []).map((item) => ({
+            product_id: item.product_id ? String(item.product_id) : "",
+            item_name: item.item_name || item.product_name_master || "",
+            company_name: item.company_name || "",
+            product_size: item.product_size || "",
+            category: item.category || "tiles",
+            quantity: item.quantity != null ? String(item.quantity) : "",
+            unit: item.unit || "pcs",
+            boxes: item.boxes != null ? String(item.boxes) : "",
+            pieces_per_box: item.pieces_per_box != null ? String(item.pieces_per_box) : "",
+            sqft_per_box: item.sqft_per_box != null ? String(item.sqft_per_box) : "",
+            weight_per_box: item.weight_per_box != null ? String(item.weight_per_box) : "",
+            weight_per_unit: item.weight_per_unit != null ? String(item.weight_per_unit) : "",
+            basic_purchase_rate:
+              item.basic_purchase_rate != null ? String(item.basic_purchase_rate) : "",
+            damage_quantity: item.damage_quantity != null ? String(item.damage_quantity) : "",
+            manual_allocation_value:
+              item.manual_allocation_value != null ? String(item.manual_allocation_value) : "",
+          })) || [{ ...emptyPurchaseLotItem }],
+      })) || [{ ...emptyPurchaseLotSupplier, items: [{ ...emptyPurchaseLotItem }] }],
+  };
+}
+
+function normalizeBillingInvoicePayload(invoice) {
+  const totals = getBillingTotals(invoice);
+  const systemDiscountMeta =
+    invoice?.system_discount_meta && typeof invoice.system_discount_meta === "object"
+      ? {
+          original_total: Number(invoice.system_discount_meta.original_total || 0),
+          system_benefit_amount: Number(invoice.system_discount_meta.system_benefit_amount || 0),
+          final_total: Number(invoice.system_discount_meta.final_total || 0),
+          approval_level: normalizeText(invoice.system_discount_meta.approval_level),
+          reason: normalizeText(invoice.system_discount_meta.reason),
+        }
+      : null;
+  return {
+    customer_name: normalizeText(invoice.customer_name),
+    customer_mobile: normalizeText(invoice.customer_mobile),
+    customer_address: normalizeText(invoice.customer_address),
+    lead_id: invoice.lead_id ? Number(invoice.lead_id) : null,
+    quotation_id: invoice.quotation_id ? Number(invoice.quotation_id) : null,
+    project_id: invoice.project_id ? Number(invoice.project_id) : null,
+    site_reference: normalizeText(invoice.site_reference),
+    invoice_type: invoice.invoice_type || "gst_invoice",
+    invoice_date: invoice.invoice_date || null,
+    notes: normalizeText(invoice.notes),
+    transport_charge: Number(invoice.transport_charge || 0),
+    additional_charge: Number(invoice.additional_charge || 0),
+    approval_note: normalizeText(invoice.approval_note),
+    status: invoice.status || "draft",
+    subtotal: totals.subtotal,
+    total_discount: totals.total_discount,
+    gst_amount: totals.gst_amount,
+    grand_total: totals.grand_total,
+    system_discount_meta: systemDiscountMeta,
+    items: (invoice.items || []).map((item) => ({
+      product_id: item.product_id ? Number(item.product_id) : null,
+      item_type: item.item_type || "tiles",
+      product_name: normalizeText(item.product_name),
+      quantity: Number(item.quantity || 0),
+      unit: normalizeText(item.unit) || "pcs",
+      rate: Number(item.rate || 0),
+      discount: Number(item.discount || 0),
+      gst_percent: Number(item.gst_percent || 0),
+      total: computeBillingItemTotal(item),
+    })),
+  };
+}
+
+function mapInvoiceToForm(invoice) {
+  return {
+    customer_name: invoice.customer_name || "",
+    customer_mobile: invoice.customer_mobile || "",
+    customer_address: invoice.customer_address || "",
+    lead_id: invoice.lead_id ? String(invoice.lead_id) : "",
+    quotation_id: invoice.quotation_id ? String(invoice.quotation_id) : "",
+    project_id: invoice.project_id ? String(invoice.project_id) : "",
+    site_reference: invoice.site_reference || "",
+    invoice_type: invoice.invoice_type || "gst_invoice",
+    invoice_date: invoice.invoice_date ? String(invoice.invoice_date).slice(0, 10) : new Date().toISOString().slice(0, 10),
+    notes: invoice.notes || "",
+    transport_charge:
+      invoice.transport_charge != null && invoice.transport_charge !== ""
+        ? String(invoice.transport_charge)
+        : "",
+    additional_charge:
+      invoice.additional_charge != null && invoice.additional_charge !== ""
+        ? String(invoice.additional_charge)
+        : "",
+    approval_note: invoice.approval_note || "",
+    system_discount_meta: invoice.system_discount_meta || null,
+    status: invoice.status || "draft",
+    items:
+      (invoice.items || []).map((item) => ({
+        item_type: item.item_type || "tiles",
+        product_id: item.product_id ? String(item.product_id) : "",
+        product_name: item.product_name || "",
+        quantity: item.quantity != null ? String(item.quantity) : "",
+        unit: item.unit || "pcs",
+        suggested_rate: item.suggested_rate != null ? String(item.suggested_rate) : "",
+        minimum_allowed_rate:
+          item.minimum_allowed_rate != null ? String(item.minimum_allowed_rate) : "",
+        rate: item.rate != null ? String(item.rate) : "",
+        discount: item.discount != null ? String(item.discount) : "",
+        gst_percent: item.gst_percent != null ? String(item.gst_percent) : "18",
+      })) || [{ ...emptyInvoiceItem }],
   };
 }
 
@@ -7361,6 +10473,14 @@ function formatDateTime(value) {
     minute: "2-digit",
     hour12: true,
   }).format(new Date(value));
+}
+
+function formatCurrency(value) {
+  const amount = Number(value || 0);
+  return `Rs ${amount.toLocaleString("en-IN", {
+    minimumFractionDigits: amount % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 function formatDate(value) {

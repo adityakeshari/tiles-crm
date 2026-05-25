@@ -2,6 +2,7 @@
 setlocal
 
 set "ROOT_DIR=C:\Users\hp\Documents\tiles-crm"
+set "MIGRATIONS_DIR=%ROOT_DIR%\backend\migrations"
 set "DB_NAME=tiles_crm"
 set "PGHOST=localhost"
 set "PGPORT=5432"
@@ -56,6 +57,20 @@ call :run "016_token_claim_user_tracking.sql"
 call :run "017_complete_mason_token_repair.sql"
 call :run "018_registered_mason_working_profile.sql"
 call :run "019_dashboard_scaling_indexes.sql"
+call :run "020_purchase_entries.sql"
+call :run "021_user_role_expand.sql"
+call :run "022_mason_alt_mobile.sql"
+call :run "023_expense_paid_by.sql"
+call :run "024_token_claim_duplicate_guard.sql"
+call :run "025_purchases_and_dashboard_indexes.sql"
+call :run "026_billing_module.sql"
+call :run "027_purchase_costing_module.sql"
+call :run "028_product_master_stabilization.sql"
+call :run "029_purchase_costing_real_cost.sql"
+call :run "030_suppliers_master.sql"
+call :run "030_monthly_overhead_allocation.sql"
+call :run "031_purchase_invoice_multi_item_compat.sql"
+call :run "032_purchase_truck_linking.sql"
 
 if errorlevel 1 exit /b 1
 
@@ -66,7 +81,7 @@ exit /b 0
 
 :run
 echo Running migration: %~1
-psql -h "%PGHOST%" -p "%PGPORT%" -U "%PGUSER%" -d "%DB_NAME%" -v ON_ERROR_STOP=1 -f "%ROOT_DIR%\migrations\%~1"
+psql -h "%PGHOST%" -p "%PGPORT%" -U "%PGUSER%" -d "%DB_NAME%" -v ON_ERROR_STOP=1 -f "%MIGRATIONS_DIR%\%~1"
 if errorlevel 1 (
   echo ERROR: Migration failed: %~1
   exit /b 1
