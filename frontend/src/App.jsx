@@ -465,12 +465,20 @@ const emptyProduct = {
   stock_sqft: "",
   purchase_rate: "",
   price_per_sqft: "",
+  predefined_rate: "",
+  today_selling_rate: "",
+  daily_up_limit_percent: "2",
+  daily_down_limit_percent: "1",
   last_purchase_rate: "",
   landed_cost_per_unit: "",
   minimum_allowed_rate: "",
   suggested_selling_rate: "",
+  operator_discount_cap: "",
+  manager_discount_cap: "",
+  owner_discount_cap: "",
   safety_margin_percent: "",
   growth_margin_percent: "",
+  quotation_validity_days: "0",
   pricing_lock: false,
   status: "active",
 };
@@ -484,6 +492,17 @@ const defaultProductCategories = [
   "Adhesive",
   "Sanitary",
   "Plumbing",
+  "Other",
+];
+
+const defaultProductFinishes = [
+  "Glossy",
+  "Matte",
+  "High Gloss",
+  "Satin",
+  "Rustic",
+  "Carving",
+  "Sugar",
   "Other",
 ];
 
@@ -790,6 +809,53 @@ function isNonNegativeNumber(value) {
   return Number.isFinite(numeric) && numeric >= 0;
 }
 
+function isInteractiveElementActive() {
+  if (typeof document === "undefined") {
+    return false;
+  }
+
+  const activeElement = document.activeElement;
+  if (!activeElement) {
+    return false;
+  }
+
+  const tagName = String(activeElement.tagName || "").toUpperCase();
+  return tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT" || activeElement.isContentEditable;
+}
+
+function hasDraftValue(value) {
+  if (Array.isArray(value)) {
+    return value.some((entry) => hasDraftValue(entry));
+  }
+
+  if (value && typeof value === "object") {
+    return Object.values(value).some((entry) => hasDraftValue(entry));
+  }
+
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) && value !== 0;
+  }
+
+  return normalizeText(value) !== "";
+}
+
+function serializeComparable(value) {
+  return JSON.stringify(value);
+}
+
+function buildNormalizedProductSignature(product) {
+  return {
+    name: normalizeText(product?.name).toLowerCase(),
+    company_name: normalizeText(product?.company_name).toLowerCase(),
+    product_size: normalizeText(product?.product_size || product?.tile_size).toLowerCase(),
+    finish: normalizeText(product?.finish).toLowerCase(),
+  };
+}
+
 function isPositiveNumber(value) {
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric > 0;
@@ -934,6 +1000,14 @@ function validateProductForm(form) {
     return "Product name is required.";
   }
 
+  if (!normalizeText(form.company_name)) {
+    return "Company is required.";
+  }
+
+  if (!normalizeText(form.product_size || form.tile_size)) {
+    return "Product size is required.";
+  }
+
   if (!normalizeText(form.business_unit)) {
     return "Business unit is required.";
   }
@@ -953,13 +1027,21 @@ function validateProductForm(form) {
     ["last_purchase_rate", "Last purchase rate"],
     ["landed_cost_per_unit", "Landed cost per unit"],
     ["minimum_allowed_rate", "Minimum allowed rate"],
+    ["predefined_rate", "Predefined rate"],
+    ["today_selling_rate", "Today rate"],
     ["suggested_selling_rate", "Suggested selling rate"],
     ["pieces_per_box", "Pieces per box"],
     ["sqft_per_box", "Sqft per box"],
     ["weight_per_box", "Weight per box"],
     ["weight_per_unit", "Weight per unit"],
+    ["daily_up_limit_percent", "Daily up limit percent"],
+    ["daily_down_limit_percent", "Daily down limit percent"],
+    ["operator_discount_cap", "Operator discount cap"],
+    ["manager_discount_cap", "Manager discount cap"],
+    ["owner_discount_cap", "Owner discount cap"],
     ["safety_margin_percent", "Safety margin percent"],
     ["growth_margin_percent", "Growth margin percent"],
+    ["quotation_validity_days", "Quotation validity days"],
   ];
 
   for (const [field, label] of numericFields) {
@@ -1109,6 +1191,33 @@ function computeBillingItemTotal(item) {
   const gstPercent = Number(item.gst_percent || 0);
   const taxable = Math.max(quantity * rate - discount, 0);
   return Number((taxable + taxable * (gstPercent / 100)).toFixed(2));
+}
+
+function clampNumber(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function getProductPredefinedRate(product) {
+  return Number(
+    product?.predefined_rate || product?.suggested_selling_rate || product?.price_per_sqft || product?.real_cost_per_unit || product?.landed_cost_per_unit || 0
+  );
+}
+
+function getProductTodaySellingRate(product) {
+  const predefinedRate = getProductPredefinedRate(product);
+
+  if (predefinedRate > 0) {
+    const upLimitPercent = Math.max(Number(product?.daily_up_limit_percent || 2), 0);
+    const downLimitPercent = Math.max(Number(product?.daily_down_limit_percent || 1), 0);
+    const minRate = predefinedRate * (1 - downLimitPercent / 100);
+    const maxRate = predefinedRate * (1 + upLimitPercent / 100);
+    const rawTodayRate = Number(product?.today_selling_rate || predefinedRate);
+    return Number(clampNumber(rawTodayRate > 0 ? rawTodayRate : predefinedRate, minRate, maxRate).toFixed(2));
+  }
+
+  return Number(
+    product?.today_selling_rate || product?.suggested_selling_rate || product?.price_per_sqft || product?.real_cost_per_unit || product?.landed_cost_per_unit || 0
+  );
 }
 
 function getBillingTotals(form) {
@@ -1701,6 +1810,13 @@ export default function App() {
   const [editingProductId, setEditingProductId] = useState(null);
   const [customProductCategories, setCustomProductCategories] = useState([]);
   const [isAddingCustomProductCategory, setIsAddingCustomProductCategory] = useState(false);
+  const [customCompanyOptions, setCustomCompanyOptions] = useState([]);
+  const [customProductSizeOptions, setCustomProductSizeOptions] = useState([]);
+  const [customFinishOptions, setCustomFinishOptions] = useState([]);
+  const [isAddingCustomCompany, setIsAddingCustomCompany] = useState(false);
+  const [isAddingCustomProductSize, setIsAddingCustomProductSize] = useState(false);
+  const [isAddingCustomFinish, setIsAddingCustomFinish] = useState(false);
+  const [productDuplicateOverride, setProductDuplicateOverride] = useState(false);
   const [masonForm, setMasonForm] = useState(emptyMason);
   const [masonFormErrors, setMasonFormErrors] = useState({});
   const [editingMasonId, setEditingMasonId] = useState(null);
@@ -1781,6 +1897,10 @@ export default function App() {
   const [expenseWorkspaceTab, setExpenseWorkspaceTab] = useState("new");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isDocumentVisible, setIsDocumentVisible] = useState(
+    typeof document === "undefined" ? true : document.visibilityState === "visible"
+  );
+  const [autoRefreshState, setAutoRefreshState] = useState({ view: "", at: 0 });
   const [isSavingComplaint, setIsSavingComplaint] = useState(false);
   const [busyAction, setBusyAction] = useState("");
   const [pendingDelete, setPendingDelete] = useState(null);
@@ -1859,6 +1979,19 @@ export default function App() {
       setCurrentView(visibleViews[0].id);
     }
   }, [visibleViews, currentView]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return undefined;
+    }
+
+    const handleVisibilityChange = () => {
+      setIsDocumentVisible(document.visibilityState === "visible");
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
 
   useEffect(() => {
     if (currentView === "purchase_costing") {
@@ -2059,6 +2192,180 @@ export default function App() {
     () => (Array.isArray(purchaseItems) && purchaseItems.length ? purchaseItems : [{ ...emptyPurchaseItem }]),
     [purchaseItems]
   );
+  const isLeadWorkspaceDirty = useMemo(() => {
+    const leadDraftDirty = hasDraftValue(leadForm);
+    const editingLeadDirty = selectedLead
+      ? serializeComparable({
+          name: editingLead.name || "",
+          phone: editingLead.phone || "",
+          location: editingLead.location || "",
+          department: editingLead.department || "sales",
+          business_unit: editingLead.business_unit || "tiles",
+          customer_type: editingLead.customer_type || "retail_customer",
+          requirement_category: editingLead.requirement_category || "flooring",
+          requirement: editingLead.requirement || "",
+          budget: String(editingLead.budget || ""),
+          timeline: editingLead.timeline || "urgent",
+          lead_source: editingLead.lead_source || "walk_in",
+          status: editingLead.status || "new",
+          lost_reason: editingLead.lost_reason || "",
+          assigned_to: String(editingLead.assigned_to || ""),
+        }) !==
+        serializeComparable({
+          name: selectedLead.name || "",
+          phone: selectedLead.phone || "",
+          location: selectedLead.location || "",
+          department: selectedLead.department || "sales",
+          business_unit: selectedLead.business_unit || "tiles",
+          customer_type: selectedLead.customer_type || "retail_customer",
+          requirement_category: selectedLead.requirement_category || "flooring",
+          requirement: selectedLead.requirement || "",
+          budget: String(selectedLead.budget || ""),
+          timeline: selectedLead.timeline || "urgent",
+          lead_source: selectedLead.lead_source || "walk_in",
+          status: selectedLead.status || "new",
+          lost_reason: selectedLead.lost_reason || "",
+          assigned_to: String(selectedLead.assigned_to || ""),
+        })
+      : false;
+    const followupDirty = hasDraftValue(followupForm.note) || hasDraftValue(followupForm.followup_date);
+    const paymentDirty = hasDraftValue(paymentForm.amount) || hasDraftValue(paymentForm.due_date) || hasDraftValue(paymentForm.note);
+    const operationsDirty =
+      hasDraftValue(operationsTaskForm.title) ||
+      hasDraftValue(operationsTaskForm.note) ||
+      hasDraftValue(operationsTaskForm.scheduled_for) ||
+      hasDraftValue(operationsTaskForm.assigned_to);
+    const quotationDirty =
+      hasDraftValue(quotationForm.discount) ||
+      hasDraftValue(quotationForm.transport_cost) ||
+      (quotationForm.items || []).some((item) =>
+        hasDraftValue(item.product_id) ||
+        hasDraftValue(item.product_name) ||
+        hasDraftValue(item.tile_size) ||
+        hasDraftValue(item.quantity_sqft) ||
+        hasDraftValue(item.unit_price)
+      );
+
+    return leadDraftDirty || editingLeadDirty || followupDirty || paymentDirty || operationsDirty || quotationDirty;
+  }, [editingLead, leadForm, followupForm, paymentForm, operationsTaskForm, quotationForm, selectedLead]);
+  const isBillingDraftDirty = useMemo(() => {
+    const invoiceDirty =
+      Boolean(editingInvoiceId) ||
+      hasDraftValue(invoiceForm.customer_name) ||
+      hasDraftValue(invoiceForm.customer_mobile) ||
+      hasDraftValue(invoiceForm.customer_address) ||
+      hasDraftValue(invoiceForm.lead_id) ||
+      hasDraftValue(invoiceForm.quotation_id) ||
+      hasDraftValue(invoiceForm.project_id) ||
+      hasDraftValue(invoiceForm.site_reference) ||
+      hasDraftValue(invoiceForm.transport_charge) ||
+      hasDraftValue(invoiceForm.additional_charge) ||
+      hasDraftValue(invoiceForm.notes) ||
+      (invoiceForm.items || []).some((item) =>
+        hasDraftValue(item.product_id) || hasDraftValue(item.product_name) || hasDraftValue(item.quantity) || hasDraftValue(item.rate)
+      );
+    const paymentDirty = hasDraftValue(billingPaymentForm.amount) || hasDraftValue(billingPaymentForm.note);
+    return invoiceDirty || paymentDirty;
+  }, [billingPaymentForm, editingInvoiceId, invoiceForm]);
+  const isPurchaseEntryDraftDirty = useMemo(() => {
+    const purchaseHeaderDirty =
+      Boolean(editingPurchaseId) ||
+      hasDraftValue(purchaseForm.supplier_id) ||
+      hasDraftValue(purchaseForm.invoice_number) ||
+      hasDraftValue(purchaseForm.purchase_date) ||
+      hasDraftValue(purchaseForm.truck_number) ||
+      hasDraftValue(purchaseForm.delivery_date) ||
+      hasDraftValue(purchaseForm.remarks) ||
+      purchaseForm.payment_status !== emptyPurchase.payment_status;
+    const purchaseRowsDirty = safePurchaseItems.some((item) =>
+      hasDraftValue(item.product_id) ||
+      hasDraftValue(item.quantity) ||
+      hasDraftValue(item.rate_per_unit) ||
+      hasDraftValue(item.amount) ||
+      hasDraftValue(item.gst_amount) ||
+      hasDraftValue(item.total_amount)
+    );
+    return purchaseHeaderDirty || purchaseRowsDirty || supplierQuickAddOpen || supplierQuickSaving;
+  }, [editingPurchaseId, purchaseForm, safePurchaseItems, supplierQuickAddOpen, supplierQuickSaving]);
+  const isPurchaseCostingDraftDirty = useMemo(() => {
+    const formDirty =
+      Boolean(editingPurchaseLotId) ||
+      serializeComparable(purchaseCostingForm) !== serializeComparable(emptyPurchaseLot);
+    return formDirty || linkedPurchaseBillsLoading;
+  }, [editingPurchaseLotId, linkedPurchaseBillsLoading, purchaseCostingForm]);
+  const isInventoryDraftDirty = useMemo(
+    () => Boolean(editingProductId) || serializeComparable(productForm) !== serializeComparable(emptyProduct),
+    [editingProductId, productForm]
+  );
+  const isComplaintDraftDirty = useMemo(
+    () => Boolean(editingComplaintId) || serializeComparable(complaintForm) !== serializeComparable(emptyComplaint),
+    [editingComplaintId, complaintForm]
+  );
+  const autoRefreshIntervalMs = useMemo(() => {
+    if (currentView === "overview" || currentView === "billing" || currentView === "complaints" || currentView === "operations") {
+      return 10000;
+    }
+
+    if (currentView === "purchases" || currentView === "inventory") {
+      return 15000;
+    }
+
+    return 0;
+  }, [currentView]);
+  const autoRefreshBlocked = useMemo(() => {
+    if (!isDocumentVisible || loading || Boolean(busyAction)) {
+      return true;
+    }
+
+    if (currentView === "overview" || currentView === "operations") {
+      return isLeadWorkspaceDirty;
+    }
+
+    if (currentView === "billing") {
+      return isBillingDraftDirty;
+    }
+
+    if (currentView === "purchases") {
+      return purchaseWorkspaceTab === "costing" ? isPurchaseCostingDraftDirty : isPurchaseEntryDraftDirty;
+    }
+
+    if (currentView === "inventory") {
+      return inventoryWorkspaceTab === "new" ? isInventoryDraftDirty : false;
+    }
+
+    if (currentView === "complaints") {
+      return isComplaintDraftDirty || isSavingComplaint;
+    }
+
+    return false;
+  }, [
+    autoRefreshIntervalMs,
+    busyAction,
+    currentView,
+    inventoryWorkspaceTab,
+    isBillingDraftDirty,
+    isComplaintDraftDirty,
+    isDocumentVisible,
+    isInventoryDraftDirty,
+    isLeadWorkspaceDirty,
+    isPurchaseCostingDraftDirty,
+    isPurchaseEntryDraftDirty,
+    isSavingComplaint,
+    loading,
+    purchaseWorkspaceTab,
+  ]);
+  const autoRefreshStatusText = useMemo(() => {
+    if (autoRefreshState.view !== currentView || !autoRefreshState.at) {
+      return "";
+    }
+
+    const secondsAgo = Math.max(Math.round((Date.now() - autoRefreshState.at) / 1000), 0);
+    if (secondsAgo <= 10) {
+      return "Updated just now";
+    }
+
+    return `Updated ${secondsAgo}s ago`;
+  }, [autoRefreshState, currentView]);
   const selectedPurchaseSupplier = useMemo(
     () => safeSuppliers.find((supplier) => String(supplier.id) === String(purchaseForm.supplier_id || "")) || null,
     [safeSuppliers, purchaseForm.supplier_id]
@@ -2130,6 +2437,50 @@ export default function App() {
         .sort((left, right) => left.localeCompare(right)),
     [products, customProductCategories]
   );
+  const productCompanyOptions = useMemo(
+    () =>
+      [...new Set([...products.map((product) => normalizeText(product.company_name)).filter(Boolean), ...customCompanyOptions])]
+        .filter(Boolean)
+        .sort((left, right) => left.localeCompare(right)),
+    [products, customCompanyOptions]
+  );
+  const productSizeOptions = useMemo(
+    () =>
+      [...new Set([...products.map((product) => normalizeText(product.product_size || product.tile_size)).filter(Boolean), ...customProductSizeOptions])]
+        .filter(Boolean)
+        .sort((left, right) => left.localeCompare(right)),
+    [products, customProductSizeOptions]
+  );
+  const productFinishOptions = useMemo(
+    () =>
+      [...new Set([...defaultProductFinishes, ...products.map((product) => normalizeText(product.finish)).filter(Boolean), ...customFinishOptions])]
+        .filter(Boolean)
+        .sort((left, right) => left.localeCompare(right)),
+    [products, customFinishOptions]
+  );
+  const similarProductMatch = useMemo(() => {
+    const signature = buildNormalizedProductSignature(productForm);
+
+    if (!signature.name || !signature.company_name || !signature.product_size || !signature.finish) {
+      return null;
+    }
+
+    return (
+      products.find((product) => {
+        if (editingProductId && Number(product.id) === Number(editingProductId)) {
+          return false;
+        }
+
+        const currentSignature = buildNormalizedProductSignature(product);
+        return (
+          currentSignature.name === signature.name &&
+          currentSignature.company_name === signature.company_name &&
+          currentSignature.product_size === signature.product_size &&
+          currentSignature.finish === signature.finish
+        );
+      }) || null
+    );
+  }, [editingProductId, productForm, products]);
   const derivedWeightPerUnit = useMemo(() => {
     const piecesPerBox = Number(productForm.pieces_per_box || 0);
     const weightPerBox = Number(productForm.weight_per_box || 0);
@@ -2163,6 +2514,10 @@ export default function App() {
       weight_per_unit: nextWeightValue,
     }));
   }, [derivedWeightPerUnit, productForm.weight_per_unit]);
+
+  useEffect(() => {
+    setProductDuplicateOverride(false);
+  }, [productForm.name, productForm.company_name, productForm.product_size, productForm.tile_size, productForm.finish, editingProductId]);
 
   const filteredProjects = useMemo(
     () =>
@@ -2639,13 +2994,16 @@ export default function App() {
   }
 
   async function loadDashboard(options = {}) {
-    const { signal, forceView } = options;
+    const { signal, forceView, silent = false } = options;
     const view = forceView || currentView;
     const requestId = dashboardLoadRef.current + 1;
     dashboardLoadRef.current = requestId;
+    let didLoad = false;
 
-    setLoading(true);
-    setError("");
+    if (!silent) {
+      setLoading(true);
+      setError("");
+    }
 
     try {
       const requestOptions = createRequestOptions(signal);
@@ -2848,15 +3206,18 @@ export default function App() {
       } else if (view === "team") {
         await loadUsersForView(view, signal);
       }
+      didLoad = true;
     } catch (requestError) {
-      if (!isAbortLikeError(requestError)) {
+      if (!silent && !isAbortLikeError(requestError)) {
         setError(requestError.message);
       }
     } finally {
-      if (dashboardLoadRef.current === requestId) {
+      if (!silent && dashboardLoadRef.current === requestId) {
         setLoading(false);
       }
     }
+
+    return didLoad;
   }
 
   useEffect(() => {
@@ -2905,6 +3266,57 @@ export default function App() {
     loadLeadDetails(selectedLead.id, { signal: controller.signal });
     return () => controller.abort();
   }, [token, currentView, selectedLead?.id]);
+
+  useEffect(() => {
+    if (!token || !user || !autoRefreshIntervalMs) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const intervalId = window.setInterval(async () => {
+      if (cancelled || document.visibilityState !== "visible" || isInteractiveElementActive() || autoRefreshBlocked) {
+        return;
+      }
+
+      const controller = new AbortController();
+      const loaded = await loadDashboard({ signal: controller.signal, forceView: currentView, silent: true });
+
+      if (loaded && leadDrivenViews.has(currentView) && selectedLead?.id && !isLeadWorkspaceDirty) {
+        await loadLeadDetails(selectedLead.id, { signal: controller.signal });
+      }
+
+      if (!cancelled && loaded) {
+        setAutoRefreshState({ view: currentView, at: Date.now() });
+      }
+    }, autoRefreshIntervalMs);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [
+    autoRefreshBlocked,
+    autoRefreshIntervalMs,
+    currentView,
+    isLeadWorkspaceDirty,
+    listLimits,
+    purchaseSearch,
+    purchaseFromFilter,
+    purchaseToFilter,
+    purchasePaymentFilter,
+    purchaseLotSearch,
+    purchaseLotStatusFilter,
+    billingSearch,
+    billingStatusFilter,
+    billingPaymentFilter,
+    billingFromFilter,
+    billingToFilter,
+    dailyReportDate,
+    selectedLead?.id,
+    token,
+    user?.id,
+  ]);
 
   useEffect(() => {
     if (selectedLead) {
@@ -3266,21 +3678,59 @@ export default function App() {
           : [...current, normalizeText(productForm.category)]
       );
     }
+    if (isAddingCustomCompany && normalizeText(productForm.company_name)) {
+      setCustomCompanyOptions((current) =>
+        current.includes(normalizeText(productForm.company_name))
+          ? current
+          : [...current, normalizeText(productForm.company_name)]
+      );
+    }
+    if (isAddingCustomProductSize && normalizeText(productForm.product_size || productForm.tile_size)) {
+      setCustomProductSizeOptions((current) =>
+        current.includes(normalizeText(productForm.product_size || productForm.tile_size))
+          ? current
+          : [...current, normalizeText(productForm.product_size || productForm.tile_size)]
+      );
+    }
+    if (isAddingCustomFinish && normalizeText(productForm.finish)) {
+      setCustomFinishOptions((current) =>
+        current.includes(normalizeText(productForm.finish))
+          ? current
+          : [...current, normalizeText(productForm.finish)]
+      );
+    }
     const validationError = validateProductForm(productForm);
     if (validationError) {
       setError(validationError);
       return;
     }
 
+    if (similarProductMatch && !productDuplicateOverride) {
+      setError("Similar product already exists. Review the existing record or continue anyway.");
+      return;
+    }
+
     await runBusyAction("save-product", async () => {
-      if (editingProductId) {
-        await api.updateProduct(editingProductId, normalizeProductPayload(productForm));
-      } else {
-        await api.createProduct(normalizeProductPayload(productForm));
+      try {
+        if (editingProductId) {
+          await api.updateProduct(editingProductId, normalizeProductPayload(productForm));
+        } else {
+          await api.createProduct(normalizeProductPayload(productForm));
+        }
+      } catch (saveError) {
+        if (saveError?.status === 409 && saveError?.data?.existing_product) {
+          setError(saveError.data.message || "Similar product already exists.");
+          throw saveError;
+        }
+        throw saveError;
       }
       setProductForm(emptyProduct);
       setEditingProductId(null);
       setIsAddingCustomProductCategory(false);
+      setIsAddingCustomCompany(false);
+      setIsAddingCustomProductSize(false);
+      setIsAddingCustomFinish(false);
+      setProductDuplicateOverride(false);
       await loadDashboard();
     }, editingProductId ? "Inventory item updated." : "Inventory item saved.");
   }
@@ -4319,6 +4769,7 @@ export default function App() {
 
   function handleBillingInventoryProductChange(index, productIdValue) {
     const product = billingReferenceOptions.products.find((item) => item.id === Number(productIdValue || 0)) || null;
+    const effectiveTodayRate = product ? getProductTodaySellingRate(product) : 0;
     setInvoiceForm((current) => {
       const normalized = clearSystemDiscountFromInvoice(current);
       return {
@@ -4339,16 +4790,20 @@ export default function App() {
                       : "tiles",
               unit: product?.unit || item.unit || "pcs",
               suggested_rate:
-                product?.suggested_selling_rate != null && product.suggested_selling_rate !== ""
-                  ? String(product.suggested_selling_rate)
+                effectiveTodayRate > 0
+                  ? String(effectiveTodayRate)
+                  : product?.suggested_selling_rate != null && product.suggested_selling_rate !== ""
+                    ? String(product.suggested_selling_rate)
                   : item.suggested_rate,
               minimum_allowed_rate:
                 product?.minimum_allowed_rate != null && product.minimum_allowed_rate !== ""
                   ? String(product.minimum_allowed_rate)
                   : item.minimum_allowed_rate,
               rate:
-                product?.suggested_selling_rate != null && product.suggested_selling_rate !== ""
-                  ? String(product.suggested_selling_rate)
+                effectiveTodayRate > 0
+                  ? String(effectiveTodayRate)
+                  : product?.suggested_selling_rate != null && product.suggested_selling_rate !== ""
+                    ? String(product.suggested_selling_rate)
                   : product?.price_per_sqft != null && product.price_per_sqft !== ""
                     ? String(product.price_per_sqft)
                   : item.rate,
@@ -5042,6 +5497,10 @@ export default function App() {
         setEditingProductId(null);
         setProductForm(emptyProduct);
         setIsAddingCustomProductCategory(false);
+        setIsAddingCustomCompany(false);
+        setIsAddingCustomProductSize(false);
+        setIsAddingCustomFinish(false);
+        setProductDuplicateOverride(false);
       }
       await loadDashboard();
     }, "Inventory item deleted.");
@@ -5274,7 +5733,12 @@ export default function App() {
 
   function startEditingProduct(product) {
     setEditingProductId(product.id);
+    setInventoryWorkspaceTab("new");
     setIsAddingCustomProductCategory(false);
+    setIsAddingCustomCompany(false);
+    setIsAddingCustomProductSize(false);
+    setIsAddingCustomFinish(false);
+    setProductDuplicateOverride(false);
     setProductForm({
       name: product.name,
       company_name: product.company_name || "",
@@ -5292,18 +5756,41 @@ export default function App() {
       stock_sqft: product.stock_sqft || "",
       purchase_rate: product.purchase_rate || "",
       price_per_sqft: product.price_per_sqft || "",
+      predefined_rate: product.predefined_rate || "",
+      today_selling_rate: product.today_selling_rate || "",
+      daily_up_limit_percent: product.daily_up_limit_percent || "2",
+      daily_down_limit_percent: product.daily_down_limit_percent || "1",
       last_purchase_rate: product.last_purchase_rate || "",
       landed_cost_per_unit: product.landed_cost_per_unit || "",
       minimum_allowed_rate: product.minimum_allowed_rate || "",
       suggested_selling_rate: product.suggested_selling_rate || "",
+      operator_discount_cap: product.operator_discount_cap || "",
+      manager_discount_cap: product.manager_discount_cap || "",
+      owner_discount_cap: product.owner_discount_cap || "",
       safety_margin_percent: product.safety_margin_percent || "",
       growth_margin_percent: product.growth_margin_percent || "",
+      quotation_validity_days: product.quotation_validity_days || "0",
       pricing_lock: Boolean(product.pricing_lock),
       status: product.status || "active",
     });
     if (product.category && !defaultProductCategories.includes(product.category)) {
       setCustomProductCategories((current) => (current.includes(product.category) ? current : [...current, product.category]));
-      setIsAddingCustomProductCategory(true);
+    }
+    if (product.company_name) {
+      setCustomCompanyOptions((current) =>
+        current.includes(product.company_name) ? current : [...current, product.company_name]
+      );
+    }
+    if (product.product_size || product.tile_size) {
+      const sizeValue = product.product_size || product.tile_size;
+      setCustomProductSizeOptions((current) =>
+        current.includes(sizeValue) ? current : [...current, sizeValue]
+      );
+    }
+    if (product.finish && !defaultProductFinishes.includes(product.finish)) {
+      setCustomFinishOptions((current) =>
+        current.includes(product.finish) ? current : [...current, product.finish]
+      );
     }
     setCurrentView("inventory");
   }
@@ -5362,6 +5849,7 @@ export default function App() {
   }
 
   function addInventoryProductToQuote(product) {
+    const quotationRate = getProductTodaySellingRate(product);
     setQuotationForm((current) => ({
       ...current,
       items: [
@@ -5371,7 +5859,7 @@ export default function App() {
           product_name: product.name,
           tile_size: product.tile_size || "",
           quantity_sqft: "",
-          unit_price: product.price_per_sqft || "",
+          unit_price: quotationRate || product.price_per_sqft || "",
         },
       ],
     }));
@@ -5483,6 +5971,10 @@ export default function App() {
     setProductForm(emptyProduct);
     setEditingProductId(null);
     setIsAddingCustomProductCategory(false);
+    setIsAddingCustomCompany(false);
+    setIsAddingCustomProductSize(false);
+    setIsAddingCustomFinish(false);
+    setProductDuplicateOverride(false);
     setPlumberForm(emptyPlumber);
     setEditingPlumberId(null);
     setPlumbingJobForm(emptyPlumbingJob);
@@ -5776,6 +6268,7 @@ export default function App() {
             <p className="eyebrow">Active Module</p>
             <h2>{activeViewMeta.title}</h2>
             <p className="muted">{activeViewMeta.description}</p>
+            {autoRefreshStatusText ? <p className="muted auto-refresh-note">{autoRefreshStatusText}</p> : null}
             {activeViewMeta.audience ? (
               <span className="audience-tag">{activeViewMeta.audience}</span>
             ) : null}
@@ -5805,6 +6298,7 @@ export default function App() {
           <div>
             <h2>{activeViewMeta.title}</h2>
             <p className="muted">{activeViewMeta.description}</p>
+            {autoRefreshStatusText ? <p className="muted auto-refresh-note">{autoRefreshStatusText}</p> : null}
           </div>
           <div className="page-header-actions">
             {activeViewMeta.audience ? (
@@ -7891,320 +8385,561 @@ export default function App() {
           </div>
 
           {inventoryWorkspaceTab === "new" ? (
-          <section className="panel">
+          <section className="panel product-master-panel">
             <div className="section-head">
               <h2>Product master</h2>
               <span>Create and maintain product foundation fields</span>
             </div>
-            <form className="form-grid" onSubmit={handleSaveProduct}>
-              <div className="form-section full-span">
-                <span className="form-section-title">Identity</span>
-                <p className="muted product-form-note">
-                  Required now: Product name, business unit, unit, and category. Company, size, and packaging can be completed as stock data becomes available.
-                </p>
-                <div className="form-grid">
-                  <div className="form-field">
-                    <label>
-                      Product name <span className="required-marker">*</span>
-                    </label>
-                    <input
-                      placeholder="Product name"
-                      value={productForm.name}
-                      onChange={(event) => setProductForm({ ...productForm, name: event.target.value })}
-                    />
-                  </div>
-                  <div className="form-field">
-                    <label>Company name</label>
-                    <input
-                      placeholder="Company name"
-                      value={productForm.company_name}
-                      onChange={(event) => setProductForm({ ...productForm, company_name: event.target.value })}
-                    />
-                  </div>
-                  <div className="form-field">
-                    <label>Design code</label>
-                    <input
-                      placeholder="Design code"
-                      value={productForm.design_code}
-                      onChange={(event) =>
-                        setProductForm({ ...productForm, design_code: event.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="form-field">
-                    <label>
-                      Business unit <span className="required-marker">*</span>
-                    </label>
-                    <select
-                      value={productForm.business_unit}
-                      onChange={(event) =>
-                        setProductForm({ ...productForm, business_unit: event.target.value })
-                      }
-                    >
-                      <option value="tiles">Tiles</option>
-                      <option value="plumbing">Plumbing</option>
-                      <option value="both">Tiles + Plumbing</option>
-                    </select>
-                  </div>
-                  <div className="form-field">
-                    <label>
-                      Category <span className="required-marker">*</span>
-                    </label>
-                    <div className="inline-add-row">
-                      <select
-                        value={isAddingCustomProductCategory ? "__custom__" : productForm.category}
-                        onChange={(event) => {
-                          if (event.target.value === "__custom__") {
-                            setIsAddingCustomProductCategory(true);
-                            setProductForm({ ...productForm, category: "" });
-                            return;
-                          }
-
-                          setIsAddingCustomProductCategory(false);
-                          setProductForm({ ...productForm, category: event.target.value });
-                        }}
-                      >
-                        {productCategoryOptions.map((category) => (
-                          <option key={category} value={category}>
-                            {category}
-                          </option>
-                        ))}
-                        <option value="__custom__">+ Add Category</option>
-                      </select>
+            <form className="product-master-form" onSubmit={handleSaveProduct}>
+              <div className="form-section full-span product-master-section">
+                <span className="form-section-title">Basic product information</span>
+                <div className="product-master-table">
+                  <div className="product-master-row">
+                    <div className="form-field">
+                      <label>
+                        Product name <span className="required-marker">*</span>
+                      </label>
+                      <input
+                        placeholder="Product name"
+                        value={productForm.name}
+                        onChange={(event) => setProductForm({ ...productForm, name: event.target.value })}
+                      />
                     </div>
-                    {isAddingCustomProductCategory ? (
-                      <>
-                        <input
-                          placeholder="New category name"
-                          value={productForm.category}
-                          onChange={(event) => setProductForm({ ...productForm, category: event.target.value })}
-                          onBlur={(event) => {
-                            const value = normalizeText(event.target.value);
-                            if (!value) {
+                    <div className="form-field">
+                      <label>
+                        Company <span className="required-marker">*</span>
+                      </label>
+                      <div className="inline-add-row">
+                        <select
+                          value={isAddingCustomCompany ? "__custom__" : normalizeText(productForm.company_name)}
+                          onChange={(event) => {
+                            if (event.target.value === "__custom__") {
+                              setIsAddingCustomCompany(true);
+                              setProductForm({ ...productForm, company_name: "" });
                               return;
                             }
-                            setCustomProductCategories((current) => (current.includes(value) ? current : [...current, value]));
+                            setIsAddingCustomCompany(false);
+                            setProductForm({ ...productForm, company_name: event.target.value });
                           }}
-                        />
-                        <span className="input-helper">Quick custom category for this session.</span>
-                      </>
-                    ) : null}
+                        >
+                          <option value="">Select company</option>
+                          {productCompanyOptions.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                          <option value="__custom__">+ Add</option>
+                        </select>
+                        <button
+                          type="button"
+                          className="secondary inline-add-button"
+                          onClick={() => {
+                            setIsAddingCustomCompany(true);
+                            setProductForm({ ...productForm, company_name: "" });
+                          }}
+                        >
+                          + Add
+                        </button>
+                      </div>
+                      {isAddingCustomCompany ? (
+                        <>
+                          <input
+                            placeholder="New company name"
+                            value={productForm.company_name}
+                            onChange={(event) => setProductForm({ ...productForm, company_name: event.target.value })}
+                            onBlur={(event) => {
+                              const value = normalizeText(event.target.value);
+                              if (!value) {
+                                return;
+                              }
+                              setCustomCompanyOptions((current) => (current.includes(value) ? current : [...current, value]));
+                            }}
+                          />
+                          <span className="input-helper">Quick add for this session.</span>
+                        </>
+                      ) : null}
+                    </div>
+                    <div className="form-field">
+                      <label>
+                        Product size <span className="required-marker">*</span>
+                      </label>
+                      <div className="inline-add-row">
+                        <select
+                          value={isAddingCustomProductSize ? "__custom__" : normalizeText(productForm.product_size || productForm.tile_size)}
+                          onChange={(event) => {
+                            if (event.target.value === "__custom__") {
+                              setIsAddingCustomProductSize(true);
+                              setProductForm({ ...productForm, product_size: "", tile_size: "" });
+                              return;
+                            }
+                            setIsAddingCustomProductSize(false);
+                            setProductForm({ ...productForm, product_size: event.target.value, tile_size: event.target.value });
+                          }}
+                        >
+                          <option value="">Select size</option>
+                          {productSizeOptions.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                          <option value="__custom__">+ Add</option>
+                        </select>
+                        <button
+                          type="button"
+                          className="secondary inline-add-button"
+                          onClick={() => {
+                            setIsAddingCustomProductSize(true);
+                            setProductForm({ ...productForm, product_size: "", tile_size: "" });
+                          }}
+                        >
+                          + Add
+                        </button>
+                      </div>
+                      {isAddingCustomProductSize ? (
+                        <>
+                          <input
+                            placeholder="New size"
+                            value={productForm.product_size}
+                            onChange={(event) =>
+                              setProductForm({
+                                ...productForm,
+                                product_size: event.target.value,
+                                tile_size: event.target.value,
+                              })
+                            }
+                            onBlur={(event) => {
+                              const value = normalizeText(event.target.value);
+                              if (!value) {
+                                return;
+                              }
+                              setCustomProductSizeOptions((current) => (current.includes(value) ? current : [...current, value]));
+                            }}
+                          />
+                          <span className="input-helper">Quick add for this session.</span>
+                        </>
+                      ) : null}
+                    </div>
+                    <div className="form-field">
+                      <label>Finish</label>
+                      <div className="inline-add-row">
+                        <select
+                          value={isAddingCustomFinish ? "__custom__" : normalizeText(productForm.finish)}
+                          onChange={(event) => {
+                            if (event.target.value === "__custom__") {
+                              setIsAddingCustomFinish(true);
+                              setProductForm({ ...productForm, finish: "" });
+                              return;
+                            }
+                            setIsAddingCustomFinish(false);
+                            setProductForm({ ...productForm, finish: event.target.value });
+                          }}
+                        >
+                          <option value="">Select finish</option>
+                          {productFinishOptions.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                          <option value="__custom__">+ Add</option>
+                        </select>
+                        <button
+                          type="button"
+                          className="secondary inline-add-button"
+                          onClick={() => {
+                            setIsAddingCustomFinish(true);
+                            setProductForm({ ...productForm, finish: "" });
+                          }}
+                        >
+                          + Add
+                        </button>
+                      </div>
+                      {isAddingCustomFinish ? (
+                        <>
+                          <input
+                            placeholder="New finish"
+                            value={productForm.finish}
+                            onChange={(event) => setProductForm({ ...productForm, finish: event.target.value })}
+                            onBlur={(event) => {
+                              const value = normalizeText(event.target.value);
+                              if (!value) {
+                                return;
+                              }
+                              setCustomFinishOptions((current) => (current.includes(value) ? current : [...current, value]));
+                            }}
+                          />
+                          <span className="input-helper">Quick add for this session.</span>
+                        </>
+                      ) : null}
+                    </div>
                   </div>
-                  <div className="form-field">
-                    <label>Product size</label>
-                    <input
-                      placeholder="Product size"
-                      value={productForm.product_size}
-                      onChange={(event) =>
-                        setProductForm({
-                          ...productForm,
-                          product_size: event.target.value,
-                          tile_size: event.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="form-field">
-                    <label>Finish</label>
-                    <input
-                      placeholder="Finish"
-                      value={productForm.finish}
-                      onChange={(event) => setProductForm({ ...productForm, finish: event.target.value })}
-                    />
-                  </div>
-                  <div className="form-field">
-                    <label>
-                      Unit <span className="required-marker">*</span>
-                    </label>
-                    <select
-                      value={productForm.unit}
-                      onChange={(event) => setProductForm({ ...productForm, unit: event.target.value })}
-                    >
-                      <option value="box">Box</option>
-                      <option value="sqft">Sqft</option>
-                      <option value="pcs">Pieces</option>
-                      <option value="kg">Kg</option>
-                    </select>
+
+                  <div className="product-master-row">
+                    <div className="form-field">
+                      <label>
+                        Category <span className="required-marker">*</span>
+                      </label>
+                      <div className="inline-add-row">
+                        <select
+                          value={isAddingCustomProductCategory ? "__custom__" : productForm.category}
+                          onChange={(event) => {
+                            if (event.target.value === "__custom__") {
+                              setIsAddingCustomProductCategory(true);
+                              setProductForm({ ...productForm, category: "" });
+                              return;
+                            }
+
+                            setIsAddingCustomProductCategory(false);
+                            setProductForm({ ...productForm, category: event.target.value });
+                          }}
+                        >
+                          {productCategoryOptions.map((category) => (
+                            <option key={category} value={category}>
+                              {category}
+                            </option>
+                          ))}
+                          <option value="__custom__">+ Add Category</option>
+                        </select>
+                      </div>
+                      {isAddingCustomProductCategory ? (
+                        <>
+                          <input
+                            placeholder="New category name"
+                            value={productForm.category}
+                            onChange={(event) => setProductForm({ ...productForm, category: event.target.value })}
+                            onBlur={(event) => {
+                              const value = normalizeText(event.target.value);
+                              if (!value) {
+                                return;
+                              }
+                              setCustomProductCategories((current) => (current.includes(value) ? current : [...current, value]));
+                            }}
+                          />
+                          <span className="input-helper">Quick custom category for this session.</span>
+                        </>
+                      ) : null}
+                    </div>
+                    <div className="form-field">
+                      <label>
+                        Business unit <span className="required-marker">*</span>
+                      </label>
+                      <select
+                        value={productForm.business_unit}
+                        onChange={(event) =>
+                          setProductForm({ ...productForm, business_unit: event.target.value })
+                        }
+                      >
+                        <option value="tiles">Tiles</option>
+                        <option value="plumbing">Plumbing</option>
+                        <option value="both">Tiles + Plumbing</option>
+                      </select>
+                    </div>
+                    <div className="form-field">
+                      <label>
+                        Unit <span className="required-marker">*</span>
+                      </label>
+                      <select
+                        value={productForm.unit}
+                        onChange={(event) => setProductForm({ ...productForm, unit: event.target.value })}
+                      >
+                        <option value="box">Box</option>
+                        <option value="sqft">Sqft</option>
+                        <option value="pcs">Pieces</option>
+                        <option value="kg">Kg</option>
+                      </select>
+                    </div>
+                    <div className="form-field">
+                      <label>Design code</label>
+                      <input
+                        placeholder="Design code"
+                        value={productForm.design_code}
+                        onChange={(event) =>
+                          setProductForm({ ...productForm, design_code: event.target.value })
+                        }
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div className="form-section full-span">
-                <span className="form-section-title">Packaging and weight</span>
-                <p className="muted product-form-note">
-                  Recommended for costing later: pieces per box, sqft per box, and weight per box.
-                </p>
-                <div className="form-grid">
-                  <div className="form-field">
-                    <label>Pieces per box</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="Pieces per box"
-                      value={productForm.pieces_per_box}
-                      onChange={(event) => setProductForm({ ...productForm, pieces_per_box: event.target.value })}
-                    />
+              {similarProductMatch && !productDuplicateOverride ? (
+                <div className="product-duplicate-warning full-span">
+                  <strong>Similar product already exists:</strong>
+                  <span>
+                    {similarProductMatch.name} | {similarProductMatch.company_name || "Company missing"} | {similarProductMatch.product_size || similarProductMatch.tile_size || "Size missing"} | {similarProductMatch.finish || "Finish missing"}
+                  </span>
+                  <div className="lead-actions">
+                    <button type="button" className="secondary" onClick={() => startEditingProduct(similarProductMatch)}>
+                      View Existing
+                    </button>
+                    <button type="button" className="secondary" onClick={() => setProductDuplicateOverride(true)}>
+                      Continue Anyway
+                    </button>
                   </div>
-                  <div className="form-field">
-                    <label>Sqft per box</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="Sqft per box"
-                      value={productForm.sqft_per_box}
-                      onChange={(event) => setProductForm({ ...productForm, sqft_per_box: event.target.value })}
-                    />
+                </div>
+              ) : null}
+
+              <div className="form-section full-span product-master-section">
+                <span className="form-section-title">Packaging information</span>
+                <div className="product-master-table">
+                  <div className="product-master-row">
+                    <div className="form-field">
+                      <label>Pieces/Box</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Pieces per box"
+                        value={productForm.pieces_per_box}
+                        onChange={(event) => setProductForm({ ...productForm, pieces_per_box: event.target.value })}
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label>Sqft/Box</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Sqft per box"
+                        value={productForm.sqft_per_box}
+                        onChange={(event) => setProductForm({ ...productForm, sqft_per_box: event.target.value })}
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label>Weight/Box</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Weight per box"
+                        value={productForm.weight_per_box}
+                        onChange={(event) => setProductForm({ ...productForm, weight_per_box: event.target.value })}
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label>Weight/Unit (auto)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.0001"
+                        placeholder="Auto after pieces/box and weight/box"
+                        value={productForm.weight_per_unit}
+                        readOnly
+                      />
+                      <span className="input-helper">
+                        {derivedWeightPerUnit != null
+                          ? `Auto from ${productForm.weight_per_box || 0} / ${productForm.pieces_per_box || 0}`
+                          : "Auto after pieces/box and weight/box"}
+                      </span>
+                    </div>
                   </div>
-                  <div className="form-field">
-                    <label>Weight per box</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="Weight per box"
-                      value={productForm.weight_per_box}
-                      onChange={(event) => setProductForm({ ...productForm, weight_per_box: event.target.value })}
-                    />
-                  </div>
-                  <div className="form-field">
-                    <label>Weight per unit (auto)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.0001"
-                      placeholder="Auto after pieces/box and weight/box"
-                      value={productForm.weight_per_unit}
-                      readOnly
-                    />
-                    <span className="input-helper">
-                      {derivedWeightPerUnit != null
-                        ? `Auto from ${productForm.weight_per_box || 0} / ${productForm.pieces_per_box || 0}`
-                        : "Auto after pieces/box and weight/box"}
-                    </span>
-                  </div>
-                  <div className="form-field">
-                    <label>Sqft per unit (helper)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.0001"
-                      placeholder="Auto after sqft/box and pieces/box"
-                      value={derivedSqftPerUnit != null ? String(derivedSqftPerUnit) : ""}
-                      readOnly
-                    />
-                    <span className="input-helper">
-                      {derivedSqftPerUnit != null
-                        ? `Auto from ${productForm.sqft_per_box || 0} / ${productForm.pieces_per_box || 0}`
-                        : "Auto after sqft/box and pieces/box"}
-                    </span>
+                  <div className="product-master-row product-master-row-helper">
+                    <div className="form-field product-master-wide-field">
+                      <label>Sqft/Unit (auto helper)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.0001"
+                        placeholder="Auto after sqft/box and pieces/box"
+                        value={derivedSqftPerUnit != null ? String(derivedSqftPerUnit) : ""}
+                        readOnly
+                      />
+                      <span className="input-helper">
+                        {derivedSqftPerUnit != null
+                          ? `Auto from ${productForm.sqft_per_box || 0} / ${productForm.pieces_per_box || 0}`
+                          : "Auto after sqft/box and pieces/box"}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div className="form-section full-span">
-                <span className="form-section-title">Owner Pricing Fields</span>
+              <div className="form-section full-span product-master-section">
+                <span className="form-section-title">Owner Pricing Optional</span>
                 <p className="muted product-form-note">
                   Pricing can be completed later by Owner/Admin after purchase costing.
                 </p>
-                <div className="form-grid">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="Purchase rate"
-                    value={productForm.purchase_rate}
-                    onChange={(event) => setProductForm({ ...productForm, purchase_rate: event.target.value })}
-                  />
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="Last purchase rate"
-                    value={productForm.last_purchase_rate}
-                    onChange={(event) => setProductForm({ ...productForm, last_purchase_rate: event.target.value })}
-                  />
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="Landed cost / unit"
-                    value={productForm.landed_cost_per_unit}
-                    onChange={(event) => setProductForm({ ...productForm, landed_cost_per_unit: event.target.value })}
-                  />
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="Minimum allowed rate"
-                    value={productForm.minimum_allowed_rate}
-                    onChange={(event) => setProductForm({ ...productForm, minimum_allowed_rate: event.target.value })}
-                  />
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="Suggested selling rate"
-                    value={productForm.suggested_selling_rate}
-                    onChange={(event) => setProductForm({ ...productForm, suggested_selling_rate: event.target.value })}
-                  />
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="Selling rate"
-                    value={productForm.price_per_sqft}
-                    onChange={(event) =>
-                      setProductForm({ ...productForm, price_per_sqft: event.target.value })
-                    }
-                  />
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="Safety margin %"
-                    value={productForm.safety_margin_percent}
-                    onChange={(event) => setProductForm({ ...productForm, safety_margin_percent: event.target.value })}
-                  />
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="Growth margin %"
-                    value={productForm.growth_margin_percent}
-                    onChange={(event) => setProductForm({ ...productForm, growth_margin_percent: event.target.value })}
-                  />
+                <div className="product-master-table">
+                  <div className="product-master-row">
+                    <div className="form-field">
+                      <label>Purchase</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Purchase rate"
+                        value={productForm.purchase_rate}
+                        onChange={(event) => setProductForm({ ...productForm, purchase_rate: event.target.value })}
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label>Last Purchase</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Last purchase rate"
+                        value={productForm.last_purchase_rate}
+                        onChange={(event) => setProductForm({ ...productForm, last_purchase_rate: event.target.value })}
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label>Landed Cost</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Landed cost / unit"
+                        value={productForm.landed_cost_per_unit}
+                        onChange={(event) => setProductForm({ ...productForm, landed_cost_per_unit: event.target.value })}
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label>Selling Rate</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Selling rate"
+                        value={productForm.price_per_sqft}
+                        onChange={(event) =>
+                          setProductForm({ ...productForm, price_per_sqft: event.target.value })
+                        }
+                      />
+                    </div>
+                  </div>
+                  <div className="product-master-row">
+                    <div className="form-field">
+                      <label>Minimum Rate</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Minimum allowed rate"
+                        value={productForm.minimum_allowed_rate}
+                        onChange={(event) => setProductForm({ ...productForm, minimum_allowed_rate: event.target.value })}
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label>Predefined Rate</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Predefined rate"
+                        value={productForm.predefined_rate}
+                        onChange={(event) => setProductForm({ ...productForm, predefined_rate: event.target.value })}
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label>Today Rate</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Today selling rate"
+                        value={productForm.today_selling_rate}
+                        onChange={(event) => setProductForm({ ...productForm, today_selling_rate: event.target.value })}
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label>Safety Margin</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Safety margin %"
+                        value={productForm.safety_margin_percent}
+                        onChange={(event) => setProductForm({ ...productForm, safety_margin_percent: event.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="product-master-row">
+                    <div className="form-field">
+                      <label>Suggested Selling Rate</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Suggested selling rate"
+                        value={productForm.suggested_selling_rate}
+                        onChange={(event) => setProductForm({ ...productForm, suggested_selling_rate: event.target.value })}
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label>Daily Up Limit %</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Daily up limit %"
+                        value={productForm.daily_up_limit_percent}
+                        onChange={(event) => setProductForm({ ...productForm, daily_up_limit_percent: event.target.value })}
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label>Daily Down Limit %</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Daily down limit %"
+                        value={productForm.daily_down_limit_percent}
+                        onChange={(event) => setProductForm({ ...productForm, daily_down_limit_percent: event.target.value })}
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label>Quotation Validity Days</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        placeholder="Quotation validity days"
+                        value={productForm.quotation_validity_days}
+                        onChange={(event) => setProductForm({ ...productForm, quotation_validity_days: event.target.value })}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="form-section full-span">
-                <span className="form-section-title">Stock and control</span>
-                <div className="form-grid">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="Stock quantity / sqft"
-                    value={productForm.stock_sqft}
-                    onChange={(event) => setProductForm({ ...productForm, stock_sqft: event.target.value })}
-                  />
-                  <select
-                    value={productForm.status}
-                    onChange={(event) => setProductForm({ ...productForm, status: event.target.value })}
-                  >
-                    <option value="active">Active</option>
-                    <option value="fast_moving">Fast Moving</option>
-                    <option value="dead_stock">Dead Stock</option>
-                  </select>
-                  <label className="checkbox-row">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(productForm.pricing_lock)}
-                      onChange={(event) => setProductForm({ ...productForm, pricing_lock: event.target.checked })}
-                    />
-                    <span>Pricing lock enabled</span>
-                  </label>
+              <div className="form-section full-span product-master-section">
+                <span className="form-section-title">Stock control</span>
+                <div className="product-master-table">
+                  <div className="product-master-row product-master-row-stock">
+                    <div className="form-field">
+                      <label>Current Stock</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Stock quantity / sqft"
+                        value={productForm.stock_sqft}
+                        onChange={(event) => setProductForm({ ...productForm, stock_sqft: event.target.value })}
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label>Status</label>
+                      <select
+                        value={productForm.status}
+                        onChange={(event) => setProductForm({ ...productForm, status: event.target.value })}
+                      >
+                        <option value="active">Active</option>
+                        <option value="fast_moving">Fast Moving</option>
+                        <option value="dead_stock">Dead Stock</option>
+                      </select>
+                    </div>
+                    <div className="form-field">
+                      <label>Pricing Lock</label>
+                      <label className="checkbox-row">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(productForm.pricing_lock)}
+                          onChange={(event) => setProductForm({ ...productForm, pricing_lock: event.target.checked })}
+                        />
+                        <span>Pricing lock enabled</span>
+                      </label>
+                    </div>
+                  </div>
                 </div>
               </div>
               <div className="lead-actions full-span">
@@ -8225,6 +8960,10 @@ export default function App() {
                       setEditingProductId(null);
                       setProductForm(emptyProduct);
                       setIsAddingCustomProductCategory(false);
+                      setIsAddingCustomCompany(false);
+                      setIsAddingCustomProductSize(false);
+                      setIsAddingCustomFinish(false);
+                      setProductDuplicateOverride(false);
                     }}
                   >
                     Cancel
@@ -9457,7 +10196,7 @@ function LeadDetailsPanelImpl({
                   <strong>{product.name}</strong>
                   <span>{product.tile_size || "Standard"}</span>
                   <small>
-                    Rs {product.price_per_sqft}/sqft | Stock {product.stock_sqft} sqft
+                    Rs {getProductTodaySellingRate(product) || product.price_per_sqft}/sqft | Stock {product.stock_sqft} sqft
                   </small>
                 </button>
               ))}
@@ -10051,12 +10790,20 @@ function normalizeProductPayload(product) {
     weight_per_unit: Number(product.weight_per_unit || 0),
     purchase_rate: Number(product.purchase_rate || 0),
     price_per_sqft: Number(product.price_per_sqft || 0),
+    predefined_rate: Number(product.predefined_rate || 0),
+    today_selling_rate: Number(product.today_selling_rate || 0),
+    daily_up_limit_percent: Number(product.daily_up_limit_percent || 2),
+    daily_down_limit_percent: Number(product.daily_down_limit_percent || 1),
     last_purchase_rate: Number(product.last_purchase_rate || 0),
     landed_cost_per_unit: Number(product.landed_cost_per_unit || 0),
     minimum_allowed_rate: Number(product.minimum_allowed_rate || 0),
     suggested_selling_rate: Number(product.suggested_selling_rate || 0),
+    operator_discount_cap: Number(product.operator_discount_cap || 0),
+    manager_discount_cap: Number(product.manager_discount_cap || 0),
+    owner_discount_cap: Number(product.owner_discount_cap || 0),
     safety_margin_percent: Number(product.safety_margin_percent || 0),
     growth_margin_percent: Number(product.growth_margin_percent || 0),
+    quotation_validity_days: Number(product.quotation_validity_days || 0),
     pricing_lock: Boolean(product.pricing_lock),
   };
 }
@@ -10519,7 +11266,7 @@ function buildVisitReminderMessage(lead) {
 }
 
 function buildQuotationWhatsAppMessage(lead, quotation) {
-  return `Namaste ${lead.name}, aapki ${describeBusinessFocus(lead)} quotation ready hai. Final amount Rs ${quotation.final_amount}. Agar aap confirm karna chahen to hum delivery aur payment planning bhi share kar denge.`;
+  return `Namaste ${lead.name}, aapki ${describeBusinessFocus(lead)} quotation ready hai. Final amount Rs ${quotation.final_amount}. Quotation valid only for today. Rates may change from next day. Agar aap confirm karna chahen to hum delivery aur payment planning bhi share kar denge.`;
 }
 
 function matchesBusinessUnitFilter(value, filter) {

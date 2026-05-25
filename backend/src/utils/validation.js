@@ -1340,7 +1340,7 @@ export function validateProductPayload(payload) {
   const company_name = normalizeOptionalString(payload.company_name);
   const design_code = normalizeOptionalString(payload.design_code);
   const business_unit = normalizeString(payload.business_unit || "tiles");
-  const category = normalizeOptionalString(payload.category || "flooring");
+  const category = normalizeOptionalString(payload.category || "Floor Tiles");
   const tile_size = normalizeOptionalString(payload.tile_size);
   const product_size = normalizeOptionalString(payload.product_size || tile_size);
   const unit = normalizeOptionalString(payload.unit || "pcs");
@@ -1348,16 +1348,24 @@ export function validateProductPayload(payload) {
   const stock_sqft = toInteger(payload.stock_sqft, 0);
   const price_per_sqft = toInteger(payload.price_per_sqft, 0);
   const purchase_rate = Number(payload.purchase_rate ?? 0);
+  const predefined_rate = Number(payload.predefined_rate ?? 0);
+  const today_selling_rate = Number(payload.today_selling_rate ?? 0);
+  const daily_up_limit_percent = Number(payload.daily_up_limit_percent ?? 2);
+  const daily_down_limit_percent = Number(payload.daily_down_limit_percent ?? 1);
   const last_purchase_rate = Number(payload.last_purchase_rate ?? purchase_rate ?? 0);
   const landed_cost_per_unit = Number(payload.landed_cost_per_unit ?? 0);
   const minimum_allowed_rate = Number(payload.minimum_allowed_rate ?? 0);
   const suggested_selling_rate = Number(payload.suggested_selling_rate ?? 0);
+  const operator_discount_cap = Number(payload.operator_discount_cap ?? 0);
+  const manager_discount_cap = Number(payload.manager_discount_cap ?? 0);
+  const owner_discount_cap = Number(payload.owner_discount_cap ?? 0);
   const pieces_per_box = Number(payload.pieces_per_box ?? 0);
   const sqft_per_box = Number(payload.sqft_per_box ?? 0);
   const weight_per_box = Number(payload.weight_per_box ?? 0);
   const weight_per_unit = Number(payload.weight_per_unit ?? 0);
   const safety_margin_percent = Number(payload.safety_margin_percent ?? 0);
   const growth_margin_percent = Number(payload.growth_margin_percent ?? 0);
+  const quotation_validity_days = Number(payload.quotation_validity_days ?? 0);
   const pricing_lock = Boolean(payload.pricing_lock);
   const status = normalizeString(payload.status || "active");
 
@@ -1369,29 +1377,45 @@ export function validateProductPayload(payload) {
     !Number.isFinite(stock_sqft) ||
     !Number.isFinite(price_per_sqft) ||
     !Number.isFinite(purchase_rate) ||
+    !Number.isFinite(predefined_rate) ||
+    !Number.isFinite(today_selling_rate) ||
+    !Number.isFinite(daily_up_limit_percent) ||
+    !Number.isFinite(daily_down_limit_percent) ||
     !Number.isFinite(last_purchase_rate) ||
     !Number.isFinite(landed_cost_per_unit) ||
     !Number.isFinite(minimum_allowed_rate) ||
     !Number.isFinite(suggested_selling_rate) ||
+    !Number.isFinite(operator_discount_cap) ||
+    !Number.isFinite(manager_discount_cap) ||
+    !Number.isFinite(owner_discount_cap) ||
     !Number.isFinite(pieces_per_box) ||
     !Number.isFinite(sqft_per_box) ||
     !Number.isFinite(weight_per_box) ||
     !Number.isFinite(weight_per_unit) ||
     !Number.isFinite(safety_margin_percent) ||
     !Number.isFinite(growth_margin_percent) ||
+    !Number.isFinite(quotation_validity_days) ||
     stock_sqft < 0 ||
     price_per_sqft < 0 ||
     purchase_rate < 0 ||
+    predefined_rate < 0 ||
+    today_selling_rate < 0 ||
+    daily_up_limit_percent < 0 ||
+    daily_down_limit_percent < 0 ||
     last_purchase_rate < 0 ||
     landed_cost_per_unit < 0 ||
     minimum_allowed_rate < 0 ||
     suggested_selling_rate < 0 ||
+    operator_discount_cap < 0 ||
+    manager_discount_cap < 0 ||
+    owner_discount_cap < 0 ||
     pieces_per_box < 0 ||
     sqft_per_box < 0 ||
     weight_per_box < 0 ||
     weight_per_unit < 0 ||
     safety_margin_percent < 0 ||
-    growth_margin_percent < 0
+    growth_margin_percent < 0 ||
+    quotation_validity_days < 0
   ) {
     return { ok: false, message: "Inventory values must be non-negative" };
   }
@@ -1423,12 +1447,20 @@ export function validateProductPayload(payload) {
       stock_sqft,
       purchase_rate,
       price_per_sqft,
+      predefined_rate,
+      today_selling_rate,
+      daily_up_limit_percent,
+      daily_down_limit_percent,
       last_purchase_rate,
       landed_cost_per_unit,
       minimum_allowed_rate,
       suggested_selling_rate,
+      operator_discount_cap,
+      manager_discount_cap,
+      owner_discount_cap,
       safety_margin_percent,
       growth_margin_percent,
+      quotation_validity_days,
       pricing_lock,
       status,
     },

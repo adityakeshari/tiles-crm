@@ -7,6 +7,35 @@ const router = express.Router();
 const DEFAULT_LIST_LIMIT = 100;
 const MAX_LIST_LIMIT = 300;
 
+function normalizeDuplicateMatchValue(value) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+async function findSimilarProduct(product, excludeId = null) {
+  const params = [
+    normalizeDuplicateMatchValue(product.name),
+    normalizeDuplicateMatchValue(product.company_name),
+    normalizeDuplicateMatchValue(product.product_size || product.tile_size),
+    normalizeDuplicateMatchValue(product.finish),
+  ];
+
+  let sql = `SELECT *
+    FROM products
+    WHERE LOWER(TRIM(COALESCE(name, ''))) = $1
+      AND LOWER(TRIM(COALESCE(company_name, ''))) = $2
+      AND LOWER(TRIM(COALESCE(NULLIF(product_size, ''), NULLIF(tile_size, ''), ''))) = $3
+      AND LOWER(TRIM(COALESCE(finish, ''))) = $4`;
+
+  if (excludeId != null) {
+    sql += " AND id <> $5";
+    params.push(excludeId);
+  }
+
+  sql += " ORDER BY id ASC LIMIT 1";
+  const result = await query(sql, params);
+  return result.rows[0] || null;
+}
+
 function parseListLimit(value, fallback = DEFAULT_LIST_LIMIT) {
   const parsed = Number.parseInt(value, 10);
 
@@ -73,15 +102,25 @@ router.post("/", requireRole("admin", "manager"), async (req, res) => {
   const product = validation.value;
 
   try {
+    const similarProduct = await findSimilarProduct(product);
+
+    if (similarProduct) {
+      return res.status(409).json({
+        message: "Similar product already exists.",
+        existing_product: similarProduct,
+      });
+    }
+
     const result = await query(
       `INSERT INTO products (
          name, company_name, design_code, business_unit, category, unit, tile_size, product_size, finish,
          pieces_per_box, sqft_per_box, weight_per_box, weight_per_unit, stock_sqft,
-         purchase_rate, price_per_sqft, last_purchase_rate, landed_cost_per_unit,
-         minimum_allowed_rate, suggested_selling_rate, safety_margin_percent, growth_margin_percent,
-         pricing_lock, status
+         purchase_rate, price_per_sqft, predefined_rate, today_selling_rate, daily_up_limit_percent, daily_down_limit_percent,
+         last_purchase_rate, landed_cost_per_unit, minimum_allowed_rate, suggested_selling_rate,
+         operator_discount_cap, manager_discount_cap, owner_discount_cap,
+         safety_margin_percent, growth_margin_percent, quotation_validity_days, pricing_lock, status
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
        RETURNING *`,
       [
         product.name,
@@ -100,12 +139,20 @@ router.post("/", requireRole("admin", "manager"), async (req, res) => {
         product.stock_sqft,
         product.purchase_rate,
         product.price_per_sqft,
+        product.predefined_rate,
+        product.today_selling_rate,
+        product.daily_up_limit_percent,
+        product.daily_down_limit_percent,
         product.last_purchase_rate,
         product.landed_cost_per_unit,
         product.minimum_allowed_rate,
         product.suggested_selling_rate,
+        product.operator_discount_cap,
+        product.manager_discount_cap,
+        product.owner_discount_cap,
         product.safety_margin_percent,
         product.growth_margin_percent,
+        product.quotation_validity_days,
         product.pricing_lock,
         product.status,
       ]
@@ -128,6 +175,15 @@ router.put("/:id", requireRole("admin", "manager"), async (req, res) => {
   const product = validation.value;
 
   try {
+    const similarProduct = await findSimilarProduct(product, Number(id));
+
+    if (similarProduct) {
+      return res.status(409).json({
+        message: "Similar product already exists.",
+        existing_product: similarProduct,
+      });
+    }
+
     const result = await query(
       `UPDATE products
        SET
@@ -147,15 +203,23 @@ router.put("/:id", requireRole("admin", "manager"), async (req, res) => {
         stock_sqft = $14,
         purchase_rate = $15,
         price_per_sqft = $16,
-        last_purchase_rate = $17,
-        landed_cost_per_unit = $18,
-        minimum_allowed_rate = $19,
-        suggested_selling_rate = $20,
-        safety_margin_percent = $21,
-        growth_margin_percent = $22,
-        pricing_lock = $23,
-        status = $24
-       WHERE id = $25
+        predefined_rate = $17,
+        today_selling_rate = $18,
+        daily_up_limit_percent = $19,
+        daily_down_limit_percent = $20,
+        last_purchase_rate = $21,
+        landed_cost_per_unit = $22,
+        minimum_allowed_rate = $23,
+        suggested_selling_rate = $24,
+        operator_discount_cap = $25,
+        manager_discount_cap = $26,
+        owner_discount_cap = $27,
+        safety_margin_percent = $28,
+        growth_margin_percent = $29,
+        quotation_validity_days = $30,
+        pricing_lock = $31,
+        status = $32
+       WHERE id = $33
        RETURNING *`,
       [
         product.name,
@@ -174,12 +238,20 @@ router.put("/:id", requireRole("admin", "manager"), async (req, res) => {
         product.stock_sqft,
         product.purchase_rate,
         product.price_per_sqft,
+        product.predefined_rate,
+        product.today_selling_rate,
+        product.daily_up_limit_percent,
+        product.daily_down_limit_percent,
         product.last_purchase_rate,
         product.landed_cost_per_unit,
         product.minimum_allowed_rate,
         product.suggested_selling_rate,
+        product.operator_discount_cap,
+        product.manager_discount_cap,
+        product.owner_discount_cap,
         product.safety_margin_percent,
         product.growth_margin_percent,
+        product.quotation_validity_days,
         product.pricing_lock,
         product.status,
         id,

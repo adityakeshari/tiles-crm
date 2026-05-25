@@ -24,6 +24,10 @@ function getRateTierLabel(quantityValue) {
   return "Qty 1-10 tier";
 }
 
+function clampNumber(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
 function InvoiceCard({
   invoice,
   selected,
@@ -354,6 +358,42 @@ export default function BillingSection(props) {
     return "normal";
   }
 
+  function getProductRateContext(product) {
+    const predefinedRate = Number(
+      product?.predefined_rate || product?.suggested_selling_rate || product?.price_per_sqft || product?.real_cost_per_unit || product?.landed_cost_per_unit || 0
+    );
+    const fallbackRate = Number(
+      product?.today_selling_rate || product?.suggested_selling_rate || product?.price_per_sqft || product?.real_cost_per_unit || product?.landed_cost_per_unit || 0
+    );
+    const upLimitPercent = Math.max(Number(product?.daily_up_limit_percent || 2), 0);
+    const downLimitPercent = Math.max(Number(product?.daily_down_limit_percent || 1), 0);
+    const todayRate =
+      predefinedRate > 0
+        ? Number(
+            clampNumber(
+              Number(product?.today_selling_rate || predefinedRate) > 0 ? Number(product?.today_selling_rate || predefinedRate) : predefinedRate,
+              predefinedRate * (1 - downLimitPercent / 100),
+              predefinedRate * (1 + upLimitPercent / 100)
+            ).toFixed(2)
+          )
+        : fallbackRate;
+    const minimumAllowedRate = Number(product?.minimum_allowed_rate || product?.real_cost_per_unit || product?.landed_cost_per_unit || todayRate || 0);
+    const realCostPerUnit = Number(product?.real_cost_per_unit || product?.landed_cost_per_unit || 0);
+    const operatorDiscountCap = Math.max(Number(product?.operator_discount_cap || 0), 0);
+    const managerDiscountCap = Math.max(Number(product?.manager_discount_cap || operatorDiscountCap), operatorDiscountCap);
+    const ownerDiscountCap = Math.max(Number(product?.owner_discount_cap || managerDiscountCap), managerDiscountCap);
+
+    return {
+      predefinedRate,
+      todayRate,
+      minimumAllowedRate,
+      realCostPerUnit,
+      operatorFloor: predefinedRate > 0 ? Number((predefinedRate * (1 - operatorDiscountCap / 100)).toFixed(2)) : 0,
+      managerFloor: predefinedRate > 0 ? Number((predefinedRate * (1 - managerDiscountCap / 100)).toFixed(2)) : 0,
+      ownerFloor: predefinedRate > 0 ? Number((predefinedRate * (1 - ownerDiscountCap / 100)).toFixed(2)) : 0,
+    };
+  }
+
   function getStrategyConfig(strategy) {
     switch (strategy) {
       case "premium":
@@ -411,7 +451,7 @@ export default function BillingSection(props) {
       return explicitSuggestedRate;
     }
 
-    const productRate = Number(product?.suggested_selling_rate || product?.price_per_sqft || product?.real_cost_per_unit || product?.landed_cost_per_unit || 0);
+    const productRate = getProductRateContext(product).todayRate;
     return productRate > 0 ? productRate : 0;
   }
 
@@ -423,7 +463,7 @@ export default function BillingSection(props) {
     }
 
     const product = getProductForItem(item);
-    return Number(product?.minimum_allowed_rate || product?.real_cost_per_unit || getSuggestedRate(item) || 0);
+    return getProductRateContext(product).minimumAllowedRate || getSuggestedRate(item) || 0;
   }
 
   function getOverheadCostRate(item) {
@@ -441,9 +481,11 @@ export default function BillingSection(props) {
   }
 
   function getItemApprovalMeta(item) {
+    const product = getProductForItem(item);
+    const rateContext = getProductRateContext(product);
     const suggestedRate = getSuggestedRate(item);
     const minimumRate = getMinimumRate(item);
-    const realCostRate = Number(getProductForItem(item)?.real_cost_per_unit || 0);
+    const realCostRate = rateContext.realCostPerUnit;
     const overheadCostRate = getOverheadCostRate(item);
     const finalBusinessCostRate = getFinalBusinessCostRate(item);
     const customerRate = getCustomerRate(item);
@@ -463,6 +505,14 @@ export default function BillingSection(props) {
       reasons.push("Below minimum rate");
     }
 
+    if (rateContext.predefinedRate > 0 && customerRate > 0) {
+      if (rateContext.managerFloor > 0 && customerRate < rateContext.managerFloor) {
+        reasons.push("Owner discount approval");
+      } else if (rateContext.operatorFloor > 0 && customerRate < rateContext.operatorFloor) {
+        reasons.push("Manager discount approval");
+      }
+    }
+
     const baseAmount = quantity * customerRate;
     const discountPercent = baseAmount > 0 ? (Number(item?.discount || 0) / baseAmount) * 100 : 0;
 
@@ -480,6 +530,7 @@ export default function BillingSection(props) {
       suggestedRate,
       minimumRate,
       realCostRate,
+      predefinedRate: rateContext.predefinedRate,
       overheadCostRate,
       finalBusinessCostRate,
       hardLoss,
@@ -523,14 +574,16 @@ export default function BillingSection(props) {
     const entrySummaries = tileEntries.map(({ item, index, product }) => {
       const quantity = Number(item.quantity || 0);
       const currentRate = Number(item.rate || 0);
+      const rateContext = getProductRateContext(product);
       const suggestedRate = getSuggestedRate(item);
       const minimumRate = getMinimumRate(item);
-      const realCostRate = Number(product?.real_cost_per_unit || 0);
+      const realCostRate = rateContext.realCostPerUnit;
       const strategy = getProductStrategy(product);
       const config = getStrategyConfig(strategy);
       const protectedFloor = Math.max(
         minimumRate,
         realCostRate,
+        rateContext.ownerFloor,
         suggestedRate > 0 ? suggestedRate * config.floorRatio : 0
       );
       const marginBufferPerUnit = Math.max(currentRate - protectedFloor, 0);
@@ -549,6 +602,9 @@ export default function BillingSection(props) {
         suggestedRate,
         minimumRate,
         realCostRate,
+        operatorFloor: rateContext.operatorFloor,
+        managerFloor: rateContext.managerFloor,
+        ownerFloor: rateContext.ownerFloor,
         strategy,
         strategyLabel: config.label,
         protectedFloor,
@@ -562,7 +618,7 @@ export default function BillingSection(props) {
       entrySummaries.reduce((sum, entry) => sum + entry.recommendedAmount, 0).toFixed(2)
     );
     const benefitAgainstTileValue = totalTileValue > 0 ? (systemBenefitAmount / totalTileValue) * 100 : 0;
-    const approvalLevel =
+    const approvalLevelByBenefit =
       benefitAgainstTileValue > 5.5
         ? "owner"
         : benefitAgainstTileValue > 2.5
@@ -590,6 +646,25 @@ export default function BillingSection(props) {
       ...entrySummaries.find((entry) => entry.index === distribution.index),
       appliedDiscount: distribution.amount,
     }));
+    let approvalLevel = approvalLevelByBenefit;
+
+    entries.forEach((entry) => {
+      const discountedRate = entry.quantity > 0 ? Number((entry.currentRate - entry.appliedDiscount / entry.quantity).toFixed(2)) : entry.currentRate;
+
+      if (
+        (entry.realCostRate > 0 && discountedRate < entry.realCostRate) ||
+        (entry.minimumRate > 0 && discountedRate < entry.minimumRate) ||
+        (entry.managerFloor > 0 && discountedRate < entry.managerFloor)
+      ) {
+        approvalLevel = "owner";
+        return;
+      }
+
+      if (approvalLevel !== "owner" && entry.operatorFloor > 0 && discountedRate < entry.operatorFloor) {
+        approvalLevel = "manager";
+      }
+    });
+
     const finalPayable = Number((baseGrandTotal - systemBenefitAmount).toFixed(2));
 
     return {

@@ -50,6 +50,11 @@ export function streamQuotationPdf({ lead, quotation, items }, res) {
   doc.text(`Transport: Rs ${quotation.transport_cost}`);
   doc.text(`Final Amount: Rs ${quotation.final_amount}`);
   doc.text(`Status: ${quotation.status}`);
+  doc.moveDown(0.4);
+  doc
+    .fontSize(10)
+    .fillColor("#B45309")
+    .text("Quotation valid only for today. Rates may change from next day.");
 
   doc.moveDown(2);
   doc

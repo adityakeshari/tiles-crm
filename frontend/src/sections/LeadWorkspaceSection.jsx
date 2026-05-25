@@ -1,5 +1,15 @@
 import { useEffect, useState } from "react";
 
+function isQuotationExpired(createdAt) {
+  if (!createdAt) {
+    return false;
+  }
+
+  const createdDate = new Date(createdAt);
+  const today = new Date();
+  return createdDate.toDateString() !== today.toDateString();
+}
+
 function AccordionSection({ title, badge, summary, isOpen, onToggle, children }) {
   return (
     <div className={`accordion-section ${isOpen ? "open" : ""}`}>
@@ -391,6 +401,11 @@ function LeadDetailsPanel(props) {
                 <div key={quotation.id} className="timeline-item">
                   <strong>Quote #{quotation.id}</strong>
                   <p className="muted">Final Rs {quotation.final_amount}</p>
+                  {isQuotationExpired(quotation.created_at) ? (
+                    <p className="field-error-message">Quotation expired. Recalculate using today&apos;s rate.</p>
+                  ) : (
+                    <p className="muted">Quotation valid only for today. Rates may change from next day.</p>
+                  )}
                   <div className="lead-actions">
                     <button type="button" className="secondary" onClick={() => window.open(getQuotationPdfUrl(selectedLead.id, quotation.id), "_blank")}>
                       Open PDF

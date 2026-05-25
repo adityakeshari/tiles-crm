@@ -16,6 +16,29 @@ const DEFAULT_LIST_LIMIT = 100;
 const MAX_LIST_LIMIT = 300;
 const DASHBOARD_TTL_MS = 3000;
 
+function clampNumber(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function deriveTodaySellingRate(product) {
+  const predefinedRate = Number(
+    product?.predefined_rate || product?.suggested_selling_rate || product?.price_per_sqft || product?.real_cost_per_unit || product?.landed_cost_per_unit || 0
+  );
+
+  if (predefinedRate > 0) {
+    const upLimitPercent = Math.max(Number(product?.daily_up_limit_percent || 2), 0);
+    const downLimitPercent = Math.max(Number(product?.daily_down_limit_percent || 1), 0);
+    const minRate = predefinedRate * (1 - downLimitPercent / 100);
+    const maxRate = predefinedRate * (1 + upLimitPercent / 100);
+    const rawTodayRate = Number(product?.today_selling_rate || predefinedRate);
+    return Number(clampNumber(rawTodayRate > 0 ? rawTodayRate : predefinedRate, minRate, maxRate).toFixed(2));
+  }
+
+  return Number(
+    product?.today_selling_rate || product?.suggested_selling_rate || product?.price_per_sqft || product?.real_cost_per_unit || product?.landed_cost_per_unit || 0
+  );
+}
+
 function parseListLimit(value, fallback = DEFAULT_LIST_LIMIT) {
   const parsed = Number.parseInt(value, 10);
 
@@ -753,8 +776,8 @@ router.post("/:id/quotations", async (req, res) => {
         ...item,
         product_name: product.name,
         tile_size: item.tile_size || product.tile_size,
-        unit_price: item.unit_price || product.price_per_sqft,
-        amount: item.quantity_sqft * (item.unit_price || product.price_per_sqft),
+        unit_price: item.unit_price || deriveTodaySellingRate(product) || product.price_per_sqft,
+        amount: item.quantity_sqft * (item.unit_price || deriveTodaySellingRate(product) || product.price_per_sqft),
       });
     }
 

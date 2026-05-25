@@ -34,6 +34,85 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function derivePredefinedRate(product) {
+  return toNumber(
+    product?.predefined_rate || product?.suggested_selling_rate || product?.price_per_sqft || product?.real_cost_per_unit || product?.landed_cost_per_unit || 0
+  );
+}
+
+function deriveTodaySellingRate(product) {
+  const predefinedRate = derivePredefinedRate(product);
+
+  if (predefinedRate > 0) {
+    const upLimitPercent = Math.max(toNumber(product?.daily_up_limit_percent, 2), 0);
+    const downLimitPercent = Math.max(toNumber(product?.daily_down_limit_percent, 1), 0);
+    const minRate = predefinedRate * (1 - downLimitPercent / 100);
+    const maxRate = predefinedRate * (1 + upLimitPercent / 100);
+    const rawRate = toNumber(product?.today_selling_rate || predefinedRate);
+    return Number(clamp(rawRate > 0 ? rawRate : predefinedRate, minRate, maxRate).toFixed(2));
+  }
+
+  return toNumber(
+    product?.today_selling_rate || product?.suggested_selling_rate || product?.price_per_sqft || product?.real_cost_per_unit || product?.landed_cost_per_unit || 0
+  );
+}
+
+function deriveRatePolicy(product) {
+  const predefinedRate = derivePredefinedRate(product);
+  const todaySellingRate = deriveTodaySellingRate(product);
+  const minimumAllowedRate = toNumber(product?.minimum_allowed_rate || product?.real_cost_per_unit || product?.landed_cost_per_unit || todaySellingRate || 0);
+  const realCostPerUnit = toNumber(product?.real_cost_per_unit || product?.landed_cost_per_unit || 0);
+  const operatorDiscountCap = Math.max(toNumber(product?.operator_discount_cap, 0), 0);
+  const managerDiscountCap = Math.max(toNumber(product?.manager_discount_cap, operatorDiscountCap), operatorDiscountCap);
+  const ownerDiscountCap = Math.max(toNumber(product?.owner_discount_cap, managerDiscountCap), managerDiscountCap);
+
+  const operatorFloor = predefinedRate > 0 ? predefinedRate * (1 - operatorDiscountCap / 100) : 0;
+  const managerFloor = predefinedRate > 0 ? predefinedRate * (1 - managerDiscountCap / 100) : 0;
+  const ownerFloor = predefinedRate > 0 ? predefinedRate * (1 - ownerDiscountCap / 100) : 0;
+
+  return {
+    predefinedRate,
+    todaySellingRate,
+    minimumAllowedRate,
+    realCostPerUnit,
+    operatorFloor: Number(operatorFloor.toFixed(2)),
+    managerFloor: Number(managerFloor.toFixed(2)),
+    ownerFloor: Number(ownerFloor.toFixed(2)),
+  };
+}
+
+function getDiscountApprovalReason(customerRate, policy) {
+  if (customerRate <= 0) {
+    return "";
+  }
+
+  if (policy.realCostPerUnit > 0 && customerRate < policy.realCostPerUnit) {
+    return "owner_discount_approval";
+  }
+
+  if (policy.minimumAllowedRate > 0 && customerRate < policy.minimumAllowedRate) {
+    return "owner_discount_approval";
+  }
+
+  if (policy.predefinedRate <= 0) {
+    return "";
+  }
+
+  if ((policy.managerFloor > 0 && customerRate < policy.managerFloor) || (policy.ownerFloor > 0 && customerRate < policy.ownerFloor)) {
+    return "owner_discount_approval";
+  }
+
+  if (policy.operatorFloor > 0 && customerRate < policy.operatorFloor) {
+    return "manager_discount_approval";
+  }
+
+  return "";
+}
+
 function toInvoiceNumber(invoiceType) {
   const now = new Date();
   const year = now.getFullYear();
@@ -194,9 +273,11 @@ async function getProductMap(client, items) {
   }
 
   const result = await client.query(
-    `SELECT id, name, business_unit, stock_sqft, price_per_sqft,
+      `SELECT id, name, business_unit, stock_sqft, price_per_sqft,
+            predefined_rate, today_selling_rate, daily_up_limit_percent, daily_down_limit_percent,
             landed_cost_per_unit, real_cost_per_unit, overhead_cost_per_unit, final_business_cost_per_unit,
-            minimum_allowed_rate, suggested_selling_rate
+            minimum_allowed_rate, suggested_selling_rate,
+            operator_discount_cap, manager_discount_cap, owner_discount_cap, quotation_validity_days
      FROM products
      WHERE id = ANY($1::int[])`,
     [productIds]
@@ -217,13 +298,10 @@ function evaluateApprovalReasons(invoice, productMap, { previousStatus = "", sys
 
   for (const item of invoice.items || []) {
     const product = item.product_id ? productMap.get(item.product_id) : null;
-    const suggestedRate = Number(
-      product?.suggested_selling_rate || product?.price_per_sqft || product?.real_cost_per_unit || product?.landed_cost_per_unit || 0
-    );
-    const minimumAllowedRate = Number(
-      product?.minimum_allowed_rate || product?.real_cost_per_unit || product?.landed_cost_per_unit || suggestedRate || 0
-    );
-    const realCostPerUnit = Number(product?.real_cost_per_unit || product?.landed_cost_per_unit || 0);
+    const policy = deriveRatePolicy(product);
+    const suggestedRate = policy.todaySellingRate;
+    const minimumAllowedRate = policy.minimumAllowedRate;
+    const realCostPerUnit = policy.realCostPerUnit;
     const customerRate = Number(item.rate || 0);
 
     if (product && customerRate !== suggestedRate) {
@@ -236,6 +314,11 @@ function evaluateApprovalReasons(invoice, productMap, { previousStatus = "", sys
 
     if (realCostPerUnit > 0 && customerRate > 0 && customerRate < realCostPerUnit) {
       reasons.push("minimum_rate_breach");
+    }
+
+    const discountApprovalReason = getDiscountApprovalReason(customerRate, policy);
+    if (discountApprovalReason) {
+      reasons.push(discountApprovalReason);
     }
   }
 
@@ -623,13 +706,21 @@ router.get(
                  finish,
                  stock_sqft,
                  price_per_sqft,
+                 predefined_rate,
+                 today_selling_rate,
+                 daily_up_limit_percent,
+                 daily_down_limit_percent,
                  last_purchase_rate,
                  landed_cost_per_unit,
                  real_cost_per_unit,
                  overhead_cost_per_unit,
                  final_business_cost_per_unit,
                  minimum_allowed_rate,
-                 suggested_selling_rate
+                 suggested_selling_rate,
+                 operator_discount_cap,
+                 manager_discount_cap,
+                 owner_discount_cap,
+                 quotation_validity_days
                FROM products
                WHERE status <> 'dead_stock'
                ORDER BY name ASC
