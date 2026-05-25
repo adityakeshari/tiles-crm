@@ -2745,12 +2745,13 @@ button.sidebar-item-active .sidebar-dot {
 .sidebar-item-compact {
   display: none;
   font-weight: 700;
-  font-size: 1.1rem;
+  font-size: 11px;
   line-height: 1;
-  width: 20px;
-  height: 20px;
+  width: 28px;
+  height: 28px;
   text-align: center;
   flex-shrink: 0;
+  letter-spacing: 0.04em;
 }
 
 .sidebar-overlay {
@@ -2813,6 +2814,7 @@ button.sidebar-item-active .sidebar-dot {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  border-radius: 8px;
 }
 
 .sidebar.sidebar-collapsed button.sidebar-item {
