@@ -9230,47 +9230,66 @@ export default function App() {
             ) : (
             <div className="table-shell">
               <table className="data-table stock-ledger-table">
+                <colgroup>
+                  <col style={{ width: "220px" }} />
+                  <col style={{ width: "120px" }} />
+                  <col style={{ width: "110px" }} />
+                  <col style={{ width: "70px" }} />
+                  <col style={{ width: "80px" }} />
+                  <col style={{ width: "60px" }} />
+                  <col style={{ width: "100px" }} />
+                  <col style={{ width: "100px" }} />
+                  <col style={{ width: "90px" }} />
+                  <col style={{ width: "110px" }} />
+                </colgroup>
                 <thead>
                   <tr>
-                    <th>Product</th>
-                    <th>Company</th>
-                    <th>Category</th>
-                    <th>Size</th>
-                    <th>Stock</th>
-                    <th>Unit</th>
-                    <th>Selling Rate</th>
-                    <th>Min Rate</th>
-                    <th>Status</th>
-                    <th>Actions</th>
+                    <th className="col-product">Product</th>
+                    <th className="col-company">Company</th>
+                    <th className="col-category">Category</th>
+                    <th className="col-size">Size</th>
+                    <th className="col-stock">Stock</th>
+                    <th className="col-unit">Unit</th>
+                    <th className="col-selling">Selling</th>
+                    <th className="col-min">Min</th>
+                    <th className="col-status">Status</th>
+                    <th className="col-actions">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredInventoryLedgerProducts.map((product) => {
                     const stockValue = Number(product.stock_sqft || 0);
                     const stockClass = stockValue <= 0 ? "stock-out" : stockValue <= 5 ? "stock-low" : "stock-in";
+                    const productGaps = getProductDataGaps(product);
+                    const compactGapText =
+                      productGaps.length === 0
+                        ? ""
+                        : productGaps.length <= 2
+                          ? `(${productGaps.map(formatProductDataGapLabel).join(", ").toLowerCase()} missing)`
+                          : `(${formatProductDataGapLabel(productGaps[0]).toLowerCase()} +${productGaps.length - 1} more)`;
                     return (
                       <tr key={`inventory-row-${product.id}`}>
-                        <td>
-                          <strong>{product.name}</strong>
-                          {getProductDataGaps(product).length ? (
+                        <td className="col-product">
+                          <strong className="stock-product-name">{product.name}</strong>
+                          {compactGapText ? (
                             <div className="muted stock-warning-inline">
-                              Missing: {getProductDataGaps(product).map(formatProductDataGapLabel).join(", ")}
+                              {compactGapText}
                             </div>
                           ) : null}
                         </td>
-                        <td>{product.company_name || "Missing"}</td>
-                        <td>{product.category || "Missing"}</td>
-                        <td>{product.product_size || product.tile_size || "Missing"}</td>
-                        <td>
+                        <td className="col-company">{product.company_name || "Missing"}</td>
+                        <td className="col-category">{product.category || "Missing"}</td>
+                        <td className="col-size">{product.product_size || product.tile_size || "Missing"}</td>
+                        <td className="col-stock">
                           <span className={`stock-badge ${stockClass}`}>{stockValue}</span>
                         </td>
-                        <td>{product.unit || "Missing"}</td>
-                        <td>Rs {Number(product.price_per_sqft || 0).toLocaleString("en-IN")}</td>
-                        <td>Rs {Number(product.minimum_allowed_rate || 0).toLocaleString("en-IN")}</td>
-                        <td>
+                        <td className="col-unit">{product.unit || "Missing"}</td>
+                        <td className="col-selling">Rs {Number(product.price_per_sqft || 0).toLocaleString("en-IN")}</td>
+                        <td className="col-min">Rs {Number(product.minimum_allowed_rate || 0).toLocaleString("en-IN")}</td>
+                        <td className="col-status">
                           <span className={`status-chip status-${product.status}`}>{labelize(product.status)}</span>
                         </td>
-                        <td>
+                        <td className="col-actions">
                           <div className="table-actions">
                             <button type="button" className="secondary" onClick={() => startEditingProduct(product)}>
                               Edit

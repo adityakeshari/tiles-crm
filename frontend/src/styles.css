@@ -3136,20 +3136,35 @@ button.sidebar-item-active .sidebar-dot {
 .app-main .stock-ledger-table .data-table,
 .app-main .stock-ledger-list .data-table {
   width: 100%;
-  font-size: 0.86rem;
-  table-layout: auto;
+  font-size: 0.8rem;
+  table-layout: fixed;
 }
 
 .app-main .stock-ledger-table .data-table thead th,
 .app-main .stock-ledger-list .data-table thead th {
-  padding: 0.55rem 0.7rem;
+  padding: 0.42rem 0.55rem;
   font-size: 0.72rem;
+  line-height: 1.1;
 }
 
 .app-main .stock-ledger-table .data-table tbody td,
 .app-main .stock-ledger-list .data-table tbody td {
-  padding: 0.5rem 0.7rem;
+  padding: 0.38rem 0.55rem;
   vertical-align: middle;
+  font-size: 0.8rem;
+  line-height: 1.24;
+}
+
+.app-main .stock-ledger-table .data-table tbody tr:nth-child(odd) td {
+  background: #ffffff;
+}
+
+.app-main .stock-ledger-table .data-table tbody tr:nth-child(even) td {
+  background: #f6f8fc;
+}
+
+.app-main .stock-ledger-table .data-table tbody tr:hover td {
+  background: #eaf2ff;
 }
 
 /* Default zebra and hover already in core .data-table rules — kept */
@@ -3159,8 +3174,50 @@ button.sidebar-item-active .sidebar-dot {
 .app-main .stock-ledger-table .data-table td:first-child,
 .app-main .stock-ledger-list .data-table th:first-child,
 .app-main .stock-ledger-list .data-table td:first-child {
-  min-width: 220px;
+  width: 220px;
   white-space: normal;
+}
+
+.app-main .stock-ledger-table .data-table th.col-company,
+.app-main .stock-ledger-table .data-table td.col-company {
+  width: 120px;
+}
+
+.app-main .stock-ledger-table .data-table th.col-category,
+.app-main .stock-ledger-table .data-table td.col-category {
+  width: 110px;
+}
+
+.app-main .stock-ledger-table .data-table th.col-size,
+.app-main .stock-ledger-table .data-table td.col-size {
+  width: 70px;
+}
+
+.app-main .stock-ledger-table .data-table th.col-stock,
+.app-main .stock-ledger-table .data-table td.col-stock {
+  width: 80px;
+}
+
+.app-main .stock-ledger-table .data-table th.col-unit,
+.app-main .stock-ledger-table .data-table td.col-unit {
+  width: 60px;
+}
+
+.app-main .stock-ledger-table .data-table th.col-selling,
+.app-main .stock-ledger-table .data-table td.col-selling,
+.app-main .stock-ledger-table .data-table th.col-min,
+.app-main .stock-ledger-table .data-table td.col-min {
+  width: 100px;
+}
+
+.app-main .stock-ledger-table .data-table th.col-status,
+.app-main .stock-ledger-table .data-table td.col-status {
+  width: 90px;
+}
+
+.app-main .stock-ledger-table .data-table th.col-actions,
+.app-main .stock-ledger-table .data-table td.col-actions {
+  width: 110px;
 }
 
 .app-main .stock-ledger-table .data-table th.col-compact,
@@ -3217,10 +3274,25 @@ button.sidebar-item-active .sidebar-dot {
 
 .app-main .stock-ledger-table .data-table .lead-actions button,
 .app-main .stock-ledger-list .data-table .lead-actions button {
-  padding: 0.32rem 0.7rem;
+  min-height: 28px;
+  padding: 0.25rem 0.6rem;
   font-size: 0.78rem;
   border-radius: 8px;
   box-shadow: none;
+}
+
+.stock-product-name {
+  display: block;
+  line-height: 1.15;
+}
+
+.stock-warning-inline {
+  margin-top: 0.1rem;
+  font-size: 0.76rem;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Grid view (kept available via toggle) — slightly tighter cards */
