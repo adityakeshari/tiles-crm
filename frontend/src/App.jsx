@@ -1893,6 +1893,12 @@ export default function App() {
   const [dailyReportDate, setDailyReportDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [reportsView, setReportsView] = useState("overview");
   const [inventoryWorkspaceTab, setInventoryWorkspaceTab] = useState("new");
+  const [inventoryLedgerSearch, setInventoryLedgerSearch] = useState("");
+  const [inventoryLedgerView, setInventoryLedgerView] = useState("grid");
+  const [inventoryLedgerCategoryFilter, setInventoryLedgerCategoryFilter] = useState("all");
+  const [inventoryLedgerStatusFilter, setInventoryLedgerStatusFilter] = useState("all");
+  const [inventoryLedgerStockFilter, setInventoryLedgerStockFilter] = useState("all");
+  const [inventoryLedgerSort, setInventoryLedgerSort] = useState("name_asc");
   const [purchaseWorkspaceTab, setPurchaseWorkspaceTab] = useState("new_bill");
   const [expenseWorkspaceTab, setExpenseWorkspaceTab] = useState("new");
   const [error, setError] = useState("");
@@ -2119,6 +2125,60 @@ export default function App() {
     () => products.filter((product) => matchesBusinessUnitFilter(product.business_unit, unitFilter)),
     [products, unitFilter]
   );
+  const filteredInventoryLedgerProducts = useMemo(() => {
+    const normalizedSearch = normalizeText(inventoryLedgerSearch).toLowerCase();
+
+    return [...filteredProducts]
+      .filter((product) => {
+        const stockValue = Number(product.stock_sqft || 0);
+        const stockState = stockValue <= 0 ? "out" : stockValue <= 5 ? "low" : "in";
+        const matchesSearch =
+          !normalizedSearch ||
+          [
+            product.name,
+            product.company_name,
+            product.category,
+            product.product_size || product.tile_size,
+            product.design_code,
+            product.finish,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase()
+            .includes(normalizedSearch);
+        const matchesCategory =
+          inventoryLedgerCategoryFilter === "all" ||
+          normalizeText(product.category) === inventoryLedgerCategoryFilter;
+        const matchesStatus =
+          inventoryLedgerStatusFilter === "all" ||
+          String(product.status || "") === inventoryLedgerStatusFilter;
+        const matchesStock =
+          inventoryLedgerStockFilter === "all" ||
+          (inventoryLedgerStockFilter === "in" && stockState === "in") ||
+          (inventoryLedgerStockFilter === "low" && stockState === "low") ||
+          (inventoryLedgerStockFilter === "out" && stockState === "out");
+
+        return matchesSearch && matchesCategory && matchesStatus && matchesStock;
+      })
+      .sort((left, right) => {
+        if (inventoryLedgerSort === "stock_low_high") {
+          return Number(left.stock_sqft || 0) - Number(right.stock_sqft || 0);
+        }
+
+        if (inventoryLedgerSort === "stock_high_low") {
+          return Number(right.stock_sqft || 0) - Number(left.stock_sqft || 0);
+        }
+
+        return String(left.name || "").localeCompare(String(right.name || ""), "en", { sensitivity: "base" });
+      });
+  }, [
+    filteredProducts,
+    inventoryLedgerCategoryFilter,
+    inventoryLedgerSearch,
+    inventoryLedgerSort,
+    inventoryLedgerStatusFilter,
+    inventoryLedgerStockFilter,
+  ]);
   const productHealthSummary = useMemo(() => {
     const allProducts = products || [];
     const summary = {
@@ -8978,7 +9038,86 @@ export default function App() {
           <section className="panel">
             <div className="section-head">
               <h2>Product ledger</h2>
-              <span>{filteredProducts.length} products</span>
+              <span>{filteredInventoryLedgerProducts.length} products</span>
+            </div>
+            <div className="filters-bar stock-ledger-toolbar">
+              <div className="control-group stock-ledger-search">
+                <label className="control-label">Search</label>
+                <input
+                  type="search"
+                  placeholder="Search product, company, size, category..."
+                  value={inventoryLedgerSearch}
+                  onChange={(event) => setInventoryLedgerSearch(event.target.value)}
+                />
+              </div>
+              <div className="control-group stock-ledger-view-group">
+                <label className="control-label">View</label>
+                <div className="workspace-tab-nav stock-ledger-toggle">
+                  <button
+                    type="button"
+                    className={inventoryLedgerView === "grid" ? "active-nav" : "nav-btn"}
+                    onClick={() => setInventoryLedgerView("grid")}
+                  >
+                    Grid View
+                  </button>
+                  <button
+                    type="button"
+                    className={inventoryLedgerView === "list" ? "active-nav" : "nav-btn"}
+                    onClick={() => setInventoryLedgerView("list")}
+                  >
+                    List View
+                  </button>
+                </div>
+              </div>
+              <div className="control-group">
+                <label className="control-label">Category</label>
+                <select
+                  value={inventoryLedgerCategoryFilter}
+                  onChange={(event) => setInventoryLedgerCategoryFilter(event.target.value)}
+                >
+                  <option value="all">All</option>
+                  {productCategoryOptions.map((category) => (
+                    <option key={`inventory-category-${category}`} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="control-group">
+                <label className="control-label">Status</label>
+                <select
+                  value={inventoryLedgerStatusFilter}
+                  onChange={(event) => setInventoryLedgerStatusFilter(event.target.value)}
+                >
+                  <option value="all">All</option>
+                  <option value="active">Active</option>
+                  <option value="fast_moving">Fast Moving</option>
+                  <option value="dead_stock">Dead Stock</option>
+                </select>
+              </div>
+              <div className="control-group">
+                <label className="control-label">Stock Level</label>
+                <select
+                  value={inventoryLedgerStockFilter}
+                  onChange={(event) => setInventoryLedgerStockFilter(event.target.value)}
+                >
+                  <option value="all">All</option>
+                  <option value="in">In Stock</option>
+                  <option value="low">Low Stock</option>
+                  <option value="out">Out of Stock</option>
+                </select>
+              </div>
+              <div className="control-group">
+                <label className="control-label">Sort</label>
+                <select
+                  value={inventoryLedgerSort}
+                  onChange={(event) => setInventoryLedgerSort(event.target.value)}
+                >
+                  <option value="name_asc">Product A-Z</option>
+                  <option value="stock_low_high">Stock Low to High</option>
+                  <option value="stock_high_low">Stock High to Low</option>
+                </select>
+              </div>
             </div>
             <ListLoadControls
               label="Products"
@@ -8987,8 +9126,9 @@ export default function App() {
               onLoadMore={() => increaseListLimit("products")}
               disabled={loading}
             />
-            <div className="list">
-              {filteredProducts.map((product) => (
+            {inventoryLedgerView === "grid" ? (
+            <div className="list stock-ledger-grid">
+              {filteredInventoryLedgerProducts.map((product) => (
                 <article key={product.id} className="lead-card product-master-card">
                   <div className="section-head">
                     <div>
@@ -9000,14 +9140,29 @@ export default function App() {
                     <span className={`status-chip status-${product.status}`}>{labelize(product.status)}</span>
                   </div>
                   <div className="product-meta-grid">
+                    <span>Company {product.company_name || "Missing"}</span>
+                    <span>Category {product.category || "Missing"}</span>
                     <span>Size {product.product_size || product.tile_size || "Missing"}</span>
                     <span>Unit {product.unit || "Missing"}</span>
-                    <span>Stock {product.stock_sqft || 0}</span>
                     <span>Selling Rs {Number(product.price_per_sqft || 0).toLocaleString("en-IN")}</span>
-                    <span>Landed Rs {Number(product.landed_cost_per_unit || 0).toLocaleString("en-IN")}</span>
                     <span>Min Rs {Number(product.minimum_allowed_rate || 0).toLocaleString("en-IN")}</span>
                   </div>
                   <div className="chip-row">
+                    <span
+                      className={`stock-badge ${
+                        Number(product.stock_sqft || 0) <= 0
+                          ? "stock-out"
+                          : Number(product.stock_sqft || 0) <= 5
+                            ? "stock-low"
+                            : "stock-in"
+                      }`}
+                    >
+                      {Number(product.stock_sqft || 0) <= 0
+                        ? "Out of Stock"
+                        : Number(product.stock_sqft || 0) <= 5
+                          ? `Low Stock · ${product.stock_sqft || 0}`
+                          : `In Stock · ${product.stock_sqft || 0}`}
+                    </span>
                     <span className="legend-chip product-completeness-chip">
                       Product Completeness: {getProductCompletenessPercent(product)}%
                     </span>
@@ -9044,10 +9199,91 @@ export default function App() {
                   </div>
                 </article>
               ))}
-              {filteredProducts.length === 0 ? (
+              {filteredInventoryLedgerProducts.length === 0 ? (
                 <EmptyState title="No products available" message="Save stock items here to power quotation and inventory visibility." />
               ) : null}
             </div>
+            ) : (
+            <div className="table-shell">
+              <table className="data-table stock-ledger-table">
+                <thead>
+                  <tr>
+                    <th>Product</th>
+                    <th>Company</th>
+                    <th>Category</th>
+                    <th>Size</th>
+                    <th>Stock</th>
+                    <th>Unit</th>
+                    <th>Selling Rate</th>
+                    <th>Min Rate</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredInventoryLedgerProducts.map((product) => {
+                    const stockValue = Number(product.stock_sqft || 0);
+                    const stockClass = stockValue <= 0 ? "stock-out" : stockValue <= 5 ? "stock-low" : "stock-in";
+                    return (
+                      <tr key={`inventory-row-${product.id}`}>
+                        <td>
+                          <strong>{product.name}</strong>
+                          {getProductDataGaps(product).length ? (
+                            <div className="muted stock-warning-inline">
+                              Missing: {getProductDataGaps(product).map(formatProductDataGapLabel).join(", ")}
+                            </div>
+                          ) : null}
+                        </td>
+                        <td>{product.company_name || "Missing"}</td>
+                        <td>{product.category || "Missing"}</td>
+                        <td>{product.product_size || product.tile_size || "Missing"}</td>
+                        <td>
+                          <span className={`stock-badge ${stockClass}`}>{stockValue}</span>
+                        </td>
+                        <td>{product.unit || "Missing"}</td>
+                        <td>Rs {Number(product.price_per_sqft || 0).toLocaleString("en-IN")}</td>
+                        <td>Rs {Number(product.minimum_allowed_rate || 0).toLocaleString("en-IN")}</td>
+                        <td>
+                          <span className={`status-chip status-${product.status}`}>{labelize(product.status)}</span>
+                        </td>
+                        <td>
+                          <div className="table-actions">
+                            <button type="button" className="secondary" onClick={() => startEditingProduct(product)}>
+                              Edit
+                            </button>
+                            {isAdmin(user) ? (
+                              <button
+                                type="button"
+                                className="danger"
+                                onClick={() =>
+                                  setPendingDelete({
+                                    type: "product",
+                                    id: product.id,
+                                    entityLabel: "Product",
+                                    message: `This will permanently remove ${product.name} from inventory.`,
+                                    subtext: product.design_code || product.category,
+                                  })
+                                }
+                              >
+                                Delete
+                              </button>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {filteredInventoryLedgerProducts.length === 0 ? (
+                    <tr>
+                      <td colSpan="10">
+                        <EmptyState title="No products available" message="Save stock items here to power quotation and inventory visibility." />
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+            )}
           </section>
           ) : null}
 

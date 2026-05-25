@@ -2397,6 +2397,73 @@ button.quick-action-btn:not(.secondary):hover {
   margin-bottom: 0;
 }
 
+.stock-ledger-toolbar {
+  align-items: end;
+}
+
+.stock-ledger-search {
+  flex: 1 1 280px;
+  min-width: 260px;
+}
+
+.stock-ledger-view-group {
+  flex: 0 0 auto;
+}
+
+.stock-ledger-toggle {
+  margin-bottom: 0;
+  width: auto;
+}
+
+.stock-ledger-grid {
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+
+.stock-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 92px;
+  padding: 0.28rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.stock-in {
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
+  border-color: rgba(22, 163, 74, 0.18);
+}
+
+.stock-low {
+  background: rgba(217, 119, 6, 0.12);
+  color: #b45309;
+  border-color: rgba(217, 119, 6, 0.18);
+}
+
+.stock-out {
+  background: rgba(197, 48, 48, 0.1);
+  color: var(--crm-danger);
+  border-color: rgba(197, 48, 48, 0.18);
+}
+
+.stock-ledger-table td:nth-child(5) {
+  font-weight: 700;
+}
+
+.stock-warning-inline {
+  margin-top: 0.2rem;
+  font-size: 0.75rem;
+}
+
+.table-actions {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
 .inline-add-row {
   display: flex;
   gap: 0.55rem;
