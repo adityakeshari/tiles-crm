@@ -1894,7 +1894,7 @@ export default function App() {
   const [reportsView, setReportsView] = useState("overview");
   const [inventoryWorkspaceTab, setInventoryWorkspaceTab] = useState("new");
   const [inventoryLedgerSearch, setInventoryLedgerSearch] = useState("");
-  const [inventoryLedgerView, setInventoryLedgerView] = useState("grid");
+  const [inventoryLedgerView, setInventoryLedgerView] = useState("list");
   const [inventoryLedgerCategoryFilter, setInventoryLedgerCategoryFilter] = useState("all");
   const [inventoryLedgerStatusFilter, setInventoryLedgerStatusFilter] = useState("all");
   const [inventoryLedgerStockFilter, setInventoryLedgerStockFilter] = useState("all");

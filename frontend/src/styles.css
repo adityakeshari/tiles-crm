@@ -3030,3 +3030,212 @@ button.sidebar-item-active .sidebar-dot {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ==================================================================
+ * Stock Ledger final UI polish — frontend-only, no JSX restructure
+ * needed. Targets the existing class names .stock-ledger-toolbar,
+ * .stock-ledger-search, .stock-ledger-view-group, .stock-ledger-toggle,
+ * .stock-ledger-grid, plus the standard .data-table / .table-shell
+ * combo that already wraps the list view.
+ * ================================================================== */
+
+/* Toolbar: one tidy row on desktop, wrap on tablet/mobile */
+.stock-ledger-toolbar {
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.55rem 0.75rem;
+  padding: 0.55rem 0.85rem;
+}
+
+.stock-ledger-toolbar .control-group {
+  min-width: 0;
+  flex: 0 0 auto;
+}
+
+.stock-ledger-toolbar .control-label {
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.18rem;
+  color: var(--crm-muted);
+}
+
+.stock-ledger-toolbar .stock-ledger-search {
+  flex: 1 1 320px;
+  max-width: 380px;
+  min-width: 260px;
+}
+
+.stock-ledger-toolbar .stock-ledger-search input[type="search"] {
+  padding: 0.45rem 0.75rem;
+  font-size: 0.88rem;
+}
+
+/* Category / Status / Stock Level / Sort — compact, equal sizing */
+.stock-ledger-toolbar .control-group select {
+  padding: 0.42rem 0.65rem;
+  font-size: 0.85rem;
+  min-width: 130px;
+}
+
+/* View toggle right-aligned and visually compact */
+.stock-ledger-toolbar .stock-ledger-view-group {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.stock-ledger-toggle {
+  margin-bottom: 0;
+  padding: 0.22rem;
+  background: var(--crm-surface);
+  border: 1px solid var(--crm-border);
+  border-radius: 999px;
+  width: max-content;
+}
+
+.stock-ledger-toggle button.nav-btn,
+.stock-ledger-toggle button.active-nav {
+  padding: 0.32rem 0.8rem;
+  font-size: 0.78rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.stock-ledger-toggle button.active-nav::before {
+  display: none;
+}
+
+/* List view table — full width, sticky header, slimmer rows */
+.app-main .stock-ledger-table .table-shell,
+.app-main .stock-ledger-list .table-shell {
+  width: 100%;
+  max-height: none;
+}
+
+.app-main .stock-ledger-table .data-table,
+.app-main .stock-ledger-list .data-table {
+  width: 100%;
+  font-size: 0.86rem;
+  table-layout: auto;
+}
+
+.app-main .stock-ledger-table .data-table thead th,
+.app-main .stock-ledger-list .data-table thead th {
+  padding: 0.55rem 0.7rem;
+  font-size: 0.72rem;
+}
+
+.app-main .stock-ledger-table .data-table tbody td,
+.app-main .stock-ledger-list .data-table tbody td {
+  padding: 0.5rem 0.7rem;
+  vertical-align: middle;
+}
+
+/* Default zebra and hover already in core .data-table rules — kept */
+
+/* Wider product column, compact metadata columns */
+.app-main .stock-ledger-table .data-table th:first-child,
+.app-main .stock-ledger-table .data-table td:first-child,
+.app-main .stock-ledger-list .data-table th:first-child,
+.app-main .stock-ledger-list .data-table td:first-child {
+  min-width: 220px;
+  white-space: normal;
+}
+
+.app-main .stock-ledger-table .data-table th.col-compact,
+.app-main .stock-ledger-list .data-table th.col-compact,
+.app-main .stock-ledger-table .data-table td.col-compact,
+.app-main .stock-ledger-list .data-table td.col-compact {
+  white-space: nowrap;
+}
+
+/* Stock badge: centered cell, pill alignment */
+.app-main .stock-ledger-table .data-table .stock-badge,
+.app-main .stock-ledger-list .data-table .stock-badge,
+.lead-card .stock-badge,
+.product-master-card .stock-badge,
+.stock-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  border-radius: 999px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.stock-badge.stock-out {
+  background: var(--crm-danger-soft);
+  color: var(--crm-danger);
+}
+
+.stock-badge.stock-low {
+  background: var(--crm-warn-soft);
+  color: #8a5a05;
+}
+
+.stock-badge.stock-in {
+  background: var(--crm-success-soft);
+  color: #0e6b34;
+}
+
+/* Action buttons in one row, compact */
+.app-main .stock-ledger-table .data-table .lead-actions,
+.app-main .stock-ledger-list .data-table .lead-actions,
+.app-main .stock-ledger-table .data-table td.col-actions,
+.app-main .stock-ledger-list .data-table td.col-actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+.app-main .stock-ledger-table .data-table .lead-actions button,
+.app-main .stock-ledger-list .data-table .lead-actions button {
+  padding: 0.32rem 0.7rem;
+  font-size: 0.78rem;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+/* Grid view (kept available via toggle) — slightly tighter cards */
+.stock-ledger-grid.list {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.85rem;
+}
+
+.stock-ledger-grid .product-master-card {
+  padding: 0.85rem 0.95rem;
+}
+
+/* Toolbar tightening on tablet — keep things wrappable */
+@media (max-width: 1080px) {
+  .stock-ledger-toolbar .stock-ledger-view-group {
+    margin-left: 0;
+  }
+
+  .stock-ledger-toolbar .stock-ledger-search {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .stock-ledger-toolbar .control-group {
+    flex: 1 1 100%;
+  }
+
+  .stock-ledger-toolbar .stock-ledger-view-group {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .stock-ledger-toolbar .stock-ledger-view-group .control-label {
+    margin: 0;
+  }
+}
