@@ -2722,6 +2722,111 @@ button.sidebar-item-active .sidebar-dot {
   background: var(--crm-navy-900);
 }
 
+.sidebar-header {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.5rem;
+}
+
+.sidebar-toggle {
+  min-height: 32px;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.8rem;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.sidebar-item-text {
+  display: inline;
+}
+
+.sidebar-item-compact {
+  display: none;
+  font-weight: 700;
+}
+
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  border: 0;
+  background: rgba(7, 20, 43, 0.34);
+  z-index: 40;
+  cursor: pointer;
+}
+
+.mobile-sidebar-bar {
+  display: none;
+}
+
+.app-layout {
+  transition: grid-template-columns 180ms ease;
+}
+
+.sidebar {
+  transition: width 180ms ease, padding 180ms ease, transform 180ms ease, opacity 180ms ease;
+}
+
+.app-layout-collapsed {
+  grid-template-columns: 72px minmax(0, 1fr);
+}
+
+.sidebar.sidebar-collapsed {
+  width: 72px;
+  padding: 0.85rem 0.45rem;
+}
+
+.sidebar.sidebar-collapsed .sidebar-brand {
+  padding: 0.1rem 0.15rem 0.55rem;
+  text-align: center;
+}
+
+.sidebar.sidebar-collapsed .sidebar-brand .eyebrow {
+  display: inline-block;
+  margin-bottom: 0;
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+}
+
+.sidebar.sidebar-collapsed .sidebar-brand strong,
+.sidebar.sidebar-collapsed .sidebar-group-label,
+.sidebar.sidebar-collapsed .sidebar-item-text {
+  display: none;
+}
+
+.sidebar.sidebar-collapsed .sidebar-nav {
+  gap: 0.4rem;
+}
+
+.sidebar.sidebar-collapsed .sidebar-items {
+  gap: 0.2rem;
+}
+
+.sidebar.sidebar-collapsed .sidebar-item-compact {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar.sidebar-collapsed button.sidebar-item {
+  justify-content: center;
+  padding: 0.5rem 0.2rem;
+  min-height: 38px;
+}
+
+.sidebar.sidebar-collapsed .sidebar-dot {
+  display: none;
+}
+
+.sidebar.sidebar-collapsed .sidebar-header {
+  justify-content: center;
+}
+
+.sidebar.sidebar-collapsed .sidebar-toggle {
+  padding-inline: 0.5rem;
+}
+
 /* --- Module header (non-overview): compact + right-aligned action --- */
 .module-header {
   display: flex;
@@ -3307,6 +3412,35 @@ button.sidebar-item-active .sidebar-dot {
 
 /* Toolbar tightening on tablet — keep things wrappable */
 @media (max-width: 1080px) {
+  .mobile-sidebar-bar {
+    display: flex;
+    justify-content: flex-start;
+  }
+
+  .sidebar.sidebar-drawer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(280px, calc(100vw - 2rem));
+    max-height: 100vh;
+    border-radius: 0 var(--radius-xl) var(--radius-xl) 0;
+    z-index: 50;
+    transform: translateX(-104%);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .sidebar.sidebar-drawer.sidebar-drawer-open {
+    transform: translateX(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .sidebar-mobile-launch {
+    display: none;
+  }
+
   .stock-ledger-toolbar .stock-ledger-view-group {
     margin-left: 0;
   }

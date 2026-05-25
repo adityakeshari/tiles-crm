@@ -1903,6 +1903,11 @@ export default function App() {
   const [inventoryLedgerSort, setInventoryLedgerSort] = useState("name_asc");
   const [purchaseWorkspaceTab, setPurchaseWorkspaceTab] = useState("new_bill");
   const [expenseWorkspaceTab, setExpenseWorkspaceTab] = useState("new");
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarMobileOpen, setIsSidebarMobileOpen] = useState(false);
+  const [isMobileSidebar, setIsMobileSidebar] = useState(
+    typeof window === "undefined" ? false : window.innerWidth <= 1080
+  );
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [isDocumentVisible, setIsDocumentVisible] = useState(
@@ -2000,6 +2005,49 @@ export default function App() {
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const stored = window.localStorage.getItem("tiles-crm-sidebar-collapsed");
+    if (stored === "true") {
+      setIsSidebarCollapsed(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem("tiles-crm-sidebar-collapsed", isSidebarCollapsed ? "true" : "false");
+  }, [isSidebarCollapsed]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const syncSidebarMode = () => {
+      const mobile = window.innerWidth <= 1080;
+      setIsMobileSidebar(mobile);
+      if (!mobile) {
+        setIsSidebarMobileOpen(false);
+      }
+    };
+
+    syncSidebarMode();
+    window.addEventListener("resize", syncSidebarMode);
+    return () => window.removeEventListener("resize", syncSidebarMode);
+  }, []);
+
+  useEffect(() => {
+    if (isMobileSidebar) {
+      setIsSidebarMobileOpen(false);
+    }
+  }, [currentView, isMobileSidebar]);
 
   useEffect(() => {
     if (currentView === "purchase_costing") {
@@ -6237,8 +6285,43 @@ export default function App() {
         </div>
       ) : null}
 
-      <div className="app-layout">
-        <aside className="sidebar panel">
+      {isMobileSidebar && isSidebarMobileOpen ? (
+        <button
+          type="button"
+          className="sidebar-overlay"
+          aria-label="Close navigation"
+          onClick={() => setIsSidebarMobileOpen(false)}
+        />
+      ) : null}
+
+      <div className={`app-layout ${isSidebarCollapsed && !isMobileSidebar ? "app-layout-collapsed" : ""} ${isMobileSidebar ? "app-layout-mobile" : ""}`}>
+        <aside className={`sidebar panel ${isSidebarCollapsed && !isMobileSidebar ? "sidebar-collapsed" : ""} ${isMobileSidebar ? "sidebar-drawer" : ""} ${isSidebarMobileOpen ? "sidebar-drawer-open" : ""}`}>
+          <div className="sidebar-header">
+            {isMobileSidebar ? (
+              <button
+                type="button"
+                className="secondary sidebar-toggle sidebar-mobile-launch"
+                onClick={() => setIsSidebarMobileOpen(false)}
+                aria-label="Close sidebar"
+              >
+                ✕
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="secondary sidebar-toggle"
+              onClick={() => {
+                if (isMobileSidebar) {
+                  setIsSidebarMobileOpen((current) => !current);
+                  return;
+                }
+                setIsSidebarCollapsed((current) => !current);
+              }}
+              aria-label={isSidebarCollapsed && !isMobileSidebar ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              ☰
+            </button>
+          </div>
           <div className="sidebar-brand">
             <p className="eyebrow">AIBA Tiles</p>
             <strong>Showroom CRM</strong>
@@ -6259,6 +6342,7 @@ export default function App() {
                       <button
                         key={`${group.id}-${item.id}`}
                         type="button"
+                        title={item.label}
                         className={
                           currentView === item.id
                             ? "sidebar-item sidebar-item-active"
@@ -6267,7 +6351,10 @@ export default function App() {
                         onClick={() => setCurrentView(item.id)}
                       >
                         <span className="sidebar-dot" aria-hidden="true" />
-                        {item.label}
+                        <span className="sidebar-item-text">{item.label}</span>
+                        <span className="sidebar-item-compact" aria-hidden="true">
+                          {String(item.label || "").charAt(0)}
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -6278,6 +6365,18 @@ export default function App() {
         </aside>
 
         <div className="app-main">
+          {isMobileSidebar ? (
+            <div className="mobile-sidebar-bar">
+              <button
+                type="button"
+                className="secondary sidebar-toggle"
+                onClick={() => setIsSidebarMobileOpen(true)}
+                aria-label="Open sidebar"
+              >
+                ☰ Menu
+              </button>
+            </div>
+          ) : null}
           {["followups", "operations", "complaints"].includes(currentView) ? (
             <section className="filters-bar panel">
               <div className="control-group">
