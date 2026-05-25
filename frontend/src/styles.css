@@ -2745,6 +2745,12 @@ button.sidebar-item-active .sidebar-dot {
 .sidebar-item-compact {
   display: none;
   font-weight: 700;
+  font-size: 1.1rem;
+  line-height: 1;
+  width: 20px;
+  height: 20px;
+  text-align: center;
+  flex-shrink: 0;
 }
 
 .sidebar-overlay {

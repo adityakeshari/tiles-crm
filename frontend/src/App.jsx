@@ -78,6 +78,26 @@ const navGroups = [
   },
 ];
 
+const compactSidebarIcons = {
+  overview: "🏠",
+  pipeline: "👥",
+  followups: "📞",
+  quotations: "🧾",
+  projects: "🏗️",
+  plumbing: "🔧",
+  dealers: "🤝",
+  complaints: "⚠️",
+  operations: "✅",
+  inventory: "📦",
+  purchases: "🚚",
+  masons: "👷",
+  schemes: "🎟️",
+  billing: "💰",
+  expenses: "💸",
+  reports: "📊",
+  team: "🔐",
+};
+
 const views = [
   { id: "overview", label: "Overview" },
   { id: "pipeline", label: "Pipeline" },
@@ -6353,7 +6373,7 @@ export default function App() {
                         <span className="sidebar-dot" aria-hidden="true" />
                         <span className="sidebar-item-text">{item.label}</span>
                         <span className="sidebar-item-compact" aria-hidden="true">
-                          {String(item.label || "").charAt(0)}
+                          {compactSidebarIcons[item.id] || "•"}
                         </span>
                       </button>
                     ))}
