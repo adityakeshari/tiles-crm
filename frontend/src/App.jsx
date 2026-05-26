@@ -397,7 +397,6 @@ const DEFAULT_LIST_LIMITS = {
   invoices: 50,
 };
 const MAX_LIST_LIMIT = 300;
-const PRODUCT_MASTER_OPTION_LIMIT = 300;
 
 const dealerCategories = ["A", "B", "C"];
 
@@ -1855,6 +1854,7 @@ export default function App() {
   const [dealers, setDealers] = useState([]);
   const [products, setProducts] = useState([]);
   const [inventorySummary, setInventorySummary] = useState(null);
+  const [inventoryOptions, setInventoryOptions] = useState({ companies: [], sizes: [], finishes: [] });
   const [dealerForm, setDealerForm] = useState(emptyDealer);
   const [editingDealerId, setEditingDealerId] = useState(null);
   const [productForm, setProductForm] = useState(emptyProduct);
@@ -2607,7 +2607,7 @@ export default function App() {
         ...new Set(
           [
             ...defaultCompanyOptions,
-            ...products.map((product) => getProductCompany(product)).filter(Boolean),
+            ...(inventoryOptions.companies || []).map((value) => normalizeText(value)).filter(Boolean),
             normalizeText(productForm.company_name),
             ...customCompanyOptions,
           ]
@@ -2615,14 +2615,14 @@ export default function App() {
       ]
         .filter(Boolean)
         .sort((left, right) => left.localeCompare(right)),
-    [products, customCompanyOptions, productForm.company_name]
+    [inventoryOptions.companies, customCompanyOptions, productForm.company_name]
   );
   const productSizeOptions = useMemo(
     () =>
       [
         ...new Set(
           [
-            ...products.map((product) => getProductSize(product)).filter(Boolean),
+            ...(inventoryOptions.sizes || []).map((value) => normalizeText(value)).filter(Boolean),
             ...customProductSizeOptions,
             normalizeText(productForm.product_size || productForm.tile_size),
           ]
@@ -2630,14 +2630,14 @@ export default function App() {
       ]
         .filter(Boolean)
         .sort((left, right) => left.localeCompare(right)),
-    [products, customProductSizeOptions, productForm.product_size, productForm.tile_size]
+    [inventoryOptions.sizes, customProductSizeOptions, productForm.product_size, productForm.tile_size]
   );
   const productFinishOptions = useMemo(
     () =>
-      [...new Set([...defaultProductFinishes, ...products.map((product) => getProductFinish(product)).filter(Boolean), ...customFinishOptions, normalizeText(productForm.finish)])]
+      [...new Set([...defaultProductFinishes, ...(inventoryOptions.finishes || []).map((value) => normalizeText(value)).filter(Boolean), ...customFinishOptions, normalizeText(productForm.finish)])]
         .filter(Boolean)
         .sort((left, right) => left.localeCompare(right)),
-    [products, customFinishOptions, productForm.finish]
+    [inventoryOptions.finishes, customFinishOptions, productForm.finish]
   );
   const similarProductMatch = useMemo(() => {
     const signature = buildNormalizedProductSignature(productForm);
@@ -3264,12 +3264,20 @@ export default function App() {
         setMasons(schemesData.masons || []);
         setMasonActivities(schemesData.masonActivities || []);
       } else if (view === "inventory") {
-        const inventoryData = await api.getInventory({
-          ...requestOptions,
-          limit: Math.max(listLimits.products, PRODUCT_MASTER_OPTION_LIMIT),
-        });
+        const [inventoryData, inventoryOptionsData] = await Promise.all([
+          api.getInventory({
+            ...requestOptions,
+            limit: listLimits.products,
+          }),
+          api.getInventoryOptions(requestOptions).catch(() => ({ companies: [], sizes: [], finishes: [] })),
+        ]);
         setProducts(inventoryData.products || []);
         setInventorySummary(inventoryData.summary || null);
+        setInventoryOptions({
+          companies: Array.isArray(inventoryOptionsData?.companies) ? inventoryOptionsData.companies : [],
+          sizes: Array.isArray(inventoryOptionsData?.sizes) ? inventoryOptionsData.sizes : [],
+          finishes: Array.isArray(inventoryOptionsData?.finishes) ? inventoryOptionsData.finishes : [],
+        });
       } else if (view === "dealers") {
         const dealersData = await api.getDealers({ ...requestOptions, limit: listLimits.dealers });
         setDealers(dealersData || []);
@@ -6214,6 +6222,7 @@ export default function App() {
     setDealers([]);
     setProducts([]);
     setInventorySummary(null);
+    setInventoryOptions({ companies: [], sizes: [], finishes: [] });
     setPurchases([]);
     setPurchaseSummary(null);
     setPurchaseForm({ ...emptyPurchase, purchase_date: new Date().toISOString().slice(0, 10) });

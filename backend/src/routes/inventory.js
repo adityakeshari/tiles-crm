@@ -69,6 +69,71 @@ async function getLegacyProductColumnFlags() {
   };
 }
 
+function buildLegacyColumnExpression(alias, columnName, enabled) {
+  return enabled ? `NULLIF(${alias}.${columnName}, '')` : "NULL";
+}
+
+router.get("/options", async (_req, res) => {
+  try {
+    const {
+      hasCompanyColumn,
+      hasBrandColumn,
+      hasManufacturerColumn,
+      hasSizeColumn,
+      hasSurfaceColumn,
+      hasTypeColumn,
+    } = await getLegacyProductColumnFlags();
+
+    const legacyCompanyExpression = buildLegacyColumnExpression("p", "company", hasCompanyColumn);
+    const legacyBrandExpression = buildLegacyColumnExpression("p", "brand", hasBrandColumn);
+    const legacyManufacturerExpression = buildLegacyColumnExpression("p", "manufacturer", hasManufacturerColumn);
+    const legacySizeExpression = buildLegacyColumnExpression("p", "size", hasSizeColumn);
+    const legacySurfaceExpression = buildLegacyColumnExpression("p", "surface", hasSurfaceColumn);
+    const legacyTypeExpression = buildLegacyColumnExpression("p", "type", hasTypeColumn);
+
+    const [companiesResult, sizesResult, finishesResult] = await Promise.all([
+      query(
+        `SELECT option_value
+         FROM (
+           SELECT DISTINCT COALESCE(NULLIF(p.company_name, ''), ${legacyCompanyExpression}, ${legacyBrandExpression}, ${legacyManufacturerExpression}) AS option_value
+           FROM products p
+         ) option_source
+         WHERE COALESCE(option_value, '') <> ''
+         ORDER BY option_value ASC
+         LIMIT 500`
+      ),
+      query(
+        `SELECT option_value
+         FROM (
+           SELECT DISTINCT COALESCE(NULLIF(p.product_size, ''), NULLIF(p.tile_size, ''), ${legacySizeExpression}) AS option_value
+           FROM products p
+         ) option_source
+         WHERE COALESCE(option_value, '') <> ''
+         ORDER BY option_value ASC
+         LIMIT 500`
+      ),
+      query(
+        `SELECT option_value
+         FROM (
+           SELECT DISTINCT COALESCE(NULLIF(p.finish, ''), ${legacySurfaceExpression}, ${legacyTypeExpression}) AS option_value
+           FROM products p
+         ) option_source
+         WHERE COALESCE(option_value, '') <> ''
+         ORDER BY option_value ASC
+         LIMIT 500`
+      ),
+    ]);
+
+    return res.json({
+      companies: companiesResult.rows.map((row) => row.option_value).filter(Boolean),
+      sizes: sizesResult.rows.map((row) => row.option_value).filter(Boolean),
+      finishes: finishesResult.rows.map((row) => row.option_value).filter(Boolean),
+    });
+  } catch (error) {
+    return res.status(500).json({ message: "Unable to fetch inventory options", error: error.message });
+  }
+});
+
 router.get("/", async (req, res) => {
   const limit = parseListLimit(req.query.limit);
 
@@ -84,15 +149,15 @@ router.get("/", async (req, res) => {
       hasSurfaceColumn,
       hasTypeColumn,
     } = await getLegacyProductColumnFlags();
-    const legacyCompanyExpression = hasCompanyColumn ? "NULLIF(p.company, '')" : "NULL";
-    const legacyBrandExpression = hasBrandColumn ? "NULLIF(p.brand, '')" : "NULL";
-    const legacyManufacturerExpression = hasManufacturerColumn ? "NULLIF(p.manufacturer, '')" : "NULL";
-    const legacyCodeExpression = hasCodeColumn ? "NULLIF(p.code, '')" : "NULL";
-    const legacyDesignExpression = hasDesignColumn ? "NULLIF(p.design, '')" : "NULL";
-    const legacyItemCodeExpression = hasItemCodeColumn ? "NULLIF(p.item_code, '')" : "NULL";
-    const legacySizeExpression = hasSizeColumn ? "NULLIF(p.size, '')" : "NULL";
-    const legacySurfaceExpression = hasSurfaceColumn ? "NULLIF(p.surface, '')" : "NULL";
-    const legacyTypeExpression = hasTypeColumn ? "NULLIF(p.type, '')" : "NULL";
+    const legacyCompanyExpression = buildLegacyColumnExpression("p", "company", hasCompanyColumn);
+    const legacyBrandExpression = buildLegacyColumnExpression("p", "brand", hasBrandColumn);
+    const legacyManufacturerExpression = buildLegacyColumnExpression("p", "manufacturer", hasManufacturerColumn);
+    const legacyCodeExpression = buildLegacyColumnExpression("p", "code", hasCodeColumn);
+    const legacyDesignExpression = buildLegacyColumnExpression("p", "design", hasDesignColumn);
+    const legacyItemCodeExpression = buildLegacyColumnExpression("p", "item_code", hasItemCodeColumn);
+    const legacySizeExpression = buildLegacyColumnExpression("p", "size", hasSizeColumn);
+    const legacySurfaceExpression = buildLegacyColumnExpression("p", "surface", hasSurfaceColumn);
+    const legacyTypeExpression = buildLegacyColumnExpression("p", "type", hasTypeColumn);
     const summaryLegacyCompanyExpression = hasCompanyColumn ? "NULLIF(company, '')" : "NULL";
     const summaryLegacyBrandExpression = hasBrandColumn ? "NULLIF(brand, '')" : "NULL";
     const summaryLegacyManufacturerExpression = hasManufacturerColumn ? "NULLIF(manufacturer, '')" : "NULL";

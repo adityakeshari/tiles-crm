@@ -385,6 +385,7 @@ export const api = {
       method: "DELETE",
     }),
   getInventory: (options = {}) => request(withQuery("/inventory", { limit: options.limit }), options),
+  getInventoryOptions: (options = {}) => request("/inventory/options", options),
   createProduct: (payload) =>
     request("/inventory", {
       method: "POST",
