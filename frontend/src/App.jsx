@@ -397,6 +397,7 @@ const DEFAULT_LIST_LIMITS = {
   invoices: 50,
 };
 const MAX_LIST_LIMIT = 300;
+const PRODUCT_MASTER_OPTION_LIMIT = 300;
 
 const dealerCategories = ["A", "B", "C"];
 
@@ -3263,7 +3264,10 @@ export default function App() {
         setMasons(schemesData.masons || []);
         setMasonActivities(schemesData.masonActivities || []);
       } else if (view === "inventory") {
-        const inventoryData = await api.getInventory({ ...requestOptions, limit: listLimits.products });
+        const inventoryData = await api.getInventory({
+          ...requestOptions,
+          limit: Math.max(listLimits.products, PRODUCT_MASTER_OPTION_LIMIT),
+        });
         setProducts(inventoryData.products || []);
         setInventorySummary(inventoryData.summary || null);
       } else if (view === "dealers") {
