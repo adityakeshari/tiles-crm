@@ -52,13 +52,20 @@ async function getLegacyProductColumnFlags() {
      FROM information_schema.columns
      WHERE table_schema = 'public'
        AND table_name = 'products'
-       AND column_name IN ('company', 'code')`
+       AND column_name IN ('company', 'brand', 'manufacturer', 'code', 'design', 'item_code', 'size', 'surface', 'type')`
   );
 
   const columnNames = new Set(result.rows.map((row) => row.column_name));
   return {
     hasCompanyColumn: columnNames.has("company"),
+    hasBrandColumn: columnNames.has("brand"),
+    hasManufacturerColumn: columnNames.has("manufacturer"),
     hasCodeColumn: columnNames.has("code"),
+    hasDesignColumn: columnNames.has("design"),
+    hasItemCodeColumn: columnNames.has("item_code"),
+    hasSizeColumn: columnNames.has("size"),
+    hasSurfaceColumn: columnNames.has("surface"),
+    hasTypeColumn: columnNames.has("type"),
   };
 }
 
@@ -66,21 +73,42 @@ router.get("/", async (req, res) => {
   const limit = parseListLimit(req.query.limit);
 
   try {
-    const { hasCompanyColumn, hasCodeColumn } = await getLegacyProductColumnFlags();
+    const {
+      hasCompanyColumn,
+      hasBrandColumn,
+      hasManufacturerColumn,
+      hasCodeColumn,
+      hasDesignColumn,
+      hasItemCodeColumn,
+      hasSizeColumn,
+      hasSurfaceColumn,
+      hasTypeColumn,
+    } = await getLegacyProductColumnFlags();
     const legacyCompanyExpression = hasCompanyColumn ? "NULLIF(p.company, '')" : "NULL";
+    const legacyBrandExpression = hasBrandColumn ? "NULLIF(p.brand, '')" : "NULL";
+    const legacyManufacturerExpression = hasManufacturerColumn ? "NULLIF(p.manufacturer, '')" : "NULL";
     const legacyCodeExpression = hasCodeColumn ? "NULLIF(p.code, '')" : "NULL";
+    const legacyDesignExpression = hasDesignColumn ? "NULLIF(p.design, '')" : "NULL";
+    const legacyItemCodeExpression = hasItemCodeColumn ? "NULLIF(p.item_code, '')" : "NULL";
+    const legacySizeExpression = hasSizeColumn ? "NULLIF(p.size, '')" : "NULL";
+    const legacySurfaceExpression = hasSurfaceColumn ? "NULLIF(p.surface, '')" : "NULL";
+    const legacyTypeExpression = hasTypeColumn ? "NULLIF(p.type, '')" : "NULL";
     const summaryLegacyCompanyExpression = hasCompanyColumn ? "NULLIF(company, '')" : "NULL";
+    const summaryLegacyBrandExpression = hasBrandColumn ? "NULLIF(brand, '')" : "NULL";
+    const summaryLegacyManufacturerExpression = hasManufacturerColumn ? "NULLIF(manufacturer, '')" : "NULL";
     const [productsResult, summaryResult] = await Promise.all([
       query(
         `SELECT *
          FROM (
            SELECT
              p.*,
-             COALESCE(NULLIF(p.company_name, ''), ${legacyCompanyExpression}, 'Company missing') AS company_name,
-             COALESCE(NULLIF(p.product_size, ''), NULLIF(p.tile_size, ''), 'Size missing') AS product_size,
-             COALESCE(NULLIF(p.tile_size, ''), NULLIF(p.product_size, ''), '') AS tile_size,
-             COALESCE(NULLIF(p.design_code, ''), ${legacyCodeExpression}, '') AS design_code,
-             COALESCE(NULLIF(p.finish, ''), '') AS finish,
+             COALESCE(NULLIF(p.company_name, ''), ${legacyCompanyExpression}, ${legacyBrandExpression}, ${legacyManufacturerExpression}, 'Company missing') AS company_name,
+             ${legacyCompanyExpression} AS legacy_company,
+             COALESCE(NULLIF(p.product_size, ''), NULLIF(p.tile_size, ''), ${legacySizeExpression}, 'Size missing') AS product_size,
+             COALESCE(NULLIF(p.tile_size, ''), NULLIF(p.product_size, ''), ${legacySizeExpression}, '') AS tile_size,
+             COALESCE(NULLIF(p.design_code, ''), ${legacyCodeExpression}, ${legacyDesignExpression}, ${legacyItemCodeExpression}, '') AS design_code,
+             ${legacyCodeExpression} AS legacy_code,
+             COALESCE(NULLIF(p.finish, ''), ${legacySurfaceExpression}, ${legacyTypeExpression}, '') AS finish,
              latest_purchase.batch_no AS latest_batch_no
            FROM products p
            LEFT JOIN LATERAL (
@@ -105,8 +133,8 @@ router.get("/", async (req, res) => {
            COUNT(*) FILTER (WHERE status = 'fast_moving')::int AS fast_moving_count,
            COUNT(*) FILTER (WHERE status = 'dead_stock')::int AS dead_stock_count,
            COALESCE(SUM(stock_sqft), 0)::int AS total_stock_sqft,
-           COUNT(*) FILTER (WHERE COALESCE(NULLIF(company_name, ''), ${summaryLegacyCompanyExpression}) IS NULL)::int AS missing_company_count,
-           COUNT(*) FILTER (WHERE COALESCE(product_size, '') = '' AND COALESCE(tile_size, '') = '')::int AS missing_size_count,
+           COUNT(*) FILTER (WHERE COALESCE(NULLIF(company_name, ''), ${summaryLegacyCompanyExpression}, ${summaryLegacyBrandExpression}, ${summaryLegacyManufacturerExpression}) IS NULL)::int AS missing_company_count,
+           COUNT(*) FILTER (WHERE COALESCE(NULLIF(product_size, ''), NULLIF(tile_size, ''), ${hasSizeColumn ? "NULLIF(size, '')" : "NULL"}) IS NULL)::int AS missing_size_count,
            COUNT(*) FILTER (WHERE COALESCE(weight_per_box, 0) <= 0 AND COALESCE(weight_per_unit, 0) <= 0)::int AS missing_weight_count,
            COUNT(*) FILTER (
              WHERE COALESCE(purchase_rate, 0) <= 0

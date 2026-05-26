@@ -530,6 +530,8 @@ const defaultProductFinishes = [
   "Other",
 ];
 
+const defaultCompanyOptions = [];
+
 const emptySchemeToken = {
   site_name: "",
   invoice_number: "",
@@ -892,9 +894,9 @@ function serializeComparable(value) {
 function buildNormalizedProductSignature(product) {
   return {
     name: normalizeText(product?.name).toLowerCase(),
-    company_name: normalizeText(product?.company_name).toLowerCase(),
-    product_size: normalizeText(product?.product_size || product?.tile_size).toLowerCase(),
-    finish: normalizeText(product?.finish).toLowerCase(),
+    company_name: getProductCompany(product).toLowerCase(),
+    product_size: getProductSize(product).toLowerCase(),
+    finish: getProductFinish(product).toLowerCase(),
   };
 }
 
@@ -2237,11 +2239,11 @@ export default function App() {
           !normalizedSearch ||
           [
             product.name,
-            product.company_name,
+            getProductCompany(product),
             product.category,
-            product.product_size || product.tile_size,
-            product.design_code,
-            product.finish,
+            getProductSize(product),
+            getProductDesignCode(product),
+            getProductFinish(product),
           ]
             .filter(Boolean)
             .join(" ")
@@ -2603,39 +2605,38 @@ export default function App() {
       [
         ...new Set(
           [
-            ...products
-              .flatMap((product) => [normalizeText(product.company_name), normalizeText(product.company)])
-              .filter(Boolean),
+            ...defaultCompanyOptions,
+            ...products.map((product) => getProductCompany(product)).filter(Boolean),
+            normalizeText(productForm.company_name),
             ...customCompanyOptions,
           ]
         ),
       ]
         .filter(Boolean)
         .sort((left, right) => left.localeCompare(right)),
-    [products, customCompanyOptions]
+    [products, customCompanyOptions, productForm.company_name]
   );
   const productSizeOptions = useMemo(
     () =>
       [
         ...new Set(
           [
-            ...products
-              .flatMap((product) => [normalizeText(product.product_size), normalizeText(product.tile_size)])
-              .filter(Boolean),
+            ...products.map((product) => getProductSize(product)).filter(Boolean),
             ...customProductSizeOptions,
+            normalizeText(productForm.product_size || productForm.tile_size),
           ]
         ),
       ]
         .filter(Boolean)
         .sort((left, right) => left.localeCompare(right)),
-    [products, customProductSizeOptions]
+    [products, customProductSizeOptions, productForm.product_size, productForm.tile_size]
   );
   const productFinishOptions = useMemo(
     () =>
-      [...new Set([...defaultProductFinishes, ...products.map((product) => normalizeText(product.finish)).filter(Boolean), ...customFinishOptions])]
+      [...new Set([...defaultProductFinishes, ...products.map((product) => getProductFinish(product)).filter(Boolean), ...customFinishOptions, normalizeText(productForm.finish)])]
         .filter(Boolean)
         .sort((left, right) => left.localeCompare(right)),
-    [products, customFinishOptions]
+    [products, customFinishOptions, productForm.finish]
   );
   const similarProductMatch = useMemo(() => {
     const signature = buildNormalizedProductSignature(productForm);
@@ -6000,11 +6001,11 @@ export default function App() {
   }
 
   function startEditingProduct(product, highlightFields = []) {
-    const companyValue = product.company_name || product.company || "";
-    const productSizeValue = product.product_size || product.tile_size || "";
-    const tileSizeValue = product.tile_size || product.product_size || "";
-    const finishValue = product.finish || "";
-    const designCodeValue = product.design_code || product.code || "";
+    const companyValue = getProductCompany(product);
+    const productSizeValue = getProductSize(product);
+    const tileSizeValue = product.tile_size || productSizeValue;
+    const finishValue = getProductFinish(product);
+    const designCodeValue = getProductDesignCode(product);
 
     setEditingProductId(product.id);
     setInventoryWorkspaceTab("new");
@@ -6681,7 +6682,7 @@ export default function App() {
                       <div className="section-head">
                         <div>
                           <h3>{product.name}</h3>
-                          <p className="muted">{product.company_name || "Company missing"} | {product.product_size || product.tile_size || "Size missing"}</p>
+                          <p className="muted">{getProductCompany(product) || "Company missing"} | {getProductSize(product) || "Size missing"}</p>
                         </div>
                         <span className="legend-chip product-completeness-chip">{getProductCompletenessPercent(product)}%</span>
                       </div>
@@ -8965,7 +8966,7 @@ export default function App() {
                 <div className="product-duplicate-warning full-span">
                   <strong>Similar product already exists:</strong>
                   <span>
-                    {similarProductMatch.name} | {similarProductMatch.company_name || "Company missing"} | {similarProductMatch.product_size || similarProductMatch.tile_size || "Size missing"} | {similarProductMatch.finish || "Finish missing"}
+                    {similarProductMatch.name} | {getProductCompany(similarProductMatch) || "Company missing"} | {getProductSize(similarProductMatch) || "Size missing"} | {getProductFinish(similarProductMatch) || "Finish missing"}
                   </span>
                   <div className="lead-actions">
                     <button type="button" className="secondary" onClick={() => startEditingProduct(similarProductMatch)}>
@@ -9415,7 +9416,7 @@ export default function App() {
                     <div>
                       <h3>{product.name}</h3>
                       <p className="muted">
-                        {[(product.company_name || product.company) || "Company missing", (product.design_code || product.code) || product.category, product.finish || "", product.latest_batch_no ? `Batch ${product.latest_batch_no}` : ""]
+                        {[getProductCompany(product) || "Company missing", getProductDesignCode(product) || product.category, getProductFinish(product) || "", product.latest_batch_no ? `Batch ${product.latest_batch_no}` : ""]
                           .filter(Boolean)
                           .join(" | ")}
                       </p>
@@ -9423,9 +9424,9 @@ export default function App() {
                     <span className={`status-chip status-${product.status}`}>{labelize(product.status)}</span>
                   </div>
                   <div className="product-meta-grid">
-                    <span>Company {(product.company_name || product.company) || "Missing"}</span>
+                    <span>Company {getProductCompany(product) || "Missing"}</span>
                     <span>Category {product.category || "Missing"}</span>
-                    <span>Size {product.product_size || product.tile_size || "Missing"}</span>
+                    <span>Size {getProductSize(product) || "Missing"}</span>
                     <span>Unit {product.unit || "Missing"}</span>
                     <span>Selling Rs {Number(product.price_per_sqft || 0).toLocaleString("en-IN")}</span>
                     <span>Min Rs {Number(product.minimum_allowed_rate || 0).toLocaleString("en-IN")}</span>
@@ -9472,7 +9473,7 @@ export default function App() {
                             id: product.id,
                             entityLabel: "Product",
                             message: `This will permanently remove ${product.name} from inventory.`,
-                            subtext: product.design_code || product.category,
+                            subtext: getProductDesignCode(product) || product.category,
                           })
                         }
                       >
@@ -9520,7 +9521,7 @@ export default function App() {
                     const stockValue = Number(product.stock_sqft || 0);
                     const stockClass = stockValue <= 0 ? "stock-out" : stockValue <= 5 ? "stock-low" : "stock-in";
                     const productGaps = getProductDataGaps(product);
-                    const productMetaLine = [(product.design_code || product.code) || "", product.finish || "", product.latest_batch_no ? `Batch ${product.latest_batch_no}` : ""]
+                    const productMetaLine = [getProductDesignCode(product) || "", getProductFinish(product) || "", product.latest_batch_no ? `Batch ${product.latest_batch_no}` : ""]
                       .filter(Boolean)
                       .join(" | ");
                     const compactGapText =
@@ -9540,9 +9541,9 @@ export default function App() {
                             </div>
                           ) : null}
                         </td>
-                        <td className="col-company">{(product.company_name || product.company) || "Missing"}</td>
+                        <td className="col-company">{getProductCompany(product) || "Missing"}</td>
                         <td className="col-category">{product.category || "Missing"}</td>
-                        <td className="col-size">{product.product_size || product.tile_size || "Missing"}</td>
+                        <td className="col-size">{getProductSize(product) || "Missing"}</td>
                         <td className="col-stock">
                           <span className={`stock-badge ${stockClass}`}>{stockValue}</span>
                         </td>
@@ -9567,7 +9568,7 @@ export default function App() {
                                     id: product.id,
                                     entityLabel: "Product",
                                     message: `This will permanently remove ${product.name} from inventory.`,
-                                    subtext: product.design_code || product.category,
+                                    subtext: getProductDesignCode(product) || product.category,
                                   })
                                 }
                               >
@@ -9699,10 +9700,10 @@ export default function App() {
                         >
                           <td>
                             <strong>{product.name}</strong>
-                            <div className="muted">{product.design_code || product.category || ""}</div>
-                          </td>
-                          <td>{product.company_name || <span className="muted">- missing</span>}</td>
-                          <td>{product.product_size || product.tile_size || <span className="muted">- missing</span>}</td>
+                          <div className="muted">{getProductDesignCode(product) || product.category || ""}</div>
+                        </td>
+                          <td>{getProductCompany(product) || <span className="muted">- missing</span>}</td>
+                          <td>{getProductSize(product) || <span className="muted">- missing</span>}</td>
                           <td>
                             <div className="chip-row">
                               {gaps.map((code) => (
@@ -11432,11 +11433,50 @@ function normalizeDealerPayload(dealer) {
   };
 }
 
+function getProductCompany(product) {
+  return normalizeText(
+    product?.company_name ||
+    product?.company ||
+    product?.brand ||
+    product?.manufacturer ||
+    ""
+  );
+}
+
+function getProductSize(product) {
+  return normalizeText(
+    product?.product_size ||
+    product?.tile_size ||
+    product?.size ||
+    ""
+  );
+}
+
+function getProductDesignCode(product) {
+  return normalizeText(
+    product?.design_code ||
+    product?.code ||
+    product?.design ||
+    product?.item_code ||
+    ""
+  );
+}
+
+function getProductFinish(product) {
+  return normalizeText(
+    product?.finish ||
+    product?.surface ||
+    product?.type ||
+    ""
+  );
+}
+
 function normalizeProductPayload(product) {
-  const normalizedCompanyName = normalizeText(product.company_name || product.company);
-  const normalizedProductSize = normalizeText(product.product_size || product.tile_size);
-  const normalizedTileSize = normalizeText(product.tile_size || product.product_size);
-  const normalizedDesignCode = normalizeText(product.design_code || product.code);
+  const normalizedCompanyName = getProductCompany(product);
+  const normalizedProductSize = getProductSize(product);
+  const normalizedTileSize = normalizeText(product.tile_size || normalizedProductSize);
+  const normalizedDesignCode = getProductDesignCode(product);
+  const normalizedFinish = getProductFinish(product);
 
   return {
     ...product,
@@ -11445,7 +11485,7 @@ function normalizeProductPayload(product) {
     product_size: normalizedProductSize,
     tile_size: normalizedTileSize,
     design_code: normalizedDesignCode,
-    finish: normalizeText(product.finish),
+    finish: normalizedFinish,
     stock_sqft: Number(product.stock_sqft || 0),
     pieces_per_box: Number(product.pieces_per_box || 0),
     sqft_per_box: Number(product.sqft_per_box || 0),
@@ -11491,16 +11531,20 @@ function buildPurchaseBatchSuggestion(product, purchaseDate, rowIndex) {
 function getProductDataGaps(product) {
   const gaps = [];
 
-  if (!normalizeText(product?.company_name)) {
+  if (!getProductCompany(product)) {
     gaps.push("company");
   }
 
-  if (!normalizeText(product?.design_code)) {
+  if (!getProductDesignCode(product)) {
     gaps.push("design");
   }
 
-  if (!normalizeText(product?.product_size || product?.tile_size)) {
+  if (!getProductSize(product)) {
     gaps.push("size");
+  }
+
+  if (!getProductFinish(product)) {
+    gaps.push("finish");
   }
 
   if (Number(product?.pieces_per_box || 0) <= 0 || Number(product?.sqft_per_box || 0) <= 0) {
@@ -11526,8 +11570,10 @@ function getProductDataGaps(product) {
 
 function getProductCompletenessPercent(product) {
   const checks = [
-    Boolean(normalizeText(product?.company_name)),
-    Boolean(normalizeText(product?.product_size || product?.tile_size)),
+    Boolean(getProductCompany(product)),
+    Boolean(getProductDesignCode(product)),
+    Boolean(getProductSize(product)),
+    Boolean(getProductFinish(product)),
     Number(product?.pieces_per_box || 0) > 0 && Number(product?.sqft_per_box || 0) > 0,
     Number(product?.weight_per_box || 0) > 0 && Number(product?.weight_per_unit || 0) > 0,
     Number(product?.purchase_rate || 0) > 0,
@@ -11548,6 +11594,8 @@ function formatProductDataGapLabel(code) {
       return "design code";
     case "size":
       return "size";
+    case "finish":
+      return "finish";
     case "packaging":
       return "packaging";
     case "weight":
