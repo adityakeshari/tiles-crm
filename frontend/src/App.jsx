@@ -1,5 +1,9 @@
 import { Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, getBillingPdfUrl, getCsvExportUrl, getProjectInvoicePdfUrl, getQuotationPdfUrl } from "./api.js";
+import AppHeader from "./components/AppHeader.jsx";
+import Sidebar from "./components/Sidebar.jsx";
+import PageHeader from "./components/PageHeader.jsx";
+import WorkspaceTabs from "./components/WorkspaceTabs.jsx";
 
 const BillingSection = lazy(() => import("./sections/BillingSection.jsx"));
 const PurchaseCostingSection = lazy(() => import("./sections/PurchaseCostingSection.jsx"));
@@ -8,7 +12,7 @@ const RegisteredMasonsSection = lazy(() => import("./sections/RegisteredMasonsSe
 const ProjectsSection = lazy(() => import("./sections/ProjectsSection.jsx"));
 const LeadWorkspaceSection = lazy(() => import("./sections/LeadWorkspaceSection.jsx"));
 
-// Enterprise sidebar hierarchy. Sub-item IDs map to existing currentView IDs —
+// Enterprise sidebar hierarchy. Sub-item IDs map to existing currentView IDs â€”
 // no business logic / API / route changes; only the navigation surface is restructured.
 const navGroups = [
   {
@@ -122,7 +126,7 @@ const views = [
 const viewMeta = {
   overview: {
     title: "Dashboard",
-    description: "Today's summary at a glance — sales, collection, pending, follow-ups and stock alerts.",
+    description: "Today's summary at a glance â€” sales, collection, pending, follow-ups and stock alerts.",
     audience: "Owner & Manager view",
   },
   pipeline: {
@@ -142,7 +146,7 @@ const viewMeta = {
   },
   projects: {
     title: "Projects",
-    description: "Won leads under execution — dispatches, payments, plumbing and net profit.",
+    description: "Won leads under execution â€” dispatches, payments, plumbing and net profit.",
     audience: "Manager control",
   },
   plumbing: {
@@ -167,7 +171,7 @@ const viewMeta = {
   },
   masons: {
     title: "Registered Masons",
-    description: "Add a new mason, update profile and mark active/inactive — only active masons can claim tokens.",
+    description: "Add a new mason, update profile and mark active/inactive â€” only active masons can claim tokens.",
     audience: "Manager entry",
   },
   inventory: {
@@ -177,7 +181,7 @@ const viewMeta = {
   },
   dealers: {
     title: "Dealers",
-    description: "Dealer network — category, purchase value, outstanding and commission.",
+    description: "Dealer network â€” category, purchase value, outstanding and commission.",
     audience: "Manager control",
   },
   purchases: {
@@ -202,7 +206,7 @@ const viewMeta = {
   },
   reports: {
     title: "Reports",
-    description: "Daily report sheet plus owner control — sales, collection, profit and payouts.",
+    description: "Daily report sheet plus owner control â€” sales, collection, profit and payouts.",
     audience: "Owner / Manager",
   },
   team: {
@@ -4294,7 +4298,7 @@ export default function App() {
         setPurchaseSupplierHistory({ supplier_name: supplier, isNew: true });
       }
     } catch (_err) {
-      // Best-effort helper — do not block save flow if lookup fails.
+      // Best-effort helper â€” do not block save flow if lookup fails.
       setPurchaseSupplierHistory(null);
     }
   }
@@ -6203,22 +6207,15 @@ export default function App() {
         </div>
       ) : null}
 
-      <header className="topbar topbar-compact panel">
-        <div className="hero-copy">
-          <h1>Hello {user?.name || "Team"} <span className="topbar-sep">·</span> <span className="topbar-meta">{headerRoleLabel}</span> <span className="topbar-sep">·</span> <span className="topbar-meta">{headerWorkspaceLabel}</span></h1>
-        </div>
-        <div className="toolbar">
-          <button className="secondary" onClick={() => setShowNotifications((current) => !current)}>
-            Notifications {unreadNotifications.length ? `(${unreadNotifications.length})` : ""}
-          </button>
-          <button className="secondary" onClick={() => setCurrentView("overview")}>
-            Dashboard
-          </button>
-          <button className="secondary" onClick={handleLogout}>
-            Logout
-          </button>
-        </div>
-      </header>
+      <AppHeader
+        userName={user?.name}
+        roleLabel={headerRoleLabel}
+        workspaceLabel={headerWorkspaceLabel}
+        unreadCount={unreadNotifications.length}
+        onToggleNotifications={() => setShowNotifications((current) => !current)}
+        onOpenDashboard={() => setCurrentView("overview")}
+        onLogout={handleLogout}
+      />
 
       {showNotifications ? (
         <section className="panel notification-panel">
@@ -6305,84 +6302,26 @@ export default function App() {
         </div>
       ) : null}
 
-      {isMobileSidebar && isSidebarMobileOpen ? (
-        <button
-          type="button"
-          className="sidebar-overlay"
-          aria-label="Close navigation"
-          onClick={() => setIsSidebarMobileOpen(false)}
-        />
-      ) : null}
-
       <div className={`app-layout ${isSidebarCollapsed && !isMobileSidebar ? "app-layout-collapsed" : ""} ${isMobileSidebar ? "app-layout-mobile" : ""}`}>
-        <aside className={`sidebar panel ${isSidebarCollapsed && !isMobileSidebar ? "sidebar-collapsed" : ""} ${isMobileSidebar ? "sidebar-drawer" : ""} ${isSidebarMobileOpen ? "sidebar-drawer-open" : ""}`}>
-          <div className="sidebar-header">
-            {isMobileSidebar ? (
-              <button
-                type="button"
-                className="secondary sidebar-toggle sidebar-mobile-launch"
-                onClick={() => setIsSidebarMobileOpen(false)}
-                aria-label="Close sidebar"
-              >
-                ✕
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="secondary sidebar-toggle"
-              onClick={() => {
-                if (isMobileSidebar) {
-                  setIsSidebarMobileOpen((current) => !current);
-                  return;
-                }
-                setIsSidebarCollapsed((current) => !current);
-              }}
-              aria-label={isSidebarCollapsed && !isMobileSidebar ? "Expand sidebar" : "Collapse sidebar"}
-            >
-              ☰
-            </button>
-          </div>
-          <div className="sidebar-brand">
-            <p className="eyebrow">AIBA Tiles</p>
-            <strong>Showroom CRM</strong>
-          </div>
-          <nav className="sidebar-nav" aria-label="Primary navigation">
-            {navGroups.map((group) => {
-              const allowed = group.items.filter(
-                (item) =>
-                  visibleViews.some((view) => view.id === item.id) &&
-                  (item.id !== "team" || isAdmin(user))
-              );
-              if (!allowed.length) return null;
-              return (
-                <div className="sidebar-group" key={group.id}>
-                  <p className="sidebar-group-label">{group.label}</p>
-                  <div className="sidebar-items">
-                    {allowed.map((item) => (
-                      <button
-                        key={`${group.id}-${item.id}`}
-                        type="button"
-                        title={item.label}
-                        className={
-                          currentView === item.id
-                            ? "sidebar-item sidebar-item-active"
-                            : "sidebar-item"
-                        }
-                        onClick={() => setCurrentView(item.id)}
-                      >
-                        <span className="sidebar-dot" aria-hidden="true" />
-                        <span className="sidebar-item-text">{item.label}</span>
-                        <span className="sidebar-item-compact" aria-hidden="true">
-                          {compactSidebarIcons[item.id] || "•"}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </nav>
-        </aside>
+        <Sidebar
+          navGroups={navGroups}
+          visibleViews={visibleViews}
+          isAdminUser={isAdmin(user)}
+          currentView={currentView}
+          onSelectView={setCurrentView}
+          isMobileSidebar={isMobileSidebar}
+          isSidebarMobileOpen={isSidebarMobileOpen}
+          isSidebarCollapsed={isSidebarCollapsed}
+          onToggleSidebar={() => {
+            if (isMobileSidebar) {
+              setIsSidebarMobileOpen((current) => !current);
+              return;
+            }
+            setIsSidebarCollapsed((current) => !current);
+          }}
+          onCloseMobile={() => setIsSidebarMobileOpen(false)}
+          compactSidebarIcons={compactSidebarIcons}
+        />
 
         <div className="app-main">
           {isMobileSidebar ? (
@@ -6393,7 +6332,7 @@ export default function App() {
                 onClick={() => setIsSidebarMobileOpen(true)}
                 aria-label="Open sidebar"
               >
-                ☰ Menu
+                Menu
               </button>
             </div>
           ) : null}
@@ -6444,56 +6383,18 @@ export default function App() {
         </section>
       ) : null}
 
-      {isOverview ? (
-        <section className="page-intro panel">
-          <div>
-            <p className="eyebrow">Active Module</p>
-            <h2>{activeViewMeta.title}</h2>
-            <p className="muted">{activeViewMeta.description}</p>
-            {autoRefreshStatusText ? <p className="muted auto-refresh-note">{autoRefreshStatusText}</p> : null}
-            {activeViewMeta.audience ? (
-              <span className="audience-tag">{activeViewMeta.audience}</span>
-            ) : null}
-          </div>
-          {pageAction ? (
-            <div className="page-header-actions">
-              <button type="button" className="quick-action-btn secondary" onClick={() => setCurrentView(pageAction.id)}>
-                {pageAction.label}
-              </button>
-            </div>
-          ) : (
-            <div className="hero-pills">
-              <span className="hero-pill hero-pill-strong">
-                Workspace: {workspaceFilter === "all" ? "All Work" : labelize(workspaceFilter)}
-              </span>
-              <span className="hero-pill hero-pill-strong">
-                Unit: {unitFilter === "all" ? "All Units" : labelize(unitFilter)}
-              </span>
-              <span className="hero-pill hero-pill-strong">
-                View: {views.find((item) => item.id === currentView)?.label || "Overview"}
-              </span>
-            </div>
-          )}
-        </section>
-      ) : (
-        <section className="module-header">
-          <div>
-            <h2>{activeViewMeta.title}</h2>
-            <p className="muted">{activeViewMeta.description}</p>
-            {autoRefreshStatusText ? <p className="muted auto-refresh-note">{autoRefreshStatusText}</p> : null}
-          </div>
-          <div className="page-header-actions">
-            {activeViewMeta.audience ? (
-              <span className="audience-tag">{activeViewMeta.audience}</span>
-            ) : null}
-            {pageAction ? (
-              <button type="button" className="quick-action-btn secondary" onClick={() => setCurrentView(pageAction.id)}>
-                {pageAction.label}
-              </button>
-            ) : null}
-          </div>
-        </section>
-      )}
+      <PageHeader
+        isOverview={isOverview}
+        title={activeViewMeta.title}
+        description={activeViewMeta.description}
+        autoRefreshStatusText={autoRefreshStatusText}
+        audience={activeViewMeta.audience}
+        pageAction={pageAction}
+        onPageAction={pageAction ? () => setCurrentView(pageAction.id) : undefined}
+        workspaceLabel={workspaceFilter === "all" ? "All Work" : labelize(workspaceFilter)}
+        unitLabel={unitFilter === "all" ? "All Units" : labelize(unitFilter)}
+        viewLabel={views.find((item) => item.id === currentView)?.label || "Overview"}
+      />
 
       {loading ? <p className="loading-banner">Syncing latest CRM data...</p> : null}
 
@@ -6530,7 +6431,7 @@ export default function App() {
               <article className="detail-card">
                 <span className="audience-tag">Operator Entry</span>
                 <h3>Poonam workflow</h3>
-                <p className="muted">Lead → Billing → Purchase Entry → Expense → Token</p>
+                <p className="muted">Lead â†’ Billing â†’ Purchase Entry â†’ Expense â†’ Token</p>
                 <div className="chip-row">
                   <span className="legend-chip">Draft bills {draftInvoiceCount}</span>
                   <span className="legend-chip">Pending purchase value Rs {Number(dashboardSummary?.purchases_today?.amount || 0).toLocaleString("en-IN")}</span>
@@ -6539,7 +6440,7 @@ export default function App() {
               <article className="detail-card">
                 <span className="audience-tag">Manager Approval</span>
                 <h3>Ayush workflow</h3>
-                <p className="muted">Lead review → Approval → Pricing → Collection → Pending work</p>
+                <p className="muted">Lead review â†’ Approval â†’ Pricing â†’ Collection â†’ Pending work</p>
                 <div className="chip-row">
                   <span className="legend-chip">Invoice approvals {pendingInvoiceApprovalCount}</span>
                   <span className="legend-chip">Follow-ups pending {dashboardSummary?.followups_pending?.count ?? 0}</span>
@@ -7272,17 +7173,15 @@ export default function App() {
 
       {currentView === "expenses" ? (
         <section className="stack workspace-stack">
-          <div className="module-nav workspace-tab-nav">
-            <button type="button" className={expenseWorkspaceTab === "new" ? "active-nav" : "nav-btn"} onClick={() => setExpenseWorkspaceTab("new")}>
-              New Entry
-            </button>
-            <button type="button" className={expenseWorkspaceTab === "ledger" ? "active-nav" : "nav-btn"} onClick={() => setExpenseWorkspaceTab("ledger")}>
-              Ledger
-            </button>
-            <button type="button" className={expenseWorkspaceTab === "reports" ? "active-nav" : "nav-btn"} onClick={() => setExpenseWorkspaceTab("reports")}>
-              Reports
-            </button>
-          </div>
+          <WorkspaceTabs
+            value={expenseWorkspaceTab}
+            onChange={setExpenseWorkspaceTab}
+            tabs={[
+              { value: "new", label: "New Entry" },
+              { value: "ledger", label: "Ledger" },
+              { value: "reports", label: "Reports" },
+            ]}
+          />
 
           {expenseWorkspaceTab === "new" ? (
             <section className="panel">
@@ -7445,22 +7344,20 @@ export default function App() {
 
       {currentView === "purchases" ? (
         <section className="stack workspace-stack">
-          <div className="module-nav workspace-tab-nav">
-            <button type="button" className={purchaseWorkspaceTab === "new_bill" ? "active-nav" : "nav-btn"} onClick={() => setPurchaseWorkspaceTab("new_bill")}>
-              New Bill
-            </button>
-            <button type="button" className={purchaseWorkspaceTab === "costing" ? "active-nav" : "nav-btn"} onClick={() => setPurchaseWorkspaceTab("costing")}>
-              Costing / Lot
-            </button>
-            <button type="button" className={purchaseWorkspaceTab === "ledger_reports" ? "active-nav" : "nav-btn"} onClick={() => setPurchaseWorkspaceTab("ledger_reports")}>
-              Ledger & Reports
-            </button>
-          </div>
+          <WorkspaceTabs
+            value={purchaseWorkspaceTab}
+            onChange={setPurchaseWorkspaceTab}
+            tabs={[
+              { value: "new_bill", label: "New Bill" },
+              { value: "costing", label: "Costing / Lot" },
+              { value: "ledger_reports", label: "Ledger & Reports" },
+            ]}
+          />
 
           {purchaseWorkspaceTab === "new_bill" ? (
           <section className="panel">
             <div className="section-head">
-              <h2>Purchase Center · New Bill</h2>
+              <h2>Purchase Center Â· New Bill</h2>
               <span>Supplier invoice entry with multiple product rows.</span>
             </div>
             <form
@@ -7479,7 +7376,7 @@ export default function App() {
                   <option value="">Select Registered Supplier *</option>
                   {safeSuppliers.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.name}{s.city ? ` — ${s.city}` : ""}
+                      {s.name}{s.city ? ` â€” ${s.city}` : ""}
                     </option>
                   ))}
                 </select>
@@ -7639,7 +7536,7 @@ export default function App() {
                             </select>
                             {selectedProduct ? (
                               <p className="muted" style={{ marginTop: "0.35rem" }}>
-                                {labelize(selectedProduct.category || "tiles")} · {selectedProduct.company_name || "No company"} · {selectedProduct.product_size || "No size"} · {(selectedProduct.unit || item.unit || "pcs").toUpperCase()} · Last rate Rs {Number(selectedProduct.last_purchase_rate || 0).toLocaleString("en-IN")}
+                                {labelize(selectedProduct.category || "tiles")} Â· {selectedProduct.company_name || "No company"} Â· {selectedProduct.product_size || "No size"} Â· {(selectedProduct.unit || item.unit || "pcs").toUpperCase()} Â· Last rate Rs {Number(selectedProduct.last_purchase_rate || 0).toLocaleString("en-IN")}
                               </p>
                             ) : null}
                             {purchaseFormErrors[`items.${index}.product_id`] ? (
@@ -7747,7 +7644,7 @@ export default function App() {
                     <p className="muted">Freight and handling values can flow directly into Costing / Lot.</p>
                   </div>
                   {Number(purchaseCostingForm.total_freight_cost || 0) > 0 ? (
-                    <span className="status-chip status-pending">Freight entered · costing lot ready</span>
+                    <span className="status-chip status-pending">Freight entered Â· costing lot ready</span>
                   ) : null}
                 </div>
                 <div className="form-grid">
@@ -8541,17 +8438,15 @@ export default function App() {
 
       {currentView === "inventory" ? (
         <section className="stack workspace-stack">
-          <div className="module-nav workspace-tab-nav">
-            <button type="button" className={inventoryWorkspaceTab === "new" ? "active-nav" : "nav-btn"} onClick={() => setInventoryWorkspaceTab("new")}>
-              New Entry
-            </button>
-            <button type="button" className={inventoryWorkspaceTab === "ledger" ? "active-nav" : "nav-btn"} onClick={() => setInventoryWorkspaceTab("ledger")}>
-              Ledger
-            </button>
-            <button type="button" className={inventoryWorkspaceTab === "reports" ? "active-nav" : "nav-btn"} onClick={() => setInventoryWorkspaceTab("reports")}>
-              Reports
-            </button>
-          </div>
+          <WorkspaceTabs
+            value={inventoryWorkspaceTab}
+            onChange={setInventoryWorkspaceTab}
+            tabs={[
+              { value: "new", label: "New Entry" },
+              { value: "ledger", label: "Ledger" },
+              { value: "reports", label: "Reports" },
+            ]}
+          />
 
           {inventoryWorkspaceTab === "new" ? (
           <section className="panel product-master-panel">
@@ -8571,7 +8466,7 @@ export default function App() {
                 <span className="form-section-title">
                   Basic product information
                   {productHighlightedFields.includes("company") || productHighlightedFields.includes("size") ? (
-                    <span className="missing-field-note"> · Please fill the highlighted fields</span>
+                    <span className="missing-field-note"> Â· Please fill the highlighted fields</span>
                   ) : null}
                 </span>
                 <div className="product-master-table">
@@ -8870,7 +8765,7 @@ export default function App() {
                 <span className="form-section-title">
                   Packaging information
                   {productHighlightedFields.includes("packaging") || productHighlightedFields.includes("weight") ? (
-                    <span className="missing-field-note"> · Please fill the highlighted fields</span>
+                    <span className="missing-field-note"> Â· Please fill the highlighted fields</span>
                   ) : null}
                 </span>
                 <div className="product-master-table">
@@ -8955,7 +8850,7 @@ export default function App() {
                 <span className="form-section-title">
                   Owner Pricing Optional
                   {productHighlightedFields.includes("pricing") ? (
-                    <span className="missing-field-note"> · Missing pricing — please review</span>
+                    <span className="missing-field-note"> Â· Missing pricing â€” please review</span>
                   ) : null}
                 </span>
                 <p className="muted product-form-note">
@@ -9303,8 +9198,8 @@ export default function App() {
                       {Number(product.stock_sqft || 0) <= 0
                         ? "Out of Stock"
                         : Number(product.stock_sqft || 0) <= 5
-                          ? `Low Stock · ${product.stock_sqft || 0}`
-                          : `In Stock · ${product.stock_sqft || 0}`}
+                          ? `Low Stock Â· ${product.stock_sqft || 0}`
+                          : `In Stock Â· ${product.stock_sqft || 0}`}
                     </span>
                     <span className="legend-chip product-completeness-chip">
                       Product Completeness: {getProductCompletenessPercent(product)}%
@@ -9557,8 +9452,8 @@ export default function App() {
                             <strong>{product.name}</strong>
                             <div className="muted">{product.design_code || product.category || ""}</div>
                           </td>
-                          <td>{product.company_name || <span className="muted">— missing</span>}</td>
-                          <td>{product.product_size || product.tile_size || <span className="muted">— missing</span>}</td>
+                          <td>{product.company_name || <span className="muted">â€” missing</span>}</td>
+                          <td>{product.product_size || product.tile_size || <span className="muted">â€” missing</span>}</td>
                           <td>
                             <div className="chip-row">
                               {gaps.map((code) => (
@@ -9790,7 +9685,7 @@ export default function App() {
             <div className="section-head">
               <h2>Daily report sheet</h2>
               <span>
-                Owner snapshot {dailyReport ? `· ${formatDate(dailyReportDate)}` : ""}
+                Owner snapshot {dailyReport ? `Â· ${formatDate(dailyReportDate)}` : ""}
               </span>
             </div>
             <div className="filter-row">
@@ -9849,7 +9744,7 @@ export default function App() {
                   />
                   <StatCard
                     label="Tokens Created"
-                    value={`${dailyReport.tokens?.count || 0} · Rs ${Number(
+                    value={`${dailyReport.tokens?.count || 0} Â· Rs ${Number(
                       dailyReport.tokens?.amount || 0
                     ).toLocaleString("en-IN")}`}
                   />
@@ -9910,7 +9805,7 @@ export default function App() {
               <div className="section-head">
                 <h2>Live business pulse</h2>
                 <span>
-                  Live snapshot · cached 30s · {dashboardSummary.as_of_date}
+                  Live snapshot Â· cached 30s Â· {dashboardSummary.as_of_date}
                 </span>
               </div>
               <div className="tabs-row">
@@ -9937,14 +9832,14 @@ export default function App() {
               <div className="report-grid">
                 <StatCard
                   label="Token Claims Pending"
-                  value={`${dashboardSummary.token_pending?.count ?? 0} · Rs ${Number(
+                  value={`${dashboardSummary.token_pending?.count ?? 0} Â· Rs ${Number(
                     dashboardSummary.token_pending?.amount || 0
                   ).toLocaleString("en-IN")}`}
                   tone="danger"
                 />
                 <StatCard
                   label="Token Paid (Month)"
-                  value={`${dashboardSummary.token_paid_month?.count ?? 0} · Rs ${Number(
+                  value={`${dashboardSummary.token_paid_month?.count ?? 0} Â· Rs ${Number(
                     dashboardSummary.token_paid_month?.amount || 0
                   ).toLocaleString("en-IN")}`}
                   tone="accent"
@@ -10202,7 +10097,7 @@ function PurchaseIntelligencePanelImpl({
           <strong>Supplier Suggestion</strong>
           <p>
             {intelligence.recommended_supplier
-              ? `${intelligence.recommended_supplier} · ${formatCurrency(intelligence.best_supplier_rate || 0)}`
+              ? `${intelligence.recommended_supplier} Â· ${formatCurrency(intelligence.best_supplier_rate || 0)}`
               : "Not available"}
           </p>
         </div>
@@ -10222,7 +10117,7 @@ function PurchaseIntelligencePanelImpl({
           <div className="purchase-history-list">
             {(intelligence.last_5_rates || []).map((entry, index) => (
               <span key={`${entry.purchase_date || "rate"}-${index}`} className="hero-pill">
-                {formatCurrency(entry.rate)} · {entry.supplier_name || "Supplier"}
+                {formatCurrency(entry.rate)} Â· {entry.supplier_name || "Supplier"}
               </span>
             ))}
           </div>
@@ -10897,7 +10792,7 @@ function AccordionSectionImpl({ title, badge, summary, isOpen, onToggle, childre
         </div>
         <div className="accordion-meta">
           <span className="status-chip">{badge}</span>
-          <span className="accordion-caret">{isOpen ? "−" : "+"}</span>
+          <span className="accordion-caret">{isOpen ? "âˆ’" : "+"}</span>
         </div>
       </button>
       {isOpen ? <div className="accordion-content">{children}</div> : null}
@@ -11809,3 +11704,5 @@ function shareOnWhatsApp(phone, message) {
   const url = `https://wa.me/${normalizedPhone}?text=${encodeURIComponent(message)}`;
   window.open(url, "_blank", "noopener,noreferrer");
 }
+
+
