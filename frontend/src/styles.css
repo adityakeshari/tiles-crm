@@ -3729,99 +3729,77 @@ button.sidebar-item-active .sidebar-dot {
   }
 }
 
-/* Stock Reports actionable — click-to-edit highlight + filter chips */
-.product-report-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 0.65rem;
-  margin-bottom: 0.85rem;
+/* Pricing role lock — non-owner/admin sees the section in read-only state */
+.pricing-fieldset {
+  display: contents;
 }
 
-button.stat-card.product-report-filter {
-  background: var(--crm-surface);
+.pricing-fieldset-locked {
+  display: block;
+  opacity: 0.7;
+  pointer-events: auto;
+}
+
+.pricing-fieldset-locked input,
+.pricing-fieldset-locked select,
+.pricing-fieldset-locked textarea {
+  background: var(--crm-bg-soft);
+  cursor: not-allowed;
+}
+
+.pricing-lock-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0 0 0.5rem;
+  padding: 0.25rem 0.65rem;
+  background: var(--crm-navy-100);
   border: 1px solid var(--crm-border);
-  text-align: left;
-  font-weight: 600;
-  color: var(--crm-text);
-  box-shadow: var(--shadow-xs);
-  cursor: pointer;
-  padding: 0.85rem 0.95rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--crm-navy-800);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Purchase row — product picker + inline quick-add product panel */
+.purchase-product-pickrow {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  width: 100%;
+}
+
+.purchase-quick-add-panel {
+  margin-top: 0.5rem;
+  padding: 0.8rem 0.9rem;
+  background: var(--crm-amber-100);
+  border: 1px solid var(--crm-amber-200);
+  border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
-  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+  gap: 0.5rem;
 }
 
-button.stat-card.product-report-filter:hover {
-  border-color: var(--crm-border-strong);
-  box-shadow: var(--shadow-sm);
-  transform: translateY(-1px);
-}
-
-button.stat-card.product-report-filter-active {
-  border-color: var(--crm-amber-500);
-  box-shadow: 0 0 0 2px rgba(240, 180, 41, 0.18), var(--shadow-sm);
-}
-
-button.stat-card.product-report-filter > span {
-  font-size: 0.72rem;
-  color: var(--crm-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin: 0;
-}
-
-button.stat-card.product-report-filter > strong {
-  font-size: 1.4rem;
-  color: var(--crm-text-strong);
-}
-
-.product-report-table .data-table tbody tr.product-report-row {
-  cursor: pointer;
-}
-
-.product-report-table .data-table tbody tr.product-report-row:hover td {
-  background: var(--crm-amber-100);
-}
-
-.product-master-section.product-highlight-section {
-  border: 1.5px solid var(--crm-amber-500);
-  background: var(--crm-amber-100);
-  box-shadow: 0 0 0 2px rgba(240, 180, 41, 0.18);
-  position: relative;
-}
-
-.product-master-section.product-highlight-section::before {
-  content: "Needs attention";
-  position: absolute;
-  top: -10px;
-  left: 1rem;
-  padding: 0.15rem 0.55rem;
-  background: var(--crm-amber-500);
+.purchase-quick-add-panel strong {
+  font-size: 0.85rem;
   color: var(--crm-navy-900);
-  font-size: 0.66rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  font-weight: 700;
-  border-radius: 999px;
 }
 
-.product-master-section.product-highlight-section input:not([readonly]),
-.product-master-section.product-highlight-section select {
-  border-color: rgba(217, 156, 27, 0.55);
+.purchase-quick-add-panel .quick-add-grid {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.5rem;
 }
 
-.product-master-section.product-highlight-section input:not([readonly]):focus,
-.product-master-section.product-highlight-section select:focus {
-  border-color: var(--crm-amber-500);
-  box-shadow: 0 0 0 3px rgba(240, 180, 41, 0.22);
+.purchase-quick-add-panel .quick-add-grid input,
+.purchase-quick-add-panel .quick-add-grid select {
+  padding: 0.42rem 0.6rem;
+  font-size: 0.83rem;
 }
 
-.missing-field-note {
-  font-size: 0.74rem;
-  font-weight: 600;
-  color: var(--crm-amber-600);
-  margin-left: 0.45rem;
-  text-transform: none;
-  letter-spacing: 0;
+.quick-add-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
 }

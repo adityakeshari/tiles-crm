@@ -688,6 +688,7 @@ export function validatePurchasePayload(payload, { requireMaster = true } = {}) 
     normalizeOptionalString(payload.purchase_date) || new Date().toISOString().slice(0, 10);
   const truck_number = normalizeOptionalString(payload.truck_number);
   const delivery_date = normalizeOptionalString(payload.delivery_date);
+  const batch_no = normalizeOptionalString(payload.batch_no);
   const business_unit = normalizeString(payload.business_unit || "tiles");
   const category = normalizeOptionalString(payload.category) || "tiles";
   const item_name = normalizeOptionalString(payload.item_name);
@@ -761,6 +762,7 @@ export function validatePurchasePayload(payload, { requireMaster = true } = {}) 
       purchase_date,
       truck_number,
       delivery_date: delivery_date || null,
+      batch_no,
       business_unit,
       category,
       item_name,

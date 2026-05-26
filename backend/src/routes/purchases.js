@@ -204,6 +204,7 @@ router.get(
             p.purchase_date,
             p.delivery_date,
             p.truck_number,
+            pb.batch_no,
             p.business_unit,
             p.category,
             p.item_name,
@@ -220,6 +221,7 @@ router.get(
             pr.weight_per_unit,
             pr.last_purchase_rate
          FROM purchases p
+         LEFT JOIN purchase_item_batches pb ON pb.purchase_id = p.id
          LEFT JOIN products pr ON pr.id = p.product_id
          WHERE LOWER(TRIM(p.truck_number)) = LOWER(TRIM($1))
            AND p.delivery_date = $2::date
@@ -277,7 +279,7 @@ router.get(
     if (search) {
       params.push(`%${search}%`);
       conditions.push(
-        `(p.supplier_name ILIKE $${params.length} OR p.invoice_number ILIKE $${params.length} OR p.item_name ILIKE $${params.length})`
+        `(p.supplier_name ILIKE $${params.length} OR p.invoice_number ILIKE $${params.length} OR p.item_name ILIKE $${params.length} OR COALESCE(pb.batch_no, '') ILIKE $${params.length})`
       );
     }
 
@@ -306,8 +308,9 @@ router.get(
 
       const [rowsResult, summaryResult] = await Promise.all([
         query(
-          `SELECT p.*, u.name AS created_by_name
+          `SELECT p.*, pb.batch_no, u.name AS created_by_name
              FROM purchases p
+             LEFT JOIN purchase_item_batches pb ON pb.purchase_id = p.id
              LEFT JOIN users u ON u.id = p.created_by
              ${where}
             ORDER BY p.purchase_date DESC, p.id DESC
@@ -323,6 +326,7 @@ router.get(
               COALESCE(SUM(CASE WHEN payment_status = 'pending' THEN total_amount ELSE 0 END), 0)::numeric AS pending_amount,
               COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total_amount ELSE 0 END), 0)::numeric AS paid_amount
             FROM purchases p
+            LEFT JOIN purchase_item_batches pb ON pb.purchase_id = p.id
             ${where}`,
           params.slice(0, params.length - 2)
         ),
@@ -550,6 +554,22 @@ function mapPurchaseFieldErrorToResponse(error) {
   return null;
 }
 
+async function syncPurchaseItemBatch(client, purchaseId, batchNo) {
+  const normalizedBatch = typeof batchNo === "string" ? batchNo.trim() : "";
+  if (!normalizedBatch) {
+    await client.query("DELETE FROM purchase_item_batches WHERE purchase_id = $1", [purchaseId]);
+    return;
+  }
+
+  await client.query(
+    `INSERT INTO purchase_item_batches (purchase_id, batch_no)
+     VALUES ($1, $2)
+     ON CONFLICT (purchase_id)
+     DO UPDATE SET batch_no = EXCLUDED.batch_no, updated_at = CURRENT_TIMESTAMP`,
+    [purchaseId, normalizedBatch]
+  );
+}
+
 router.post(
   "/",
   requireRole("admin", "manager", "accounts", "operations", "operator"),
@@ -610,6 +630,8 @@ router.post(
           req.user.id,
         ]
       );
+
+      await syncPurchaseItemBatch(client, result.rows[0].id, purchase.batch_no);
 
       await syncPurchaseInventory(client, result.rows[0], 1);
       await client.query("COMMIT");
@@ -723,6 +745,7 @@ router.put(
         return res.status(404).json({ message: "Purchase not found" });
       }
 
+      await syncPurchaseItemBatch(client, result.rows[0].id, purchase.batch_no);
       await syncPurchaseInventory(client, result.rows[0], 1);
       await client.query("COMMIT");
       return res.json(result.rows[0]);

@@ -568,6 +568,23 @@ const emptyMason = {
   remarks: "",
 };
 
+// Purchase row dropdown options (Unit + GST percent) and quick-add product form shape
+const purchaseUnitOptions = ["box", "pcs", "sqft", "kg", "bag", "set", "meter", "feet", "nos"];
+const purchaseGstPercentOptions = [0, 5, 12, 18, 28];
+const emptyQuickProduct = {
+  name: "",
+  category: "Floor Tiles",
+  unit: "pcs",
+  stock_sqft: "",
+  design_code: "",
+  finish: "",
+  company_name: "",
+  product_size: "",
+  pieces_per_box: "",
+  sqft_per_box: "",
+  weight_per_box: "",
+};
+
 const emptyPurchase = {
   supplier_id: "",
   supplier_name: "",
@@ -587,6 +604,7 @@ const emptyPurchaseItem = {
   category: "tiles",
   quantity: "",
   unit: "pcs",
+  batch_no: "",
   amount: "",
   gst_amount: "",
   total_amount: "",
@@ -1876,6 +1894,9 @@ export default function App() {
   const [purchaseInvoiceFilter, setPurchaseInvoiceFilter] = useState("");
   const [purchaseProductFilter, setPurchaseProductFilter] = useState("all");
   const [purchaseSupplierHistory, setPurchaseSupplierHistory] = useState(null);
+  const [quickProductRowIndex, setQuickProductRowIndex] = useState(null);
+  const [quickProductForm, setQuickProductForm] = useState(emptyQuickProduct);
+  const [quickProductSaving, setQuickProductSaving] = useState(false);
   const [suppliers, setSuppliers] = useState([]);
   const [supplierQuickAddOpen, setSupplierQuickAddOpen] = useState(false);
   const [supplierQuickForm, setSupplierQuickForm] = useState({
@@ -3833,6 +3854,28 @@ export default function App() {
           : [...current, normalizeText(productForm.finish)]
       );
     }
+    // Current Stock is required. Blank/null/undefined invalid; 0 is allowed
+    // when explicitly entered. Negative invalid.
+    const stockRaw = productForm.stock_sqft;
+    const stockTrim = typeof stockRaw === "string" ? stockRaw.trim() : stockRaw;
+    const stockNum = Number(stockTrim);
+    if (stockTrim === "" || stockTrim === null || stockTrim === undefined || Number.isNaN(stockNum)) {
+      setProductFormErrors((prev) => ({ ...prev, stock_sqft: "Current stock is required" }));
+      setError("Current stock is required");
+      return;
+    }
+    if (stockNum < 0) {
+      setProductFormErrors((prev) => ({ ...prev, stock_sqft: "Current stock cannot be negative" }));
+      setError("Current stock cannot be negative");
+      return;
+    }
+    setProductFormErrors((prev) => {
+      if (!prev?.stock_sqft) return prev;
+      const next = { ...prev };
+      delete next.stock_sqft;
+      return next;
+    });
+
     const validationError = validateProductForm(productForm);
     if (validationError) {
       setError(validationError);
@@ -4243,12 +4286,16 @@ export default function App() {
     const currentRow = purchaseItems[index] || emptyPurchaseItem;
     const quantity = Number(currentRow.quantity || 0);
     const autoAmount = recalcPurchaseNetFromRate(quantity, nextRate);
+    const nextBatchNo =
+      normalizeText(currentRow.batch_no) ||
+      (product ? buildPurchaseBatchSuggestion(product, purchaseForm.purchase_date, index) : "");
 
     updatePurchaseItem(index, {
       product_id: productIdValue,
       item_name: product?.name || currentRow.item_name,
       category: product?.category || currentRow.category,
       unit: product?.unit || currentRow.unit,
+      batch_no: nextBatchNo,
       rate_per_unit: nextRate,
       amount: autoAmount != null ? String(autoAmount) : currentRow.amount,
     });
@@ -4262,6 +4309,58 @@ export default function App() {
 
     if (productIdValue) {
       fetchPurchaseProductIntelligence(productIdValue);
+    }
+  }
+
+  async function handleQuickAddProduct(event, rowIndex) {
+    event.preventDefault();
+    if (quickProductSaving) return;
+    const name = String(quickProductForm.name || "").trim();
+    const category = String(quickProductForm.category || "").trim();
+    const unit = String(quickProductForm.unit || "").trim();
+    const designCode = String(quickProductForm.design_code || "").trim();
+    const finish = String(quickProductForm.finish || "").trim();
+    const stockRaw = quickProductForm.stock_sqft;
+    const stockTrim = typeof stockRaw === "string" ? stockRaw.trim() : stockRaw;
+    const stockNum = Number(stockTrim);
+    if (!name) { setError("Product name is required"); return; }
+    if (!category) { setError("Category is required"); return; }
+    if (!unit) { setError("Unit is required"); return; }
+    if (!designCode) { setError("Design code is required"); return; }
+    if (!finish) { setError("Finish is required"); return; }
+    if (stockTrim === "" || stockTrim === null || stockTrim === undefined || Number.isNaN(stockNum) || stockNum < 0) {
+      setError("Current stock is required (0 allowed if entered)");
+      return;
+    }
+    setQuickProductSaving(true);
+    try {
+      const created = await api.createProduct({
+        name,
+        category,
+        unit,
+        business_unit: "tiles",
+        stock_sqft: stockNum,
+        design_code: designCode,
+        company_name: quickProductForm.company_name || "",
+        product_size: quickProductForm.product_size || "",
+        finish,
+        pieces_per_box: Number(quickProductForm.pieces_per_box || 0),
+        sqft_per_box: Number(quickProductForm.sqft_per_box || 0),
+        weight_per_box: Number(quickProductForm.weight_per_box || 0),
+        status: "active",
+      });
+      const inventoryData = await api.getInventory({ limit: 500 }).catch(() => ({ products: [] }));
+      if (Array.isArray(inventoryData?.products)) setProducts(inventoryData.products);
+      if (typeof rowIndex === "number" && created?.id != null) {
+        handlePurchaseProductSelect(rowIndex, String(created.id));
+      }
+      setQuickProductRowIndex(null);
+      setQuickProductForm(emptyQuickProduct);
+      pushToast("Product added.");
+    } catch (err) {
+      setError(err?.message || "Unable to create product");
+    } finally {
+      setQuickProductSaving(false);
     }
   }
 
@@ -4396,6 +4495,7 @@ export default function App() {
         category: record.category || "tiles",
         quantity: record.quantity != null ? String(record.quantity) : "",
         unit: record.unit || "pcs",
+        batch_no: record.batch_no || "",
         amount: record.amount != null ? String(record.amount) : "",
         gst_amount: record.gst_amount != null ? String(record.gst_amount) : "",
         total_amount: record.total_amount != null ? String(record.total_amount) : "",
@@ -4456,6 +4556,12 @@ export default function App() {
         if (normalizeText(item.quantity) === "") {
           requiredErrors[`items.${index}.quantity`] = "Quantity is required.";
         }
+        if (!normalizeText(item.unit)) {
+          requiredErrors[`items.${index}.unit`] = "Unit is required.";
+        }
+        if (!editingPurchaseId && item.product_id && !normalizeText(item.batch_no)) {
+          requiredErrors[`items.${index}.batch_no`] = "Batch / lot is required for new purchase rows.";
+        }
         if (normalizeText(item.amount) === "" && normalizeText(item.rate_per_unit) === "") {
           requiredErrors[`items.${index}.amount`] = "Rate or net amount is required.";
         }
@@ -4506,6 +4612,7 @@ export default function App() {
             delivery_date: purchaseForm.delivery_date || null,
             quantity: Number(row.quantity || 0),
             unit: row.unit || "pcs",
+            batch_no: normalizeText(row.batch_no),
             amount,
             gst_amount: gst,
             total_amount: row.total_amount === "" ? computedTotal : Number(row.total_amount),
@@ -4527,6 +4634,7 @@ export default function App() {
               delivery_date: purchaseForm.delivery_date || null,
               quantity: Number(row.quantity || 0),
               unit: row.unit || "pcs",
+              batch_no: normalizeText(row.batch_no),
               amount,
               gst_amount: gst,
               total_amount: row.total_amount === "" ? computedTotal : Number(row.total_amount),
@@ -5888,7 +5996,10 @@ export default function App() {
       sqft_per_box: product.sqft_per_box || "",
       weight_per_box: product.weight_per_box || "",
       weight_per_unit: product.weight_per_unit || "",
-      stock_sqft: product.stock_sqft || "",
+      stock_sqft:
+        product.stock_sqft === null || product.stock_sqft === undefined || product.stock_sqft === ""
+          ? ""
+          : String(product.stock_sqft),
       purchase_rate: product.purchase_rate || "",
       price_per_sqft: product.price_per_sqft || "",
       predefined_rate: product.predefined_rate || "",
@@ -7521,19 +7632,71 @@ export default function App() {
                         </div>
                         <div className="form-grid">
                           <div className="form-field">
-                            <select
-                              data-field={`items.${index}.product_id`}
-                              className={getFieldErrorClass(purchaseFormErrors, `items.${index}.product_id`)}
-                              value={item.product_id}
-                              onChange={(event) => handlePurchaseProductSelect(index, event.target.value)}
-                            >
-                              <option value="">Select Inventory Product *</option>
-                              {purchaseEntryProductOptions.map((product) => (
-                                <option key={product.id} value={product.id}>
-                                  {product.name}
-                                </option>
-                              ))}
-                            </select>
+                            <div className="purchase-product-pickrow">
+                              <select
+                                data-field={`items.${index}.product_id`}
+                                className={getFieldErrorClass(purchaseFormErrors, `items.${index}.product_id`)}
+                                value={item.product_id}
+                                onChange={(event) => handlePurchaseProductSelect(index, event.target.value)}
+                                style={{ flex: 1 }}
+                              >
+                                <option value="">Select Inventory Product *</option>
+                                {purchaseEntryProductOptions.map((product) => (
+                                  <option key={product.id} value={product.id}>
+                                    {product.name}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                className="secondary"
+                                style={{ padding: "0.4rem 0.75rem", fontSize: "0.8rem", whiteSpace: "nowrap" }}
+                                onClick={() => {
+                                  if (quickProductRowIndex === index) {
+                                    setQuickProductRowIndex(null);
+                                  } else {
+                                    setQuickProductRowIndex(index);
+                                    setQuickProductForm(emptyQuickProduct);
+                                  }
+                                }}
+                              >
+                                {quickProductRowIndex === index ? "Cancel" : "+ Add Product"}
+                              </button>
+                            </div>
+                            {quickProductRowIndex === index ? (
+                              <div className="purchase-quick-add-panel">
+                                <strong>Quick add new product</strong>
+                                <div className="form-grid quick-add-grid">
+                                  <input placeholder="Product name *" value={quickProductForm.name} onChange={(e) => setQuickProductForm({ ...quickProductForm, name: e.target.value })} />
+                                  <select value={quickProductForm.category} onChange={(e) => setQuickProductForm({ ...quickProductForm, category: e.target.value })}>
+                                    {defaultProductCategories.map((categoryOption) => (
+                                      <option key={categoryOption} value={categoryOption}>{categoryOption}</option>
+                                    ))}
+                                  </select>
+                                  <select value={quickProductForm.unit} onChange={(e) => setQuickProductForm({ ...quickProductForm, unit: e.target.value })}>
+                                    {purchaseUnitOptions.map((u) => <option key={u} value={u}>{u}</option>)}
+                                  </select>
+                                  <input type="number" step="0.01" min="0" placeholder="Current Stock *" value={quickProductForm.stock_sqft} onChange={(e) => setQuickProductForm({ ...quickProductForm, stock_sqft: e.target.value })} />
+                                  <input placeholder="Design Code *" value={quickProductForm.design_code} onChange={(e) => setQuickProductForm({ ...quickProductForm, design_code: e.target.value })} />
+                                  <select value={quickProductForm.finish} onChange={(e) => setQuickProductForm({ ...quickProductForm, finish: e.target.value })}>
+                                    <option value="">Select Finish *</option>
+                                    {defaultProductFinishes.map((finishOption) => (
+                                      <option key={finishOption} value={finishOption}>{finishOption}</option>
+                                    ))}
+                                  </select>
+                                  <input placeholder="Company (optional)" value={quickProductForm.company_name} onChange={(e) => setQuickProductForm({ ...quickProductForm, company_name: e.target.value })} />
+                                  <input placeholder="Size (optional)" value={quickProductForm.product_size} onChange={(e) => setQuickProductForm({ ...quickProductForm, product_size: e.target.value })} />
+                                  <input type="number" step="0.01" min="0" placeholder="Pieces / Box" value={quickProductForm.pieces_per_box} onChange={(e) => setQuickProductForm({ ...quickProductForm, pieces_per_box: e.target.value })} />
+                                  <input type="number" step="0.01" min="0" placeholder="Sqft / Box" value={quickProductForm.sqft_per_box} onChange={(e) => setQuickProductForm({ ...quickProductForm, sqft_per_box: e.target.value })} />
+                                  <input type="number" step="0.01" min="0" placeholder="Weight / Box" value={quickProductForm.weight_per_box} onChange={(e) => setQuickProductForm({ ...quickProductForm, weight_per_box: e.target.value })} />
+                                </div>
+                                <div className="quick-add-actions">
+                                  <button type="button" onClick={(ev) => handleQuickAddProduct(ev, index)} disabled={quickProductSaving}>
+                                    {quickProductSaving ? "Saving..." : "Save & Use"}
+                                  </button>
+                                </div>
+                              </div>
+                            ) : null}
                             {selectedProduct ? (
                               <p className="muted" style={{ marginTop: "0.35rem" }}>
                                 {labelize(selectedProduct.category || "tiles")} Â· {selectedProduct.company_name || "No company"} Â· {selectedProduct.product_size || "No size"} Â· {(selectedProduct.unit || item.unit || "pcs").toUpperCase()} Â· Last rate Rs {Number(selectedProduct.last_purchase_rate || 0).toLocaleString("en-IN")}
@@ -7563,12 +7726,30 @@ export default function App() {
                               });
                             }}
                           />
-                          <input
-                            type="text"
-                            placeholder="Unit"
-                            value={selectedProduct?.unit || item.unit || ""}
-                            readOnly
-                          />
+                          <select
+                            data-field={`items.${index}.unit`}
+                            className={getFieldErrorClass(purchaseFormErrors, `items.${index}.unit`)}
+                            value={(selectedProduct?.unit || item.unit || "pcs").toLowerCase()}
+                            onChange={(event) => updatePurchaseItem(index, { unit: event.target.value })}
+                            disabled={Boolean(selectedProduct?.unit)}
+                            title={selectedProduct?.unit ? "Unit inherits from selected product" : ""}
+                          >
+                            {purchaseUnitOptions.map((u) => (
+                              <option key={u} value={u}>{u}</option>
+                            ))}
+                          </select>
+                          <div className="form-field">
+                            <input
+                              data-field={`items.${index}.batch_no`}
+                              className={getFieldErrorClass(purchaseFormErrors, `items.${index}.batch_no`)}
+                              placeholder={selectedProduct ? buildPurchaseBatchSuggestion(selectedProduct, purchaseForm.purchase_date, index) : "Batch / Lot No"}
+                              value={item.batch_no || ""}
+                              onChange={(event) => updatePurchaseItem(index, { batch_no: event.target.value })}
+                            />
+                            {purchaseFormErrors[`items.${index}.batch_no`] ? (
+                              <span className="field-error-message">{purchaseFormErrors[`items.${index}.batch_no`]}</span>
+                            ) : null}
+                          </div>
                           <input
                             data-field={`items.${index}.rate_per_unit`}
                             type="number"
@@ -7609,20 +7790,25 @@ export default function App() {
                               <span className="field-error-message">{purchaseFormErrors[`items.${index}.amount`]}</span>
                             ) : null}
                           </div>
-                          <input
-                            type="number"
-                            step="0.01"
-                            placeholder="GST (optional)"
-                            value={item.gst_amount}
-                            onChange={(event) =>
+                          <select
+                            value={item.gst_percent != null && item.gst_percent !== "" ? String(item.gst_percent) : ""}
+                            onChange={(event) => {
+                              const pct = event.target.value;
+                              const net = Number(item.amount || 0);
+                              const gstAmt = pct === "" ? 0 : Number(((net * Number(pct)) / 100).toFixed(2));
                               updatePurchaseItem(index, {
-                                gst_amount: event.target.value,
-                                total_amount: String(
-                                  Number((Number(item.amount || 0) + Number(event.target.value || 0)).toFixed(2))
-                                ),
-                              })
-                            }
-                          />
+                                gst_percent: pct,
+                                gst_amount: pct === "" ? "" : String(gstAmt),
+                                total_amount: String(Number((net + gstAmt).toFixed(2))),
+                              });
+                            }}
+                            title="GST percentage"
+                          >
+                            <option value="">GST %</option>
+                            {purchaseGstPercentOptions.map((p) => (
+                              <option key={p} value={p}>{p}%</option>
+                            ))}
+                          </select>
                           <input
                             type="number"
                             step="0.01"
@@ -7813,7 +7999,9 @@ export default function App() {
                       <td>{record.invoice_number || "-"}</td>
                       <td>
                         {record.item_name || "-"}
-                        <div className="muted">{record.category || ""}</div>
+                        <div className="muted">
+                          {[record.category || "", record.batch_no ? `Batch ${record.batch_no}` : ""].filter(Boolean).join(" | ")}
+                        </div>
                       </td>
                       <td>
                         {record.quantity} {record.unit}
@@ -8856,6 +9044,16 @@ export default function App() {
                 <p className="muted product-form-note">
                   Pricing can be completed later by Owner/Admin after purchase costing.
                 </p>
+                {!(isAdmin(user) || hasRole(user, "owner")) ? (
+                  <p className="pricing-lock-hint">Pricing controlled by Owner/Admin</p>
+                ) : null}
+                <fieldset
+                  className={`pricing-fieldset ${
+                    isAdmin(user) || hasRole(user, "owner") ? "" : "pricing-fieldset-locked"
+                  }`}
+                  disabled={!(isAdmin(user) || hasRole(user, "owner"))}
+                  style={{ border: "none", padding: 0, margin: 0 }}
+                >
                 <div className="product-master-table">
                   <div className="product-master-row">
                     <div className="form-field">
@@ -8998,6 +9196,7 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+                </fieldset>
               </div>
 
               <div className="form-section full-span product-master-section">
@@ -9005,15 +9204,22 @@ export default function App() {
                 <div className="product-master-table">
                   <div className="product-master-row product-master-row-stock">
                     <div className="form-field">
-                      <label>Current Stock</label>
+                      <label>
+                        Current Stock <span className="required-marker">*</span>
+                      </label>
                       <input
+                        data-field="stock_sqft"
                         type="number"
                         min="0"
                         step="0.01"
-                        placeholder="Stock quantity / sqft"
+                        placeholder="Enter current stock"
+                        className={getFieldErrorClass(productFormErrors, "stock_sqft")}
                         value={productForm.stock_sqft}
                         onChange={(event) => setProductForm({ ...productForm, stock_sqft: event.target.value })}
                       />
+                      {productFormErrors.stock_sqft ? (
+                        <span className="field-error-message">{productFormErrors.stock_sqft}</span>
+                      ) : null}
                     </div>
                     <div className="form-field">
                       <label>Status</label>
@@ -9031,6 +9237,7 @@ export default function App() {
                       <label className="checkbox-row">
                         <input
                           type="checkbox"
+                          disabled={!(isAdmin(user) || hasRole(user, "owner"))}
                           checked={Boolean(productForm.pricing_lock)}
                           onChange={(event) => setProductForm({ ...productForm, pricing_lock: event.target.checked })}
                         />
@@ -9172,7 +9379,9 @@ export default function App() {
                     <div>
                       <h3>{product.name}</h3>
                       <p className="muted">
-                        {product.company_name || "Company missing"} | {product.design_code || product.category}
+                        {[product.company_name || "Company missing", product.design_code || product.category, product.finish || "", product.latest_batch_no ? `Batch ${product.latest_batch_no}` : ""]
+                          .filter(Boolean)
+                          .join(" | ")}
                       </p>
                     </div>
                     <span className={`status-chip status-${product.status}`}>{labelize(product.status)}</span>
@@ -9275,6 +9484,9 @@ export default function App() {
                     const stockValue = Number(product.stock_sqft || 0);
                     const stockClass = stockValue <= 0 ? "stock-out" : stockValue <= 5 ? "stock-low" : "stock-in";
                     const productGaps = getProductDataGaps(product);
+                    const productMetaLine = [product.design_code || "", product.finish || "", product.latest_batch_no ? `Batch ${product.latest_batch_no}` : ""]
+                      .filter(Boolean)
+                      .join(" | ");
                     const compactGapText =
                       productGaps.length === 0
                         ? ""
@@ -9285,6 +9497,7 @@ export default function App() {
                       <tr key={`inventory-row-${product.id}`}>
                         <td className="col-product">
                           <strong className="stock-product-name">{product.name}</strong>
+                          {productMetaLine ? <div className="muted stock-warning-inline">{productMetaLine}</div> : null}
                           {compactGapText ? (
                             <div className="muted stock-warning-inline">
                               {compactGapText}
@@ -11214,6 +11427,23 @@ function normalizeProductPayload(product) {
   };
 }
 
+function buildPurchaseBatchSuggestion(product, purchaseDate, rowIndex) {
+  const dateValue = isValidDateInput(purchaseDate) ? purchaseDate : new Date().toISOString().slice(0, 10);
+  const compactDate = String(dateValue).replaceAll("-", "").slice(2);
+  const productCodeSource =
+    normalizeText(product?.design_code) ||
+    normalizeText(product?.product_size || product?.tile_size) ||
+    normalizeText(product?.name) ||
+    "BATCH";
+  const productCode = productCodeSource
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 24) || "BATCH";
+  const rowSuffix = String(Number(rowIndex || 0) + 1).padStart(2, "0");
+  return `${productCode}-${compactDate}-${rowSuffix}`;
+}
+
 function getProductDataGaps(product) {
   const gaps = [];
 
@@ -11704,5 +11934,3 @@ function shareOnWhatsApp(phone, message) {
   const url = `https://wa.me/${normalizedPhone}?text=${encodeURIComponent(message)}`;
   window.open(url, "_blank", "noopener,noreferrer");
 }
-
-

@@ -53,7 +53,21 @@ router.get("/", async (req, res) => {
     const [productsResult, summaryResult] = await Promise.all([
       query(
         `SELECT *
-         FROM products
+         FROM (
+           SELECT
+             p.*,
+             latest_purchase.batch_no AS latest_batch_no
+           FROM products p
+           LEFT JOIN LATERAL (
+             SELECT pb.batch_no
+             FROM purchases purchase_rows
+             JOIN purchase_item_batches pb ON pb.purchase_id = purchase_rows.id
+             WHERE purchase_rows.product_id = p.id
+               AND COALESCE(pb.batch_no, '') <> ''
+             ORDER BY COALESCE(purchase_rows.delivery_date, purchase_rows.purchase_date) DESC, purchase_rows.id DESC
+             LIMIT 1
+           ) latest_purchase ON TRUE
+         ) inventory_products
          ORDER BY
            CASE status WHEN 'fast_moving' THEN 1 WHEN 'active' THEN 2 ELSE 3 END,
            name ASC
@@ -92,7 +106,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.post("/", requireRole("admin", "manager"), async (req, res) => {
+router.post("/", requireRole("admin", "manager", "accounts", "operations", "operator"), async (req, res) => {
   const validation = validateProductPayload(req.body);
 
   if (!validation.ok) {

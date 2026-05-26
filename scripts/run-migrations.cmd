@@ -72,6 +72,8 @@ call :run "030_monthly_overhead_allocation.sql"
 call :run "031_purchase_invoice_multi_item_compat.sql"
 call :run "032_purchase_truck_linking.sql"
 call :run "033_product_daily_rate_engine.sql"
+call :run "034_product_batch_tracking.sql"
+call :run "035_purchase_item_batch_table.sql"
 
 if errorlevel 1 exit /b 1
 
