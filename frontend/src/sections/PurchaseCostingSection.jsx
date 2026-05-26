@@ -397,7 +397,7 @@ function PurchaseIntelligenceInline({
           <strong>Supplier Suggestion</strong>
           <p>
             {intelligence.recommended_supplier
-              ? `${intelligence.recommended_supplier} · ${formatCurrency(intelligence.best_supplier_rate || 0)}`
+              ? `${intelligence.recommended_supplier} - ${formatCurrency(intelligence.best_supplier_rate || 0)}`
               : "Not available"}
           </p>
         </div>

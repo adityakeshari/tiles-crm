@@ -12,7 +12,7 @@ const RegisteredMasonsSection = lazy(() => import("./sections/RegisteredMasonsSe
 const ProjectsSection = lazy(() => import("./sections/ProjectsSection.jsx"));
 const LeadWorkspaceSection = lazy(() => import("./sections/LeadWorkspaceSection.jsx"));
 
-// Enterprise sidebar hierarchy. Sub-item IDs map to existing currentView IDs Ã¢â‚¬â€
+// Enterprise sidebar hierarchy. Sub-item IDs map to existing currentView IDs -
 // no business logic / API / route changes; only the navigation surface is restructured.
 const navGroups = [
   {
@@ -126,7 +126,7 @@ const views = [
 const viewMeta = {
   overview: {
     title: "Dashboard",
-    description: "Today's summary at a glance Ã¢â‚¬â€ sales, collection, pending, follow-ups and stock alerts.",
+    description: "Today's summary at a glance - sales, collection, pending, follow-ups and stock alerts.",
     audience: "Owner & Manager view",
   },
   pipeline: {
@@ -146,7 +146,7 @@ const viewMeta = {
   },
   projects: {
     title: "Projects",
-    description: "Won leads under execution Ã¢â‚¬â€ dispatches, payments, plumbing and net profit.",
+    description: "Won leads under execution - dispatches, payments, plumbing and net profit.",
     audience: "Manager control",
   },
   plumbing: {
@@ -171,7 +171,7 @@ const viewMeta = {
   },
   masons: {
     title: "Registered Masons",
-    description: "Add a new mason, update profile and mark active/inactive Ã¢â‚¬â€ only active masons can claim tokens.",
+    description: "Add a new mason, update profile and mark active/inactive - only active masons can claim tokens.",
     audience: "Manager entry",
   },
   inventory: {
@@ -181,7 +181,7 @@ const viewMeta = {
   },
   dealers: {
     title: "Dealers",
-    description: "Dealer network Ã¢â‚¬â€ category, purchase value, outstanding and commission.",
+    description: "Dealer network - category, purchase value, outstanding and commission.",
     audience: "Manager control",
   },
   purchases: {
@@ -206,7 +206,7 @@ const viewMeta = {
   },
   reports: {
     title: "Reports",
-    description: "Daily report sheet plus owner control Ã¢â‚¬â€ sales, collection, profit and payouts.",
+    description: "Daily report sheet plus owner control - sales, collection, profit and payouts.",
     audience: "Owner / Manager",
   },
   team: {
@@ -1037,7 +1037,9 @@ function validateDealerForm(form) {
   return "";
 }
 
-function validateProductForm(form) {
+function validateProductForm(form, options = {}) {
+  const { requireDesignCode = true } = options;
+
   if (!normalizeText(form.name)) {
     return "Product name is required.";
   }
@@ -1060,6 +1062,10 @@ function validateProductForm(form) {
 
   if (!normalizeText(form.category)) {
     return "Category is required.";
+  }
+
+  if (requireDesignCode && !normalizeText(form.design_code)) {
+    return "Design code is required.";
   }
 
   const numericFields = [
@@ -2594,14 +2600,32 @@ export default function App() {
   );
   const productCompanyOptions = useMemo(
     () =>
-      [...new Set([...products.map((product) => normalizeText(product.company_name)).filter(Boolean), ...customCompanyOptions])]
+      [
+        ...new Set(
+          [
+            ...products
+              .flatMap((product) => [normalizeText(product.company_name), normalizeText(product.company)])
+              .filter(Boolean),
+            ...customCompanyOptions,
+          ]
+        ),
+      ]
         .filter(Boolean)
         .sort((left, right) => left.localeCompare(right)),
     [products, customCompanyOptions]
   );
   const productSizeOptions = useMemo(
     () =>
-      [...new Set([...products.map((product) => normalizeText(product.product_size || product.tile_size)).filter(Boolean), ...customProductSizeOptions])]
+      [
+        ...new Set(
+          [
+            ...products
+              .flatMap((product) => [normalizeText(product.product_size), normalizeText(product.tile_size)])
+              .filter(Boolean),
+            ...customProductSizeOptions,
+          ]
+        ),
+      ]
         .filter(Boolean)
         .sort((left, right) => left.localeCompare(right)),
     [products, customProductSizeOptions]
@@ -3876,7 +3900,9 @@ export default function App() {
       return next;
     });
 
-    const validationError = validateProductForm(productForm);
+    const validationError = validateProductForm(productForm, {
+      requireDesignCode: !editingProductId,
+    });
     if (validationError) {
       setError(validationError);
       return;
@@ -4397,7 +4423,7 @@ export default function App() {
         setPurchaseSupplierHistory({ supplier_name: supplier, isNew: true });
       }
     } catch (_err) {
-      // Best-effort helper Ã¢â‚¬â€ do not block save flow if lookup fails.
+      // Best-effort helper - do not block save flow if lookup fails.
       setPurchaseSupplierHistory(null);
     }
   }
@@ -5974,6 +6000,12 @@ export default function App() {
   }
 
   function startEditingProduct(product, highlightFields = []) {
+    const companyValue = product.company_name || product.company || "";
+    const productSizeValue = product.product_size || product.tile_size || "";
+    const tileSizeValue = product.tile_size || product.product_size || "";
+    const finishValue = product.finish || "";
+    const designCodeValue = product.design_code || product.code || "";
+
     setEditingProductId(product.id);
     setInventoryWorkspaceTab("new");
     setProductHighlightedFields(Array.isArray(highlightFields) ? highlightFields : []);
@@ -5984,14 +6016,14 @@ export default function App() {
     setProductDuplicateOverride(false);
     setProductForm({
       name: product.name,
-      company_name: product.company_name || "",
-      design_code: product.design_code || "",
+      company_name: companyValue,
+      design_code: designCodeValue,
       business_unit: product.business_unit || "tiles",
       category: product.category || "Floor Tiles",
       unit: product.unit || "box",
-      tile_size: product.tile_size || "",
-      product_size: product.product_size || product.tile_size || "",
-      finish: product.finish || "",
+      tile_size: tileSizeValue,
+      product_size: productSizeValue,
+      finish: finishValue,
       pieces_per_box: product.pieces_per_box || "",
       sqft_per_box: product.sqft_per_box || "",
       weight_per_box: product.weight_per_box || "",
@@ -6022,20 +6054,20 @@ export default function App() {
     if (product.category && !defaultProductCategories.includes(product.category)) {
       setCustomProductCategories((current) => (current.includes(product.category) ? current : [...current, product.category]));
     }
-    if (product.company_name) {
+    if (companyValue) {
       setCustomCompanyOptions((current) =>
-        current.includes(product.company_name) ? current : [...current, product.company_name]
+        current.includes(companyValue) ? current : [...current, companyValue]
       );
     }
-    if (product.product_size || product.tile_size) {
-      const sizeValue = product.product_size || product.tile_size;
+    if (productSizeValue || tileSizeValue) {
+      const sizeValue = productSizeValue || tileSizeValue;
       setCustomProductSizeOptions((current) =>
         current.includes(sizeValue) ? current : [...current, sizeValue]
       );
     }
-    if (product.finish && !defaultProductFinishes.includes(product.finish)) {
+    if (finishValue && !defaultProductFinishes.includes(finishValue)) {
       setCustomFinishOptions((current) =>
-        current.includes(product.finish) ? current : [...current, product.finish]
+        current.includes(finishValue) ? current : [...current, finishValue]
       );
     }
     setCurrentView("inventory");
@@ -6542,7 +6574,7 @@ export default function App() {
               <article className="detail-card">
                 <span className="audience-tag">Operator Entry</span>
                 <h3>Poonam workflow</h3>
-                <p className="muted">Lead Ã¢â€ â€™ Billing Ã¢â€ â€™ Purchase Entry Ã¢â€ â€™ Expense Ã¢â€ â€™ Token</p>
+                <p className="muted">Lead - Billing - Purchase Entry - Expense - Token</p>
                 <div className="chip-row">
                   <span className="legend-chip">Draft bills {draftInvoiceCount}</span>
                   <span className="legend-chip">Pending purchase value Rs {Number(dashboardSummary?.purchases_today?.amount || 0).toLocaleString("en-IN")}</span>
@@ -6551,7 +6583,7 @@ export default function App() {
               <article className="detail-card">
                 <span className="audience-tag">Manager Approval</span>
                 <h3>Ayush workflow</h3>
-                <p className="muted">Lead review Ã¢â€ â€™ Approval Ã¢â€ â€™ Pricing Ã¢â€ â€™ Collection Ã¢â€ â€™ Pending work</p>
+                <p className="muted">Lead review - Approval - Pricing - Collection - Pending work</p>
                 <div className="chip-row">
                   <span className="legend-chip">Invoice approvals {pendingInvoiceApprovalCount}</span>
                   <span className="legend-chip">Follow-ups pending {dashboardSummary?.followups_pending?.count ?? 0}</span>
@@ -7621,36 +7653,39 @@ export default function App() {
                     const selectedProduct = item.product_id ? purchaseEntryProductMap.get(Number(item.product_id)) || null : null;
 
                     return (
-                      <div key={`purchase-item-${index}`} className="mini-card stack">
-                        <div className="section-head">
-                          <strong>Product Row {index + 1}</strong>
-                          {!editingPurchaseId && safePurchaseItems.length > 1 ? (
-                            <button type="button" className="secondary danger-soft" onClick={() => removePurchaseItemRow(index)}>
-                              Remove Row
-                            </button>
-                          ) : null}
-                        </div>
-                        <div className="form-grid">
-                          <div className="form-field">
-                            <div className="purchase-product-pickrow">
-                              <select
-                                data-field={`items.${index}.product_id`}
-                                className={getFieldErrorClass(purchaseFormErrors, `items.${index}.product_id`)}
-                                value={item.product_id}
-                                onChange={(event) => handlePurchaseProductSelect(index, event.target.value)}
-                                style={{ flex: 1 }}
-                              >
-                                <option value="">Select Inventory Product *</option>
-                                {purchaseEntryProductOptions.map((product) => (
-                                  <option key={product.id} value={product.id}>
-                                    {product.name}
-                                  </option>
-                                ))}
-                              </select>
+                      <div key={`purchase-item-${index}`} className="purchase-item-shell">
+                        <div className="purchase-item-scroll">
+                          <div className="purchase-item-line">
+                            <div className="form-field purchase-item-product-field">
+                              <div className="purchase-product-pickrow">
+                                <select
+                                  data-field={`items.${index}.product_id`}
+                                  className={getFieldErrorClass(purchaseFormErrors, `items.${index}.product_id`)}
+                                  value={item.product_id}
+                                  onChange={(event) => handlePurchaseProductSelect(index, event.target.value)}
+                                  style={{ flex: 1 }}
+                                >
+                                  <option value="">Select Inventory Product *</option>
+                                  {purchaseEntryProductOptions.map((product) => (
+                                    <option key={product.id} value={product.id}>
+                                      {product.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              {selectedProduct ? (
+                                <p className="muted purchase-item-product-meta">
+                                  {labelize(selectedProduct.category || "tiles")} | {selectedProduct.company_name || "No company"} | {selectedProduct.product_size || "No size"} | {(selectedProduct.unit || item.unit || "pcs").toUpperCase()} | Last rate Rs {Number(selectedProduct.last_purchase_rate || 0).toLocaleString("en-IN")}
+                                </p>
+                              ) : null}
+                              {purchaseFormErrors[`items.${index}.product_id`] ? (
+                                <span className="field-error-message">{purchaseFormErrors[`items.${index}.product_id`]}</span>
+                              ) : null}
+                            </div>
+                            <div className="purchase-item-add-cell">
                               <button
                                 type="button"
-                                className="secondary"
-                                style={{ padding: "0.4rem 0.75rem", fontSize: "0.8rem", whiteSpace: "nowrap" }}
+                                className="secondary purchase-inline-btn"
                                 onClick={() => {
                                   if (quickProductRowIndex === index) {
                                     setQuickProductRowIndex(null);
@@ -7660,163 +7695,164 @@ export default function App() {
                                   }
                                 }}
                               >
-                                {quickProductRowIndex === index ? "Cancel" : "+ Add Product"}
+                                {quickProductRowIndex === index ? "Cancel" : "+ Add"}
                               </button>
                             </div>
-                            {quickProductRowIndex === index ? (
-                              <div className="purchase-quick-add-panel">
-                                <strong>Quick add new product</strong>
-                                <div className="form-grid quick-add-grid">
-                                  <input placeholder="Product name *" value={quickProductForm.name} onChange={(e) => setQuickProductForm({ ...quickProductForm, name: e.target.value })} />
-                                  <select value={quickProductForm.category} onChange={(e) => setQuickProductForm({ ...quickProductForm, category: e.target.value })}>
-                                    {defaultProductCategories.map((categoryOption) => (
-                                      <option key={categoryOption} value={categoryOption}>{categoryOption}</option>
-                                    ))}
-                                  </select>
-                                  <select value={quickProductForm.unit} onChange={(e) => setQuickProductForm({ ...quickProductForm, unit: e.target.value })}>
-                                    {purchaseUnitOptions.map((u) => <option key={u} value={u}>{u}</option>)}
-                                  </select>
-                                  <input type="number" step="0.01" min="0" placeholder="Current Stock *" value={quickProductForm.stock_sqft} onChange={(e) => setQuickProductForm({ ...quickProductForm, stock_sqft: e.target.value })} />
-                                  <input placeholder="Design Code *" value={quickProductForm.design_code} onChange={(e) => setQuickProductForm({ ...quickProductForm, design_code: e.target.value })} />
-                                  <select value={quickProductForm.finish} onChange={(e) => setQuickProductForm({ ...quickProductForm, finish: e.target.value })}>
-                                    <option value="">Select Finish *</option>
-                                    {defaultProductFinishes.map((finishOption) => (
-                                      <option key={finishOption} value={finishOption}>{finishOption}</option>
-                                    ))}
-                                  </select>
-                                  <input placeholder="Company (optional)" value={quickProductForm.company_name} onChange={(e) => setQuickProductForm({ ...quickProductForm, company_name: e.target.value })} />
-                                  <input placeholder="Size (optional)" value={quickProductForm.product_size} onChange={(e) => setQuickProductForm({ ...quickProductForm, product_size: e.target.value })} />
-                                  <input type="number" step="0.01" min="0" placeholder="Pieces / Box" value={quickProductForm.pieces_per_box} onChange={(e) => setQuickProductForm({ ...quickProductForm, pieces_per_box: e.target.value })} />
-                                  <input type="number" step="0.01" min="0" placeholder="Sqft / Box" value={quickProductForm.sqft_per_box} onChange={(e) => setQuickProductForm({ ...quickProductForm, sqft_per_box: e.target.value })} />
-                                  <input type="number" step="0.01" min="0" placeholder="Weight / Box" value={quickProductForm.weight_per_box} onChange={(e) => setQuickProductForm({ ...quickProductForm, weight_per_box: e.target.value })} />
-                                </div>
-                                <div className="quick-add-actions">
-                                  <button type="button" onClick={(ev) => handleQuickAddProduct(ev, index)} disabled={quickProductSaving}>
-                                    {quickProductSaving ? "Saving..." : "Save & Use"}
-                                  </button>
-                                </div>
-                              </div>
-                            ) : null}
-                            {selectedProduct ? (
-                              <p className="muted" style={{ marginTop: "0.35rem" }}>
-                                {labelize(selectedProduct.category || "tiles")} Ã‚Â· {selectedProduct.company_name || "No company"} Ã‚Â· {selectedProduct.product_size || "No size"} Ã‚Â· {(selectedProduct.unit || item.unit || "pcs").toUpperCase()} Ã‚Â· Last rate Rs {Number(selectedProduct.last_purchase_rate || 0).toLocaleString("en-IN")}
-                              </p>
-                            ) : null}
-                            {purchaseFormErrors[`items.${index}.product_id`] ? (
-                              <span className="field-error-message">{purchaseFormErrors[`items.${index}.product_id`]}</span>
-                            ) : null}
-                          </div>
-                          <input
-                            data-field={`items.${index}.quantity`}
-                            className={getFieldErrorClass(purchaseFormErrors, `items.${index}.quantity`)}
-                            type="number"
-                            step="0.01"
-                            placeholder="Quantity"
-                            value={item.quantity}
-                            onChange={(event) => {
-                              const newQty = event.target.value;
-                              const auto = recalcPurchaseNetFromRate(newQty, item.rate_per_unit);
-                              updatePurchaseItem(index, {
-                                quantity: newQty,
-                                amount: auto != null ? String(auto) : item.amount,
-                                total_amount:
-                                  auto != null
-                                    ? String(Number((auto + Number(item.gst_amount || 0)).toFixed(2)))
-                                    : item.total_amount,
-                              });
-                            }}
-                          />
-                          <select
-                            data-field={`items.${index}.unit`}
-                            className={getFieldErrorClass(purchaseFormErrors, `items.${index}.unit`)}
-                            value={(selectedProduct?.unit || item.unit || "pcs").toLowerCase()}
-                            onChange={(event) => updatePurchaseItem(index, { unit: event.target.value })}
-                            disabled={Boolean(selectedProduct?.unit)}
-                            title={selectedProduct?.unit ? "Unit inherits from selected product" : ""}
-                          >
-                            {purchaseUnitOptions.map((u) => (
-                              <option key={u} value={u}>{u}</option>
-                            ))}
-                          </select>
-                          <div className="form-field">
                             <input
-                              data-field={`items.${index}.batch_no`}
-                              className={getFieldErrorClass(purchaseFormErrors, `items.${index}.batch_no`)}
-                              placeholder={selectedProduct ? buildPurchaseBatchSuggestion(selectedProduct, purchaseForm.purchase_date, index) : "Batch / Lot No"}
-                              value={item.batch_no || ""}
-                              onChange={(event) => updatePurchaseItem(index, { batch_no: event.target.value })}
-                            />
-                            {purchaseFormErrors[`items.${index}.batch_no`] ? (
-                              <span className="field-error-message">{purchaseFormErrors[`items.${index}.batch_no`]}</span>
-                            ) : null}
-                          </div>
-                          <input
-                            data-field={`items.${index}.rate_per_unit`}
-                            type="number"
-                            step="0.01"
-                            placeholder="Rate / unit"
-                            value={item.rate_per_unit}
-                            onChange={(event) => {
-                              const newRate = event.target.value;
-                              const auto = recalcPurchaseNetFromRate(item.quantity, newRate);
-                              updatePurchaseItem(index, {
-                                rate_per_unit: newRate,
-                                amount: auto != null ? String(auto) : item.amount,
-                                total_amount:
-                                  auto != null
-                                    ? String(Number((auto + Number(item.gst_amount || 0)).toFixed(2)))
-                                    : item.total_amount,
-                              });
-                            }}
-                          />
-                          <div className="form-field">
-                            <input
-                              data-field={`items.${index}.amount`}
-                              className={getFieldErrorClass(purchaseFormErrors, `items.${index}.amount`)}
+                              data-field={`items.${index}.quantity`}
+                              className={getFieldErrorClass(purchaseFormErrors, `items.${index}.quantity`)}
                               type="number"
                               step="0.01"
-                              placeholder="Net amount"
-                              value={item.amount}
-                              onChange={(event) =>
+                              placeholder="Qty"
+                              value={item.quantity}
+                              onChange={(event) => {
+                                const newQty = event.target.value;
+                                const auto = recalcPurchaseNetFromRate(newQty, item.rate_per_unit);
                                 updatePurchaseItem(index, {
-                                  amount: event.target.value,
-                                  total_amount: String(
-                                    Number((Number(event.target.value || 0) + Number(item.gst_amount || 0)).toFixed(2))
-                                  ),
-                                })
-                              }
+                                  quantity: newQty,
+                                  amount: auto != null ? String(auto) : item.amount,
+                                  total_amount:
+                                    auto != null
+                                      ? String(Number((auto + Number(item.gst_amount || 0)).toFixed(2)))
+                                      : item.total_amount,
+                                });
+                              }}
                             />
-                            {purchaseFormErrors[`items.${index}.amount`] ? (
-                              <span className="field-error-message">{purchaseFormErrors[`items.${index}.amount`]}</span>
-                            ) : null}
+                            <select
+                              data-field={`items.${index}.unit`}
+                              className={getFieldErrorClass(purchaseFormErrors, `items.${index}.unit`)}
+                              value={(selectedProduct?.unit || item.unit || "pcs").toLowerCase()}
+                              onChange={(event) => updatePurchaseItem(index, { unit: event.target.value })}
+                              disabled={Boolean(selectedProduct?.unit)}
+                              title={selectedProduct?.unit ? "Unit inherits from selected product" : ""}
+                            >
+                              {purchaseUnitOptions.map((u) => (
+                                <option key={u} value={u}>{u}</option>
+                              ))}
+                            </select>
+                            <div className="form-field">
+                              <input
+                                data-field={`items.${index}.batch_no`}
+                                className={getFieldErrorClass(purchaseFormErrors, `items.${index}.batch_no`)}
+                                placeholder={selectedProduct ? buildPurchaseBatchSuggestion(selectedProduct, purchaseForm.purchase_date, index) : "Batch / Lot"}
+                                value={item.batch_no || ""}
+                                onChange={(event) => updatePurchaseItem(index, { batch_no: event.target.value })}
+                              />
+                              {purchaseFormErrors[`items.${index}.batch_no`] ? (
+                                <span className="field-error-message">{purchaseFormErrors[`items.${index}.batch_no`]}</span>
+                              ) : null}
+                            </div>
+                            <input
+                              data-field={`items.${index}.rate_per_unit`}
+                              type="number"
+                              step="0.01"
+                              placeholder="Rate"
+                              value={item.rate_per_unit}
+                              onChange={(event) => {
+                                const newRate = event.target.value;
+                                const auto = recalcPurchaseNetFromRate(item.quantity, newRate);
+                                updatePurchaseItem(index, {
+                                  rate_per_unit: newRate,
+                                  amount: auto != null ? String(auto) : item.amount,
+                                  total_amount:
+                                    auto != null
+                                      ? String(Number((auto + Number(item.gst_amount || 0)).toFixed(2)))
+                                      : item.total_amount,
+                                });
+                              }}
+                            />
+                            <div className="form-field">
+                              <input
+                                data-field={`items.${index}.amount`}
+                                className={getFieldErrorClass(purchaseFormErrors, `items.${index}.amount`)}
+                                type="number"
+                                step="0.01"
+                                placeholder="Net"
+                                value={item.amount}
+                                onChange={(event) =>
+                                  updatePurchaseItem(index, {
+                                    amount: event.target.value,
+                                    total_amount: String(
+                                      Number((Number(event.target.value || 0) + Number(item.gst_amount || 0)).toFixed(2))
+                                    ),
+                                  })
+                                }
+                              />
+                              {purchaseFormErrors[`items.${index}.amount`] ? (
+                                <span className="field-error-message">{purchaseFormErrors[`items.${index}.amount`]}</span>
+                              ) : null}
+                            </div>
+                            <select
+                              value={item.gst_percent != null && item.gst_percent !== "" ? String(item.gst_percent) : ""}
+                              onChange={(event) => {
+                                const pct = event.target.value;
+                                const net = Number(item.amount || 0);
+                                const gstAmt = pct === "" ? 0 : Number(((net * Number(pct)) / 100).toFixed(2));
+                                updatePurchaseItem(index, {
+                                  gst_percent: pct,
+                                  gst_amount: pct === "" ? "" : String(gstAmt),
+                                  total_amount: String(Number((net + gstAmt).toFixed(2))),
+                                });
+                              }}
+                              title="GST percentage"
+                            >
+                              <option value="">GST %</option>
+                              {purchaseGstPercentOptions.map((p) => (
+                                <option key={p} value={p}>{p}%</option>
+                              ))}
+                            </select>
+                            <input
+                              type="number"
+                              step="0.01"
+                              placeholder="Total"
+                              value={item.total_amount}
+                              onChange={(event) => updatePurchaseItem(index, { total_amount: event.target.value })}
+                            />
+                            <div className="purchase-item-remove-cell">
+                              {!editingPurchaseId && safePurchaseItems.length > 1 ? (
+                                <button type="button" className="secondary danger-soft purchase-inline-btn" onClick={() => removePurchaseItemRow(index)}>
+                                  Remove
+                                </button>
+                              ) : (
+                                <span className="purchase-row-index">#{index + 1}</span>
+                              )}
+                            </div>
                           </div>
-                          <select
-                            value={item.gst_percent != null && item.gst_percent !== "" ? String(item.gst_percent) : ""}
-                            onChange={(event) => {
-                              const pct = event.target.value;
-                              const net = Number(item.amount || 0);
-                              const gstAmt = pct === "" ? 0 : Number(((net * Number(pct)) / 100).toFixed(2));
-                              updatePurchaseItem(index, {
-                                gst_percent: pct,
-                                gst_amount: pct === "" ? "" : String(gstAmt),
-                                total_amount: String(Number((net + gstAmt).toFixed(2))),
-                              });
-                            }}
-                            title="GST percentage"
-                          >
-                            <option value="">GST %</option>
-                            {purchaseGstPercentOptions.map((p) => (
-                              <option key={p} value={p}>{p}%</option>
-                            ))}
-                          </select>
-                          <input
-                            type="number"
-                            step="0.01"
-                            placeholder="Total"
-                            value={item.total_amount}
-                            onChange={(event) => updatePurchaseItem(index, { total_amount: event.target.value })}
-                          />
                         </div>
+                        {quickProductRowIndex === index ? (
+                          <div className="purchase-quick-add-panel">
+                            <strong>Quick add new product</strong>
+                            <div className="form-grid quick-add-grid">
+                              <input placeholder="Product name *" value={quickProductForm.name} onChange={(e) => setQuickProductForm({ ...quickProductForm, name: e.target.value })} />
+                              <select value={quickProductForm.category} onChange={(e) => setQuickProductForm({ ...quickProductForm, category: e.target.value })}>
+                                {defaultProductCategories.map((categoryOption) => (
+                                  <option key={categoryOption} value={categoryOption}>{categoryOption}</option>
+                                ))}
+                              </select>
+                              <select value={quickProductForm.unit} onChange={(e) => setQuickProductForm({ ...quickProductForm, unit: e.target.value })}>
+                                {purchaseUnitOptions.map((u) => <option key={u} value={u}>{u}</option>)}
+                              </select>
+                              <input type="number" step="0.01" min="0" placeholder="Current Stock *" value={quickProductForm.stock_sqft} onChange={(e) => setQuickProductForm({ ...quickProductForm, stock_sqft: e.target.value })} />
+                              <input placeholder="Design Code *" value={quickProductForm.design_code} onChange={(e) => setQuickProductForm({ ...quickProductForm, design_code: e.target.value })} />
+                              <select value={quickProductForm.finish} onChange={(e) => setQuickProductForm({ ...quickProductForm, finish: e.target.value })}>
+                                <option value="">Select Finish *</option>
+                                {defaultProductFinishes.map((finishOption) => (
+                                  <option key={finishOption} value={finishOption}>{finishOption}</option>
+                                ))}
+                              </select>
+                              <input placeholder="Company (optional)" value={quickProductForm.company_name} onChange={(e) => setQuickProductForm({ ...quickProductForm, company_name: e.target.value })} />
+                              <input placeholder="Size (optional)" value={quickProductForm.product_size} onChange={(e) => setQuickProductForm({ ...quickProductForm, product_size: e.target.value })} />
+                              <input type="number" step="0.01" min="0" placeholder="Pieces / Box" value={quickProductForm.pieces_per_box} onChange={(e) => setQuickProductForm({ ...quickProductForm, pieces_per_box: e.target.value })} />
+                              <input type="number" step="0.01" min="0" placeholder="Sqft / Box" value={quickProductForm.sqft_per_box} onChange={(e) => setQuickProductForm({ ...quickProductForm, sqft_per_box: e.target.value })} />
+                              <input type="number" step="0.01" min="0" placeholder="Weight / Box" value={quickProductForm.weight_per_box} onChange={(e) => setQuickProductForm({ ...quickProductForm, weight_per_box: e.target.value })} />
+                            </div>
+                            <div className="quick-add-actions">
+                              <button type="button" onClick={(ev) => handleQuickAddProduct(ev, index)} disabled={quickProductSaving}>
+                                {quickProductSaving ? "Saving..." : "Save & Use"}
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
                     );
                   })}
@@ -7830,7 +7866,7 @@ export default function App() {
                     <p className="muted">Freight and handling values can flow directly into Costing / Lot.</p>
                   </div>
                   {Number(purchaseCostingForm.total_freight_cost || 0) > 0 ? (
-                    <span className="status-chip status-pending">Freight entered Ã‚Â· costing lot ready</span>
+                    <span className="status-chip status-pending">Freight entered - costing lot ready</span>
                   ) : null}
                 </div>
                 <div className="form-grid">
@@ -8654,7 +8690,7 @@ export default function App() {
                 <span className="form-section-title">
                   Basic product information
                   {productHighlightedFields.includes("company") || productHighlightedFields.includes("size") ? (
-                    <span className="missing-field-note"> Ã‚Â· Please fill the highlighted fields</span>
+                    <span className="missing-field-note"> - Please fill the highlighted fields</span>
                   ) : null}
                 </span>
                 <div className="product-master-table">
@@ -8953,7 +8989,7 @@ export default function App() {
                 <span className="form-section-title">
                   Packaging information
                   {productHighlightedFields.includes("packaging") || productHighlightedFields.includes("weight") ? (
-                    <span className="missing-field-note"> Ã‚Â· Please fill the highlighted fields</span>
+                    <span className="missing-field-note"> - Please fill the highlighted fields</span>
                   ) : null}
                 </span>
                 <div className="product-master-table">
@@ -9038,7 +9074,7 @@ export default function App() {
                 <span className="form-section-title">
                   Owner Pricing Optional
                   {productHighlightedFields.includes("pricing") ? (
-                    <span className="missing-field-note"> Ã‚Â· Missing pricing Ã¢â‚¬â€ please review</span>
+                    <span className="missing-field-note"> - Missing pricing - please review</span>
                   ) : null}
                 </span>
                 <p className="muted product-form-note">
@@ -9379,7 +9415,7 @@ export default function App() {
                     <div>
                       <h3>{product.name}</h3>
                       <p className="muted">
-                        {[product.company_name || "Company missing", product.design_code || product.category, product.finish || "", product.latest_batch_no ? `Batch ${product.latest_batch_no}` : ""]
+                        {[(product.company_name || product.company) || "Company missing", (product.design_code || product.code) || product.category, product.finish || "", product.latest_batch_no ? `Batch ${product.latest_batch_no}` : ""]
                           .filter(Boolean)
                           .join(" | ")}
                       </p>
@@ -9387,7 +9423,7 @@ export default function App() {
                     <span className={`status-chip status-${product.status}`}>{labelize(product.status)}</span>
                   </div>
                   <div className="product-meta-grid">
-                    <span>Company {product.company_name || "Missing"}</span>
+                    <span>Company {(product.company_name || product.company) || "Missing"}</span>
                     <span>Category {product.category || "Missing"}</span>
                     <span>Size {product.product_size || product.tile_size || "Missing"}</span>
                     <span>Unit {product.unit || "Missing"}</span>
@@ -9407,8 +9443,8 @@ export default function App() {
                       {Number(product.stock_sqft || 0) <= 0
                         ? "Out of Stock"
                         : Number(product.stock_sqft || 0) <= 5
-                          ? `Low Stock Ã‚Â· ${product.stock_sqft || 0}`
-                          : `In Stock Ã‚Â· ${product.stock_sqft || 0}`}
+                          ? `Low Stock - ${product.stock_sqft || 0}`
+                          : `In Stock - ${product.stock_sqft || 0}`}
                     </span>
                     <span className="legend-chip product-completeness-chip">
                       Product Completeness: {getProductCompletenessPercent(product)}%
@@ -9484,7 +9520,7 @@ export default function App() {
                     const stockValue = Number(product.stock_sqft || 0);
                     const stockClass = stockValue <= 0 ? "stock-out" : stockValue <= 5 ? "stock-low" : "stock-in";
                     const productGaps = getProductDataGaps(product);
-                    const productMetaLine = [product.design_code || "", product.finish || "", product.latest_batch_no ? `Batch ${product.latest_batch_no}` : ""]
+                    const productMetaLine = [(product.design_code || product.code) || "", product.finish || "", product.latest_batch_no ? `Batch ${product.latest_batch_no}` : ""]
                       .filter(Boolean)
                       .join(" | ");
                     const compactGapText =
@@ -9504,7 +9540,7 @@ export default function App() {
                             </div>
                           ) : null}
                         </td>
-                        <td className="col-company">{product.company_name || "Missing"}</td>
+                        <td className="col-company">{(product.company_name || product.company) || "Missing"}</td>
                         <td className="col-category">{product.category || "Missing"}</td>
                         <td className="col-size">{product.product_size || product.tile_size || "Missing"}</td>
                         <td className="col-stock">
@@ -9665,8 +9701,8 @@ export default function App() {
                             <strong>{product.name}</strong>
                             <div className="muted">{product.design_code || product.category || ""}</div>
                           </td>
-                          <td>{product.company_name || <span className="muted">Ã¢â‚¬â€ missing</span>}</td>
-                          <td>{product.product_size || product.tile_size || <span className="muted">Ã¢â‚¬â€ missing</span>}</td>
+                          <td>{product.company_name || <span className="muted">- missing</span>}</td>
+                          <td>{product.product_size || product.tile_size || <span className="muted">- missing</span>}</td>
                           <td>
                             <div className="chip-row">
                               {gaps.map((code) => (
@@ -9898,7 +9934,7 @@ export default function App() {
             <div className="section-head">
               <h2>Daily report sheet</h2>
               <span>
-                Owner snapshot {dailyReport ? `Ã‚Â· ${formatDate(dailyReportDate)}` : ""}
+                Owner snapshot {dailyReport ? `- ${formatDate(dailyReportDate)}` : ""}
               </span>
             </div>
             <div className="filter-row">
@@ -9957,7 +9993,7 @@ export default function App() {
                   />
                   <StatCard
                     label="Tokens Created"
-                    value={`${dailyReport.tokens?.count || 0} Ã‚Â· Rs ${Number(
+                    value={`${dailyReport.tokens?.count || 0} - Rs ${Number(
                       dailyReport.tokens?.amount || 0
                     ).toLocaleString("en-IN")}`}
                   />
@@ -10018,7 +10054,7 @@ export default function App() {
               <div className="section-head">
                 <h2>Live business pulse</h2>
                 <span>
-                  Live snapshot Ã‚Â· cached 30s Ã‚Â· {dashboardSummary.as_of_date}
+                  Live snapshot - cached 30s - {dashboardSummary.as_of_date}
                 </span>
               </div>
               <div className="tabs-row">
@@ -10045,14 +10081,14 @@ export default function App() {
               <div className="report-grid">
                 <StatCard
                   label="Token Claims Pending"
-                  value={`${dashboardSummary.token_pending?.count ?? 0} Ã‚Â· Rs ${Number(
+                  value={`${dashboardSummary.token_pending?.count ?? 0} - Rs ${Number(
                     dashboardSummary.token_pending?.amount || 0
                   ).toLocaleString("en-IN")}`}
                   tone="danger"
                 />
                 <StatCard
                   label="Token Paid (Month)"
-                  value={`${dashboardSummary.token_paid_month?.count ?? 0} Ã‚Â· Rs ${Number(
+                  value={`${dashboardSummary.token_paid_month?.count ?? 0} - Rs ${Number(
                     dashboardSummary.token_paid_month?.amount || 0
                   ).toLocaleString("en-IN")}`}
                   tone="accent"
@@ -10310,7 +10346,7 @@ function PurchaseIntelligencePanelImpl({
           <strong>Supplier Suggestion</strong>
           <p>
             {intelligence.recommended_supplier
-              ? `${intelligence.recommended_supplier} Ã‚Â· ${formatCurrency(intelligence.best_supplier_rate || 0)}`
+              ? `${intelligence.recommended_supplier} - ${formatCurrency(intelligence.best_supplier_rate || 0)}`
               : "Not available"}
           </p>
         </div>
@@ -10330,7 +10366,7 @@ function PurchaseIntelligencePanelImpl({
           <div className="purchase-history-list">
             {(intelligence.last_5_rates || []).map((entry, index) => (
               <span key={`${entry.purchase_date || "rate"}-${index}`} className="hero-pill">
-                {formatCurrency(entry.rate)} Ã‚Â· {entry.supplier_name || "Supplier"}
+                {formatCurrency(entry.rate)} - {entry.supplier_name || "Supplier"}
               </span>
             ))}
           </div>
@@ -11005,7 +11041,7 @@ function AccordionSectionImpl({ title, badge, summary, isOpen, onToggle, childre
         </div>
         <div className="accordion-meta">
           <span className="status-chip">{badge}</span>
-          <span className="accordion-caret">{isOpen ? "Ã¢Ë†â€™" : "+"}</span>
+          <span className="accordion-caret">{isOpen ? "-" : "+"}</span>
         </div>
       </button>
       {isOpen ? <div className="accordion-content">{children}</div> : null}
@@ -11397,11 +11433,19 @@ function normalizeDealerPayload(dealer) {
 }
 
 function normalizeProductPayload(product) {
+  const normalizedCompanyName = normalizeText(product.company_name || product.company);
+  const normalizedProductSize = normalizeText(product.product_size || product.tile_size);
+  const normalizedTileSize = normalizeText(product.tile_size || product.product_size);
+  const normalizedDesignCode = normalizeText(product.design_code || product.code);
+
   return {
     ...product,
-    company_name: normalizeText(product.company_name),
+    company_name: normalizedCompanyName,
     unit: normalizeText(product.unit) || "pcs",
-    product_size: normalizeText(product.product_size || product.tile_size),
+    product_size: normalizedProductSize,
+    tile_size: normalizedTileSize,
+    design_code: normalizedDesignCode,
+    finish: normalizeText(product.finish),
     stock_sqft: Number(product.stock_sqft || 0),
     pieces_per_box: Number(product.pieces_per_box || 0),
     sqft_per_box: Number(product.sqft_per_box || 0),
@@ -11451,6 +11495,10 @@ function getProductDataGaps(product) {
     gaps.push("company");
   }
 
+  if (!normalizeText(product?.design_code)) {
+    gaps.push("design");
+  }
+
   if (!normalizeText(product?.product_size || product?.tile_size)) {
     gaps.push("size");
   }
@@ -11496,6 +11544,8 @@ function formatProductDataGapLabel(code) {
   switch (code) {
     case "company":
       return "company";
+    case "design":
+      return "design code";
     case "size":
       return "size";
     case "packaging":

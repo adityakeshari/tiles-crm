@@ -74,6 +74,7 @@ call :run "032_purchase_truck_linking.sql"
 call :run "033_product_daily_rate_engine.sql"
 call :run "034_product_batch_tracking.sql"
 call :run "035_purchase_item_batch_table.sql"
+call :run "036_backfill_legacy_product_fields.sql"
 
 if errorlevel 1 exit /b 1
 

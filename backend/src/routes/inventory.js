@@ -46,16 +46,41 @@ function parseListLimit(value, fallback = DEFAULT_LIST_LIMIT) {
   return Math.min(parsed, MAX_LIST_LIMIT);
 }
 
+async function getLegacyProductColumnFlags() {
+  const result = await query(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND table_name = 'products'
+       AND column_name IN ('company', 'code')`
+  );
+
+  const columnNames = new Set(result.rows.map((row) => row.column_name));
+  return {
+    hasCompanyColumn: columnNames.has("company"),
+    hasCodeColumn: columnNames.has("code"),
+  };
+}
+
 router.get("/", async (req, res) => {
   const limit = parseListLimit(req.query.limit);
 
   try {
+    const { hasCompanyColumn, hasCodeColumn } = await getLegacyProductColumnFlags();
+    const legacyCompanyExpression = hasCompanyColumn ? "NULLIF(p.company, '')" : "NULL";
+    const legacyCodeExpression = hasCodeColumn ? "NULLIF(p.code, '')" : "NULL";
+    const summaryLegacyCompanyExpression = hasCompanyColumn ? "NULLIF(company, '')" : "NULL";
     const [productsResult, summaryResult] = await Promise.all([
       query(
         `SELECT *
          FROM (
            SELECT
              p.*,
+             COALESCE(NULLIF(p.company_name, ''), ${legacyCompanyExpression}, 'Company missing') AS company_name,
+             COALESCE(NULLIF(p.product_size, ''), NULLIF(p.tile_size, ''), 'Size missing') AS product_size,
+             COALESCE(NULLIF(p.tile_size, ''), NULLIF(p.product_size, ''), '') AS tile_size,
+             COALESCE(NULLIF(p.design_code, ''), ${legacyCodeExpression}, '') AS design_code,
+             COALESCE(NULLIF(p.finish, ''), '') AS finish,
              latest_purchase.batch_no AS latest_batch_no
            FROM products p
            LEFT JOIN LATERAL (
@@ -80,7 +105,7 @@ router.get("/", async (req, res) => {
            COUNT(*) FILTER (WHERE status = 'fast_moving')::int AS fast_moving_count,
            COUNT(*) FILTER (WHERE status = 'dead_stock')::int AS dead_stock_count,
            COALESCE(SUM(stock_sqft), 0)::int AS total_stock_sqft,
-           COUNT(*) FILTER (WHERE company_name = '')::int AS missing_company_count,
+           COUNT(*) FILTER (WHERE COALESCE(NULLIF(company_name, ''), ${summaryLegacyCompanyExpression}) IS NULL)::int AS missing_company_count,
            COUNT(*) FILTER (WHERE COALESCE(product_size, '') = '' AND COALESCE(tile_size, '') = '')::int AS missing_size_count,
            COUNT(*) FILTER (WHERE COALESCE(weight_per_box, 0) <= 0 AND COALESCE(weight_per_unit, 0) <= 0)::int AS missing_weight_count,
            COUNT(*) FILTER (

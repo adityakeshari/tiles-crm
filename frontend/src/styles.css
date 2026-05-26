@@ -3810,6 +3810,65 @@ button.sidebar-item-active .sidebar-dot {
   width: 100%;
 }
 
+.purchase-item-shell {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.purchase-item-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0.1rem;
+}
+
+.purchase-item-line {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.6fr) 110px 80px 75px 150px 100px 110px 80px 110px 90px;
+  gap: 0.45rem;
+  align-items: start;
+  min-width: 1185px;
+}
+
+.purchase-item-line input,
+.purchase-item-line select,
+.purchase-inline-btn {
+  min-height: 34px;
+  height: 34px;
+  padding: 0.35rem 0.55rem;
+  font-size: 0.8rem;
+}
+
+.purchase-item-product-field {
+  min-width: 220px;
+}
+
+.purchase-item-product-meta {
+  margin-top: 0.25rem;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.purchase-item-add-cell,
+.purchase-item-remove-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.purchase-inline-btn {
+  width: 100%;
+  white-space: nowrap;
+}
+
+.purchase-row-index {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--crm-text-muted);
+}
+
 .purchase-quick-add-panel {
   margin-top: 0.5rem;
   padding: 0.8rem 0.9rem;
@@ -3841,4 +3900,10 @@ button.sidebar-item-active .sidebar-dot {
   display: flex;
   justify-content: flex-end;
   gap: 0.4rem;
+}
+
+@media (max-width: 1024px) {
+  .purchase-item-line {
+    min-width: 1185px;
+  }
 }
