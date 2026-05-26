@@ -1153,6 +1153,39 @@ button.active-nav:hover {
   border-bottom: none;
 }
 
+.purchase-supplier-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+  gap: 0.65rem;
+  margin-top: 0.65rem;
+}
+
+.purchase-supplier-meta-item {
+  display: grid;
+  gap: 0.18rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--crm-border);
+  border-radius: 10px;
+  background: var(--crm-surface-soft);
+}
+
+.purchase-supplier-meta-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--crm-text-muted);
+}
+
+.purchase-supplier-meta-value {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--crm-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .mini-card {
   text-align: left;
   color: inherit;
@@ -1168,6 +1201,12 @@ button.active-nav:hover {
   align-items: center;
   justify-content: space-between;
   gap: 0.6rem;
+}
+
+@media (max-width: 720px) {
+  .purchase-supplier-meta-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ===== Accordions ===== */

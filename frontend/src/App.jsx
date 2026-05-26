@@ -12,7 +12,7 @@ const RegisteredMasonsSection = lazy(() => import("./sections/RegisteredMasonsSe
 const ProjectsSection = lazy(() => import("./sections/ProjectsSection.jsx"));
 const LeadWorkspaceSection = lazy(() => import("./sections/LeadWorkspaceSection.jsx"));
 
-// Enterprise sidebar hierarchy. Sub-item IDs map to existing currentView IDs â€”
+// Enterprise sidebar hierarchy. Sub-item IDs map to existing currentView IDs Ã¢â‚¬â€
 // no business logic / API / route changes; only the navigation surface is restructured.
 const navGroups = [
   {
@@ -126,7 +126,7 @@ const views = [
 const viewMeta = {
   overview: {
     title: "Dashboard",
-    description: "Today's summary at a glance â€” sales, collection, pending, follow-ups and stock alerts.",
+    description: "Today's summary at a glance Ã¢â‚¬â€ sales, collection, pending, follow-ups and stock alerts.",
     audience: "Owner & Manager view",
   },
   pipeline: {
@@ -146,7 +146,7 @@ const viewMeta = {
   },
   projects: {
     title: "Projects",
-    description: "Won leads under execution â€” dispatches, payments, plumbing and net profit.",
+    description: "Won leads under execution Ã¢â‚¬â€ dispatches, payments, plumbing and net profit.",
     audience: "Manager control",
   },
   plumbing: {
@@ -171,7 +171,7 @@ const viewMeta = {
   },
   masons: {
     title: "Registered Masons",
-    description: "Add a new mason, update profile and mark active/inactive â€” only active masons can claim tokens.",
+    description: "Add a new mason, update profile and mark active/inactive Ã¢â‚¬â€ only active masons can claim tokens.",
     audience: "Manager entry",
   },
   inventory: {
@@ -181,7 +181,7 @@ const viewMeta = {
   },
   dealers: {
     title: "Dealers",
-    description: "Dealer network â€” category, purchase value, outstanding and commission.",
+    description: "Dealer network Ã¢â‚¬â€ category, purchase value, outstanding and commission.",
     audience: "Manager control",
   },
   purchases: {
@@ -206,7 +206,7 @@ const viewMeta = {
   },
   reports: {
     title: "Reports",
-    description: "Daily report sheet plus owner control â€” sales, collection, profit and payouts.",
+    description: "Daily report sheet plus owner control Ã¢â‚¬â€ sales, collection, profit and payouts.",
     audience: "Owner / Manager",
   },
   team: {
@@ -4397,7 +4397,7 @@ export default function App() {
         setPurchaseSupplierHistory({ supplier_name: supplier, isNew: true });
       }
     } catch (_err) {
-      // Best-effort helper â€” do not block save flow if lookup fails.
+      // Best-effort helper Ã¢â‚¬â€ do not block save flow if lookup fails.
       setPurchaseSupplierHistory(null);
     }
   }
@@ -6542,7 +6542,7 @@ export default function App() {
               <article className="detail-card">
                 <span className="audience-tag">Operator Entry</span>
                 <h3>Poonam workflow</h3>
-                <p className="muted">Lead â†’ Billing â†’ Purchase Entry â†’ Expense â†’ Token</p>
+                <p className="muted">Lead Ã¢â€ â€™ Billing Ã¢â€ â€™ Purchase Entry Ã¢â€ â€™ Expense Ã¢â€ â€™ Token</p>
                 <div className="chip-row">
                   <span className="legend-chip">Draft bills {draftInvoiceCount}</span>
                   <span className="legend-chip">Pending purchase value Rs {Number(dashboardSummary?.purchases_today?.amount || 0).toLocaleString("en-IN")}</span>
@@ -6551,7 +6551,7 @@ export default function App() {
               <article className="detail-card">
                 <span className="audience-tag">Manager Approval</span>
                 <h3>Ayush workflow</h3>
-                <p className="muted">Lead review â†’ Approval â†’ Pricing â†’ Collection â†’ Pending work</p>
+                <p className="muted">Lead review Ã¢â€ â€™ Approval Ã¢â€ â€™ Pricing Ã¢â€ â€™ Collection Ã¢â€ â€™ Pending work</p>
                 <div className="chip-row">
                   <span className="legend-chip">Invoice approvals {pendingInvoiceApprovalCount}</span>
                   <span className="legend-chip">Follow-ups pending {dashboardSummary?.followups_pending?.count ?? 0}</span>
@@ -7468,7 +7468,7 @@ export default function App() {
           {purchaseWorkspaceTab === "new_bill" ? (
           <section className="panel">
             <div className="section-head">
-              <h2>Purchase Center Â· New Bill</h2>
+              <h2>Purchase Center - New Bill</h2>
               <span>Supplier invoice entry with multiple product rows.</span>
             </div>
             <form
@@ -7487,7 +7487,7 @@ export default function App() {
                   <option value="">Select Registered Supplier *</option>
                   {safeSuppliers.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.name}{s.city ? ` â€” ${s.city}` : ""}
+                      {s.name}{s.city ? ` - ${s.city}` : ""}
                     </option>
                   ))}
                 </select>
@@ -7531,18 +7531,18 @@ export default function App() {
                   <span className="field-error-message">{purchaseFormErrors.supplier_id}</span>
                 ) : null}
               </div>
-              <div className="mini-list full-span">
-                <div className="timeline-item">
-                  <strong>Supplier Mobile</strong>
-                  <p>{selectedPurchaseSupplier?.mobile || purchaseForm.supplier_phone || "Not available"}</p>
+              <div className="purchase-supplier-meta-grid full-span">
+                <div className="purchase-supplier-meta-item">
+                  <span className="purchase-supplier-meta-label">Supplier Mobile</span>
+                  <strong className="purchase-supplier-meta-value">{selectedPurchaseSupplier?.mobile || purchaseForm.supplier_phone || "-"}</strong>
                 </div>
-                <div className="timeline-item">
-                  <strong>City</strong>
-                  <p>{selectedPurchaseSupplier?.city || "Not available"}</p>
+                <div className="purchase-supplier-meta-item">
+                  <span className="purchase-supplier-meta-label">City</span>
+                  <strong className="purchase-supplier-meta-value">{selectedPurchaseSupplier?.city || "-"}</strong>
                 </div>
-                <div className="timeline-item">
-                  <strong>GSTIN</strong>
-                  <p>{selectedPurchaseSupplier?.gstin || "Not available"}</p>
+                <div className="purchase-supplier-meta-item">
+                  <span className="purchase-supplier-meta-label">GSTIN</span>
+                  <strong className="purchase-supplier-meta-value">{selectedPurchaseSupplier?.gstin || "-"}</strong>
                 </div>
               </div>
               <input
@@ -7699,7 +7699,7 @@ export default function App() {
                             ) : null}
                             {selectedProduct ? (
                               <p className="muted" style={{ marginTop: "0.35rem" }}>
-                                {labelize(selectedProduct.category || "tiles")} Â· {selectedProduct.company_name || "No company"} Â· {selectedProduct.product_size || "No size"} Â· {(selectedProduct.unit || item.unit || "pcs").toUpperCase()} Â· Last rate Rs {Number(selectedProduct.last_purchase_rate || 0).toLocaleString("en-IN")}
+                                {labelize(selectedProduct.category || "tiles")} Ã‚Â· {selectedProduct.company_name || "No company"} Ã‚Â· {selectedProduct.product_size || "No size"} Ã‚Â· {(selectedProduct.unit || item.unit || "pcs").toUpperCase()} Ã‚Â· Last rate Rs {Number(selectedProduct.last_purchase_rate || 0).toLocaleString("en-IN")}
                               </p>
                             ) : null}
                             {purchaseFormErrors[`items.${index}.product_id`] ? (
@@ -7830,7 +7830,7 @@ export default function App() {
                     <p className="muted">Freight and handling values can flow directly into Costing / Lot.</p>
                   </div>
                   {Number(purchaseCostingForm.total_freight_cost || 0) > 0 ? (
-                    <span className="status-chip status-pending">Freight entered Â· costing lot ready</span>
+                    <span className="status-chip status-pending">Freight entered Ã‚Â· costing lot ready</span>
                   ) : null}
                 </div>
                 <div className="form-grid">
@@ -8654,7 +8654,7 @@ export default function App() {
                 <span className="form-section-title">
                   Basic product information
                   {productHighlightedFields.includes("company") || productHighlightedFields.includes("size") ? (
-                    <span className="missing-field-note"> Â· Please fill the highlighted fields</span>
+                    <span className="missing-field-note"> Ã‚Â· Please fill the highlighted fields</span>
                   ) : null}
                 </span>
                 <div className="product-master-table">
@@ -8953,7 +8953,7 @@ export default function App() {
                 <span className="form-section-title">
                   Packaging information
                   {productHighlightedFields.includes("packaging") || productHighlightedFields.includes("weight") ? (
-                    <span className="missing-field-note"> Â· Please fill the highlighted fields</span>
+                    <span className="missing-field-note"> Ã‚Â· Please fill the highlighted fields</span>
                   ) : null}
                 </span>
                 <div className="product-master-table">
@@ -9038,7 +9038,7 @@ export default function App() {
                 <span className="form-section-title">
                   Owner Pricing Optional
                   {productHighlightedFields.includes("pricing") ? (
-                    <span className="missing-field-note"> Â· Missing pricing â€” please review</span>
+                    <span className="missing-field-note"> Ã‚Â· Missing pricing Ã¢â‚¬â€ please review</span>
                   ) : null}
                 </span>
                 <p className="muted product-form-note">
@@ -9407,8 +9407,8 @@ export default function App() {
                       {Number(product.stock_sqft || 0) <= 0
                         ? "Out of Stock"
                         : Number(product.stock_sqft || 0) <= 5
-                          ? `Low Stock Â· ${product.stock_sqft || 0}`
-                          : `In Stock Â· ${product.stock_sqft || 0}`}
+                          ? `Low Stock Ã‚Â· ${product.stock_sqft || 0}`
+                          : `In Stock Ã‚Â· ${product.stock_sqft || 0}`}
                     </span>
                     <span className="legend-chip product-completeness-chip">
                       Product Completeness: {getProductCompletenessPercent(product)}%
@@ -9665,8 +9665,8 @@ export default function App() {
                             <strong>{product.name}</strong>
                             <div className="muted">{product.design_code || product.category || ""}</div>
                           </td>
-                          <td>{product.company_name || <span className="muted">â€” missing</span>}</td>
-                          <td>{product.product_size || product.tile_size || <span className="muted">â€” missing</span>}</td>
+                          <td>{product.company_name || <span className="muted">Ã¢â‚¬â€ missing</span>}</td>
+                          <td>{product.product_size || product.tile_size || <span className="muted">Ã¢â‚¬â€ missing</span>}</td>
                           <td>
                             <div className="chip-row">
                               {gaps.map((code) => (
@@ -9898,7 +9898,7 @@ export default function App() {
             <div className="section-head">
               <h2>Daily report sheet</h2>
               <span>
-                Owner snapshot {dailyReport ? `Â· ${formatDate(dailyReportDate)}` : ""}
+                Owner snapshot {dailyReport ? `Ã‚Â· ${formatDate(dailyReportDate)}` : ""}
               </span>
             </div>
             <div className="filter-row">
@@ -9957,7 +9957,7 @@ export default function App() {
                   />
                   <StatCard
                     label="Tokens Created"
-                    value={`${dailyReport.tokens?.count || 0} Â· Rs ${Number(
+                    value={`${dailyReport.tokens?.count || 0} Ã‚Â· Rs ${Number(
                       dailyReport.tokens?.amount || 0
                     ).toLocaleString("en-IN")}`}
                   />
@@ -10018,7 +10018,7 @@ export default function App() {
               <div className="section-head">
                 <h2>Live business pulse</h2>
                 <span>
-                  Live snapshot Â· cached 30s Â· {dashboardSummary.as_of_date}
+                  Live snapshot Ã‚Â· cached 30s Ã‚Â· {dashboardSummary.as_of_date}
                 </span>
               </div>
               <div className="tabs-row">
@@ -10045,14 +10045,14 @@ export default function App() {
               <div className="report-grid">
                 <StatCard
                   label="Token Claims Pending"
-                  value={`${dashboardSummary.token_pending?.count ?? 0} Â· Rs ${Number(
+                  value={`${dashboardSummary.token_pending?.count ?? 0} Ã‚Â· Rs ${Number(
                     dashboardSummary.token_pending?.amount || 0
                   ).toLocaleString("en-IN")}`}
                   tone="danger"
                 />
                 <StatCard
                   label="Token Paid (Month)"
-                  value={`${dashboardSummary.token_paid_month?.count ?? 0} Â· Rs ${Number(
+                  value={`${dashboardSummary.token_paid_month?.count ?? 0} Ã‚Â· Rs ${Number(
                     dashboardSummary.token_paid_month?.amount || 0
                   ).toLocaleString("en-IN")}`}
                   tone="accent"
@@ -10310,7 +10310,7 @@ function PurchaseIntelligencePanelImpl({
           <strong>Supplier Suggestion</strong>
           <p>
             {intelligence.recommended_supplier
-              ? `${intelligence.recommended_supplier} Â· ${formatCurrency(intelligence.best_supplier_rate || 0)}`
+              ? `${intelligence.recommended_supplier} Ã‚Â· ${formatCurrency(intelligence.best_supplier_rate || 0)}`
               : "Not available"}
           </p>
         </div>
@@ -10330,7 +10330,7 @@ function PurchaseIntelligencePanelImpl({
           <div className="purchase-history-list">
             {(intelligence.last_5_rates || []).map((entry, index) => (
               <span key={`${entry.purchase_date || "rate"}-${index}`} className="hero-pill">
-                {formatCurrency(entry.rate)} Â· {entry.supplier_name || "Supplier"}
+                {formatCurrency(entry.rate)} Ã‚Â· {entry.supplier_name || "Supplier"}
               </span>
             ))}
           </div>
@@ -11005,7 +11005,7 @@ function AccordionSectionImpl({ title, badge, summary, isOpen, onToggle, childre
         </div>
         <div className="accordion-meta">
           <span className="status-chip">{badge}</span>
-          <span className="accordion-caret">{isOpen ? "âˆ’" : "+"}</span>
+          <span className="accordion-caret">{isOpen ? "Ã¢Ë†â€™" : "+"}</span>
         </div>
       </button>
       {isOpen ? <div className="accordion-content">{children}</div> : null}
