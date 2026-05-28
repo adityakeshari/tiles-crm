@@ -41,7 +41,59 @@ function createProductMatchError(itemName, businessUnit, productIds) {
 }
 
 function buildPurchaseDuplicateMessage() {
-  return "Duplicate purchase item: the same supplier, invoice number, purchase date, and product already exist.";
+  return "Duplicate purchase item merged: same supplier, invoice, product, batch, rate, and GST were combined into one row.";
+}
+
+function buildPurchaseInvoiceGroups(rows) {
+  const grouped = new Map();
+
+  (rows || []).forEach((row) => {
+    const key = `${row.supplier_id || "unknown"}::${row.invoice_number || ""}::${String(row.purchase_date || "").slice(0, 10)}`;
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        group_key: key,
+        supplier_id: row.supplier_id,
+        supplier_name: row.supplier_name,
+        supplier_phone: row.supplier_phone,
+        invoice_number: row.invoice_number,
+        purchase_date: row.purchase_date,
+        payment_status: row.payment_status || "pending",
+        total_quantity: 0,
+        total_taxable_amount: 0,
+        gst_total: 0,
+        grand_total: 0,
+        item_count: 0,
+        item_names: [],
+        items: [],
+      });
+    }
+
+    const group = grouped.get(key);
+    group.total_quantity += Number(row.quantity || 0);
+    group.total_taxable_amount += Number(row.amount || 0);
+    group.gst_total += Number(row.gst_amount || 0);
+    group.grand_total += Number(row.total_amount || 0);
+    group.item_count += 1;
+    if (row.item_name) {
+      group.item_names.push(row.item_name);
+    }
+    group.items.push(row);
+  });
+
+  return [...grouped.values()].map((group) => ({
+    ...group,
+    item_names: [...new Set(group.item_names)].filter(Boolean),
+    item_summary: `${group.item_count} item${group.item_count === 1 ? "" : "s"} - ${[...new Set(group.item_names)].filter(Boolean).slice(0, 2).join(", ")}`,
+  }));
+}
+
+function getPurchaseUnitRate(purchase) {
+  const quantity = Number(purchase?.quantity || 0);
+  const amount = Number(purchase?.amount || 0);
+  if (quantity > 0) {
+    return roundRate(amount / quantity);
+  }
+  return roundRate(amount);
 }
 
 function classifyRateDifference(currentRate, averageRate) {
@@ -332,8 +384,11 @@ router.get(
         ),
       ]);
 
+      const invoiceGroups = buildPurchaseInvoiceGroups(rowsResult.rows);
+
       return res.json({
         purchases: rowsResult.rows,
+        invoices: invoiceGroups,
         summary: summaryResult.rows[0] || {
           total_count: 0,
           total_amount: 0,
@@ -342,7 +397,7 @@ router.get(
           pending_amount: 0,
           paid_amount: 0,
         },
-        pagination: { limit, offset, returned: rowsResult.rowCount },
+        pagination: { limit, offset, returned: rowsResult.rowCount, invoice_count: invoiceGroups.length },
       });
     } catch (error) {
       return res.status(500).json({ message: "Unable to fetch purchases", error: error.message });
@@ -570,6 +625,32 @@ async function syncPurchaseItemBatch(client, purchaseId, batchNo) {
   );
 }
 
+async function findMergeablePurchaseRow(client, purchase) {
+  const normalizedBatch = typeof purchase.batch_no === "string" ? purchase.batch_no.trim() : "";
+  const targetRate = getPurchaseUnitRate(purchase);
+  const targetGst = roundRate(purchase.gst_amount);
+  const result = await client.query(
+    `SELECT p.*, pb.batch_no
+     FROM purchases p
+     LEFT JOIN purchase_item_batches pb ON pb.purchase_id = p.id
+     WHERE p.supplier_id = $1
+       AND p.product_id = $2
+       AND LOWER(COALESCE(p.invoice_number, '')) = LOWER(COALESCE($3, ''))
+       AND p.purchase_date = $4::date
+     ORDER BY p.id DESC`,
+    [purchase.supplier_id, purchase.product_id, purchase.invoice_number || "", purchase.purchase_date]
+  );
+
+  return (
+    result.rows.find((row) => {
+      const existingBatch = typeof row.batch_no === "string" ? row.batch_no.trim() : "";
+      const existingRate = getPurchaseUnitRate(row);
+      const existingGst = roundRate(row.gst_amount);
+      return existingBatch === normalizedBatch && existingRate === targetRate && existingGst === targetGst;
+    }) || null
+  );
+}
+
 router.post(
   "/",
   requireRole("admin", "manager", "accounts", "operations", "operator"),
@@ -596,44 +677,89 @@ router.post(
       const itemName = product.name;
       const category = purchase.category || product.category || "tiles";
       const unit = purchase.unit || product.unit || "pcs";
+      const mergeablePurchase = await findMergeablePurchaseRow(client, {
+        ...purchase,
+        category,
+        unit,
+      });
 
-      const result = await client.query(
-        `INSERT INTO purchases (
-            supplier_id, product_id,
-            supplier_name, supplier_phone, invoice_number, purchase_date,
-            truck_number, delivery_date,
-            business_unit, category, item_name, quantity, unit,
-            amount, gst_amount, total_amount, payment_status, remarks,
-            created_by, updated_by
+      const result = mergeablePurchase
+        ? await client.query(
+            `UPDATE purchases
+             SET quantity = COALESCE(quantity, 0) + $1,
+                 amount = COALESCE(amount, 0) + $2,
+                 gst_amount = COALESCE(gst_amount, 0) + $3,
+                 total_amount = COALESCE(total_amount, 0) + $4,
+                 supplier_name = $5,
+                 supplier_phone = $6,
+                 truck_number = COALESCE(NULLIF($7, ''), truck_number),
+                 delivery_date = COALESCE($8, delivery_date),
+                 payment_status = $9,
+                 remarks = CASE
+                   WHEN COALESCE($10, '') = '' THEN remarks
+                   WHEN COALESCE(remarks, '') = '' THEN $10
+                   ELSE remarks
+                 END,
+                 updated_by = $11,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = $12
+             RETURNING *`,
+            [
+              purchase.quantity,
+              purchase.amount,
+              purchase.gst_amount,
+              purchase.total_amount,
+              supplierName,
+              supplierPhone,
+              purchase.truck_number || "",
+              purchase.delivery_date || null,
+              purchase.payment_status,
+              purchase.remarks,
+              req.user.id,
+              mergeablePurchase.id,
+            ]
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $19)
-          RETURNING *`,
-        [
-          purchase.supplier_id,
-          purchase.product_id,
-          supplierName,
-          supplierPhone,
-          purchase.invoice_number,
-          purchase.purchase_date,
-          purchase.truck_number,
-          purchase.delivery_date,
-          purchase.business_unit,
-          category,
-          itemName,
-          purchase.quantity,
-          unit,
-          purchase.amount,
-          purchase.gst_amount,
-          purchase.total_amount,
-          purchase.payment_status,
-          purchase.remarks,
-          req.user.id,
-        ]
-      );
+        : await client.query(
+            `INSERT INTO purchases (
+                supplier_id, product_id,
+                supplier_name, supplier_phone, invoice_number, purchase_date,
+                truck_number, delivery_date,
+                business_unit, category, item_name, quantity, unit,
+                amount, gst_amount, total_amount, payment_status, remarks,
+                created_by, updated_by
+              )
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $19)
+              RETURNING *`,
+            [
+              purchase.supplier_id,
+              purchase.product_id,
+              supplierName,
+              supplierPhone,
+              purchase.invoice_number,
+              purchase.purchase_date,
+              purchase.truck_number,
+              purchase.delivery_date,
+              purchase.business_unit,
+              category,
+              itemName,
+              purchase.quantity,
+              unit,
+              purchase.amount,
+              purchase.gst_amount,
+              purchase.total_amount,
+              purchase.payment_status,
+              purchase.remarks,
+              req.user.id,
+            ]
+          );
 
       await syncPurchaseItemBatch(client, result.rows[0].id, purchase.batch_no);
 
-      await syncPurchaseInventory(client, result.rows[0], 1);
+      await syncPurchaseInventory(
+        client,
+        mergeablePurchase ? { ...result.rows[0], quantity: purchase.quantity } : result.rows[0],
+        1
+      );
       await client.query("COMMIT");
 
       return res.status(201).json(result.rows[0]);

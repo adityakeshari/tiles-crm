@@ -1,4 +1,4 @@
-import { Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, getBillingPdfUrl, getCsvExportUrl, getProjectInvoicePdfUrl, getQuotationPdfUrl } from "./api.js";
 import AppHeader from "./components/AppHeader.jsx";
 import Sidebar from "./components/Sidebar.jsx";
@@ -1888,6 +1888,7 @@ export default function App() {
   const [expenseFormErrors, setExpenseFormErrors] = useState({});
   const [editingExpenseId, setEditingExpenseId] = useState(null);
   const [purchases, setPurchases] = useState([]);
+  const [purchaseInvoices, setPurchaseInvoices] = useState([]);
   const [purchaseSummary, setPurchaseSummary] = useState(null);
   const [purchaseForm, setPurchaseForm] = useState(emptyPurchase);
   const [purchaseItems, setPurchaseItems] = useState([{ ...emptyPurchaseItem }]);
@@ -1902,6 +1903,7 @@ export default function App() {
   const [purchaseSupplierFilter, setPurchaseSupplierFilter] = useState("all");
   const [purchaseInvoiceFilter, setPurchaseInvoiceFilter] = useState("");
   const [purchaseProductFilter, setPurchaseProductFilter] = useState("all");
+  const [expandedPurchaseInvoiceGroups, setExpandedPurchaseInvoiceGroups] = useState({});
   const [purchaseSupplierHistory, setPurchaseSupplierHistory] = useState(null);
   const [quickProductRowIndex, setQuickProductRowIndex] = useState(null);
   const [quickProductForm, setQuickProductForm] = useState(emptyQuickProduct);
@@ -2563,9 +2565,50 @@ export default function App() {
     purchaseToFilter,
     safePurchases,
   ]);
+  const safePurchaseInvoices = useMemo(
+    () => (Array.isArray(purchaseInvoices) ? purchaseInvoices : []),
+    [purchaseInvoices]
+  );
+  const filteredPurchaseLedgerInvoices = useMemo(() => {
+    return safePurchaseInvoices.filter((invoice) => {
+      const itemSearchText = (invoice.items || [])
+        .flatMap((item) => [item.item_name, item.batch_no])
+        .filter(Boolean)
+        .join(" ");
+      const matchesSearch =
+        !purchaseSearch ||
+        [invoice.supplier_name, invoice.invoice_number, itemSearchText]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(String(purchaseSearch).toLowerCase());
+      const matchesSupplier =
+        purchaseSupplierFilter === "all" || String(invoice.supplier_id || "") === String(purchaseSupplierFilter);
+      const matchesInvoice =
+        !purchaseInvoiceFilter ||
+        String(invoice.invoice_number || "").toLowerCase().includes(String(purchaseInvoiceFilter).toLowerCase());
+      const matchesProduct =
+        purchaseProductFilter === "all" ||
+        (invoice.items || []).some((item) => String(item.product_id || "") === String(purchaseProductFilter));
+      const matchesFrom = !purchaseFromFilter || String(invoice.purchase_date || "").slice(0, 10) >= purchaseFromFilter;
+      const matchesTo = !purchaseToFilter || String(invoice.purchase_date || "").slice(0, 10) <= purchaseToFilter;
+      const matchesPayment =
+        purchasePaymentFilter === "all" || String(invoice.payment_status || "") === String(purchasePaymentFilter);
+      return matchesSearch && matchesSupplier && matchesInvoice && matchesProduct && matchesFrom && matchesTo && matchesPayment;
+    });
+  }, [
+    purchaseFromFilter,
+    purchaseInvoiceFilter,
+    purchasePaymentFilter,
+    purchaseProductFilter,
+    purchaseSearch,
+    purchaseSupplierFilter,
+    purchaseToFilter,
+    safePurchaseInvoices,
+  ]);
   const purchaseSupplierSummary = useMemo(() => {
     const totals = new Map();
-    filteredPurchaseLedger.forEach((purchase) => {
+    filteredPurchaseLedgerInvoices.forEach((purchase) => {
       const key = `${purchase.supplier_id || "unknown"}::${purchase.supplier_name || "Unknown Supplier"}`;
       const current = totals.get(key) || {
         supplier_id: purchase.supplier_id || "",
@@ -2573,12 +2616,12 @@ export default function App() {
         amount: 0,
         entries: 0,
       };
-      current.amount += Number(purchase.total_amount || 0);
+      current.amount += Number(purchase.grand_total || purchase.total_amount || 0);
       current.entries += 1;
       totals.set(key, current);
     });
     return [...totals.values()].sort((a, b) => b.amount - a.amount).slice(0, 8);
-  }, [filteredPurchaseLedger]);
+  }, [filteredPurchaseLedgerInvoices]);
   const purchaseCategorySummary = useMemo(() => {
     const totals = new Map();
     safePurchases.forEach((purchase) => {
@@ -3322,6 +3365,7 @@ export default function App() {
           api.getSuppliers({ ...requestOptions, status: "active", limit: 500 }).catch(() => []),
         ]);
         setPurchases(purchasesData.purchases || []);
+        setPurchaseInvoices(purchasesData.invoices || []);
         setPurchaseSummary(purchasesData.summary || null);
         setProducts(inventoryData.products || []);
         setSuppliers(Array.isArray(suppliersData) ? suppliersData : []);
@@ -4559,6 +4603,13 @@ export default function App() {
     setPurchaseFormErrors({});
     setPurchaseSupplierHistory(null);
     setLinkedPurchaseBills([]);
+  }
+
+  function togglePurchaseInvoiceGroup(groupKey) {
+    setExpandedPurchaseInvoiceGroups((current) => ({
+      ...current,
+      [groupKey]: !current[groupKey],
+    }));
   }
 
   async function handleSavePurchase(event) {
@@ -6224,6 +6275,7 @@ export default function App() {
     setInventorySummary(null);
     setInventoryOptions({ companies: [], sizes: [], finishes: [] });
     setPurchases([]);
+    setPurchaseInvoices([]);
     setPurchaseSummary(null);
     setPurchaseForm({ ...emptyPurchase, purchase_date: new Date().toISOString().slice(0, 10) });
     setPurchaseItems([{ ...emptyPurchaseItem }]);
@@ -7966,10 +8018,10 @@ export default function App() {
 
           {purchaseWorkspaceTab === "ledger_reports" ? (
           <section className="stack">
-            <section className="panel">
+          <section className="panel">
             <div className="section-head">
               <h2>Ledger & Reports</h2>
-              <span>{filteredPurchaseLedger.length} entries shown</span>
+              <span>{filteredPurchaseLedgerInvoices.length} invoices shown</span>
             </div>
             <div className="filter-row">
               <select value={purchaseSupplierFilter} onChange={(event) => setPurchaseSupplierFilter(event.target.value)}>
@@ -8029,72 +8081,110 @@ export default function App() {
                     <th>Date</th>
                     <th>Supplier</th>
                     <th>Invoice</th>
-                    <th>Item</th>
+                    <th>Items</th>
                     <th>Qty</th>
-                    <th>Amount</th>
+                    <th>Taxable</th>
                     <th>GST</th>
-                    <th>Total</th>
+                    <th>Grand Total</th>
                     <th>Status</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredPurchaseLedger.map((record) => (
-                    <tr key={record.id}>
-                      <td>{formatDate(record.purchase_date)}</td>
-                      <td>
-                        <strong>{record.supplier_name}</strong>
-                        <div className="muted">{record.supplier_phone || ""}</div>
-                      </td>
-                      <td>{record.invoice_number || "-"}</td>
-                      <td>
-                        {record.item_name || "-"}
-                        <div className="muted">
-                          {[record.category || "", record.batch_no ? `Batch ${record.batch_no}` : ""].filter(Boolean).join(" | ")}
-                        </div>
-                      </td>
-                      <td>
-                        {record.quantity} {record.unit}
-                      </td>
-                      <td>Rs {Number(record.amount || 0).toLocaleString("en-IN")}</td>
-                      <td>Rs {Number(record.gst_amount || 0).toLocaleString("en-IN")}</td>
-                      <td>
-                        <strong>Rs {Number(record.total_amount || 0).toLocaleString("en-IN")}</strong>
-                      </td>
-                      <td>
-                        <span className={`status-chip status-${record.payment_status}`}>
-                          {labelize(record.payment_status)}
-                        </span>
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => handleEditPurchase(record)}
-                        >
-                          Edit
-                        </button>
-                        {isAdmin(user) ? (
-                          <button
-                            type="button"
-                            className="danger"
-                            onClick={() =>
-                              setPendingDelete({
-                                type: "purchase",
-                                id: record.id,
-                                entityLabel: "Purchase",
-                                message: `Remove purchase entry for supplier ${record.supplier_name}?`,
-                                subtext: `${formatDate(record.purchase_date)} | Rs ${record.total_amount}`,
-                              })
-                            }
-                          >
-                            Delete
-                          </button>
+                  {filteredPurchaseLedgerInvoices.map((record) => {
+                    const isExpanded = Boolean(expandedPurchaseInvoiceGroups[record.group_key]);
+                    const itemNames = Array.isArray(record.item_names) ? record.item_names : [];
+                    return (
+                      <Fragment key={record.group_key}>
+                        <tr>
+                          <td>{formatDate(record.purchase_date)}</td>
+                          <td>
+                            <strong>{record.supplier_name}</strong>
+                            <div className="muted">{record.supplier_phone || ""}</div>
+                          </td>
+                          <td>{record.invoice_number || "-"}</td>
+                          <td>
+                            <strong>{record.item_count || 0} items</strong>
+                            <div className="muted">
+                              {itemNames.length ? itemNames.slice(0, 2).join(", ") : "No items"}
+                            </div>
+                          </td>
+                          <td>{Number(record.total_quantity || 0).toLocaleString("en-IN")}</td>
+                          <td>Rs {Number(record.total_taxable_amount || 0).toLocaleString("en-IN")}</td>
+                          <td>Rs {Number(record.gst_total || 0).toLocaleString("en-IN")}</td>
+                          <td>
+                            <strong>Rs {Number(record.grand_total || 0).toLocaleString("en-IN")}</strong>
+                          </td>
+                          <td>
+                            <span className={`status-chip status-${record.payment_status}`}>
+                              {labelize(record.payment_status)}
+                            </span>
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={() => togglePurchaseInvoiceGroup(record.group_key)}
+                            >
+                              {isExpanded ? "Hide Items" : "View Items"}
+                            </button>
+                          </td>
+                        </tr>
+                        {isExpanded ? (
+                          <tr className="purchase-ledger-detail-row">
+                            <td colSpan={10}>
+                              <div className="purchase-ledger-detail-list">
+                                {(record.items || []).map((item) => (
+                                  <div key={item.id} className="purchase-ledger-detail-item">
+                                    <div>
+                                      <strong>{item.item_name || "-"}</strong>
+                                      <div className="muted">
+                                        {[item.category || "", item.batch_no ? `Batch ${item.batch_no}` : "", `${item.quantity} ${item.unit}`]
+                                          .filter(Boolean)
+                                          .join(" | ")}
+                                      </div>
+                                    </div>
+                                    <div className="purchase-ledger-detail-amounts muted">
+                                      <span>Taxable Rs {Number(item.amount || 0).toLocaleString("en-IN")}</span>
+                                      <span>GST Rs {Number(item.gst_amount || 0).toLocaleString("en-IN")}</span>
+                                      <span>Total Rs {Number(item.total_amount || 0).toLocaleString("en-IN")}</span>
+                                    </div>
+                                    <div className="table-actions">
+                                      <button
+                                        type="button"
+                                        className="secondary"
+                                        onClick={() => handleEditPurchase(item)}
+                                      >
+                                        Edit
+                                      </button>
+                                      {isAdmin(user) ? (
+                                        <button
+                                          type="button"
+                                          className="danger"
+                                          onClick={() =>
+                                            setPendingDelete({
+                                              type: "purchase",
+                                              id: item.id,
+                                              entityLabel: "Purchase",
+                                              message: `Remove purchase entry for supplier ${item.supplier_name}?`,
+                                              subtext: `${formatDate(item.purchase_date)} | Rs ${item.total_amount}`,
+                                            })
+                                          }
+                                        >
+                                          Delete
+                                        </button>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
                         ) : null}
-                      </td>
-                    </tr>
-                  ))}
-                  {filteredPurchaseLedger.length === 0 ? (
+                      </Fragment>
+                    );
+                  })}
+                  {filteredPurchaseLedgerInvoices.length === 0 ? (
                     <tr>
                       <td colSpan={10}>
                         <EmptyState

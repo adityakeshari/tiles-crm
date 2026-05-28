@@ -75,6 +75,7 @@ call :run "033_product_daily_rate_engine.sql"
 call :run "034_product_batch_tracking.sql"
 call :run "035_purchase_item_batch_table.sql"
 call :run "036_backfill_legacy_product_fields.sql"
+call :run "037_purchase_duplicate_merge_relax.sql"
 
 if errorlevel 1 exit /b 1
 
