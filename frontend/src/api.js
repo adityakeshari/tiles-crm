@@ -384,7 +384,13 @@ export const api = {
     request(`/expenses/${id}`, {
       method: "DELETE",
     }),
-  getInventory: (options = {}) => request(withQuery("/inventory", { limit: options.limit }), options),
+  getInventory: (options = {}) =>
+    request(
+      withQuery("/inventory", { limit: options.limit, search: options.search }),
+      options
+    ),
+  debugInventorySearch: (search, options) =>
+    request(withQuery("/inventory/debug", { search }), options),
   getInventoryOptions: (options = {}) => request("/inventory/options", options),
   createProduct: (payload) =>
     request("/inventory", {

@@ -3307,10 +3307,14 @@ export default function App() {
         setMasons(schemesData.masons || []);
         setMasonActivities(schemesData.masonActivities || []);
       } else if (view === "inventory") {
+        const inventorySearch = String(inventoryLedgerSearch || "").trim();
         const [inventoryData, inventoryOptionsData] = await Promise.all([
           api.getInventory({
             ...requestOptions,
-            limit: listLimits.products,
+            // If the operator typed a search term, ask the server for it
+            // and widen the page so products outside the first 40 surface.
+            limit: inventorySearch ? 100 : listLimits.products,
+            search: inventorySearch || undefined,
           }),
           api.getInventoryOptions(requestOptions).catch(() => ({ companies: [], sizes: [], finishes: [] })),
         ]);
@@ -3491,6 +3495,7 @@ export default function App() {
     billingFromFilter,
     billingToFilter,
     dailyReportDate,
+    inventoryLedgerSearch,
   ]);
 
   useEffect(() => {
@@ -3979,7 +3984,21 @@ export default function App() {
         }
       } catch (saveError) {
         if (saveError?.status === 409 && saveError?.data?.existing_product) {
-          setError(saveError.data.message || "Similar product already exists.");
+          // Surface the existing product via the existing "Open Existing"
+          // banner: this puts the same product card with [Open Existing]
+          // button in front of the operator instead of a dead-end error.
+          const existing = saveError.data.existing_product;
+          try {
+            setProducts((current) => {
+              if (!Array.isArray(current)) return current;
+              if (current.some((p) => Number(p.id) === Number(existing.id))) return current;
+              return [existing, ...current];
+            });
+          } catch (_e) { /* defensive */ }
+          setError(
+            (saveError.data.message || "Similar product already exists.") +
+            " Open the existing record below."
+          );
           throw saveError;
         }
         throw saveError;

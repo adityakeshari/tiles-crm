@@ -12,11 +12,16 @@ function normalizeDuplicateMatchValue(value) {
 }
 
 async function findSimilarProduct(product, excludeId = null) {
+  // Stronger duplicate signature: name + company + size + finish + design_code.
+  // Design code is added as a tie-breaker: if either side has a design_code,
+  // they must match. If both are blank, the rule is skipped so legacy rows
+  // without codes can still surface as duplicates.
   const params = [
     normalizeDuplicateMatchValue(product.name),
     normalizeDuplicateMatchValue(product.company_name),
     normalizeDuplicateMatchValue(product.product_size || product.tile_size),
     normalizeDuplicateMatchValue(product.finish),
+    normalizeDuplicateMatchValue(product.design_code),
   ];
 
   let sql = `SELECT *
@@ -24,10 +29,15 @@ async function findSimilarProduct(product, excludeId = null) {
     WHERE LOWER(TRIM(COALESCE(name, ''))) = $1
       AND LOWER(TRIM(COALESCE(company_name, ''))) = $2
       AND LOWER(TRIM(COALESCE(NULLIF(product_size, ''), NULLIF(tile_size, ''), ''))) = $3
-      AND LOWER(TRIM(COALESCE(finish, ''))) = $4`;
+      AND LOWER(TRIM(COALESCE(finish, ''))) = $4
+      AND (
+        $5 = ''
+        OR LOWER(TRIM(COALESCE(design_code, ''))) = ''
+        OR LOWER(TRIM(COALESCE(design_code, ''))) = $5
+      )`;
 
   if (excludeId != null) {
-    sql += " AND id <> $5";
+    sql += " AND id <> $6";
     params.push(excludeId);
   }
 
@@ -136,6 +146,7 @@ router.get("/options", async (_req, res) => {
 
 router.get("/", async (req, res) => {
   const limit = parseListLimit(req.query.limit);
+  const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
 
   try {
     const {
@@ -161,6 +172,19 @@ router.get("/", async (req, res) => {
     const summaryLegacyCompanyExpression = hasCompanyColumn ? "NULLIF(company, '')" : "NULL";
     const summaryLegacyBrandExpression = hasBrandColumn ? "NULLIF(brand, '')" : "NULL";
     const summaryLegacyManufacturerExpression = hasManufacturerColumn ? "NULLIF(manufacturer, '')" : "NULL";
+    const searchClause = search
+      ? `WHERE (
+           name ILIKE $2
+           OR company_name ILIKE $2
+           OR product_size ILIKE $2
+           OR tile_size ILIKE $2
+           OR design_code ILIKE $2
+           OR finish ILIKE $2
+           OR COALESCE(category, '') ILIKE $2
+         )`
+      : "";
+    const productsParams = search ? [limit, `%${search}%`] : [limit];
+
     const [productsResult, summaryResult] = await Promise.all([
       query(
         `SELECT *
@@ -186,11 +210,12 @@ router.get("/", async (req, res) => {
              LIMIT 1
            ) latest_purchase ON TRUE
          ) inventory_products
+         ${searchClause}
          ORDER BY
            CASE status WHEN 'fast_moving' THEN 1 WHEN 'active' THEN 2 ELSE 3 END,
            name ASC
          LIMIT $1`,
-        [limit]
+        productsParams
       ),
       query(
         `SELECT
@@ -221,6 +246,39 @@ router.get("/", async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({ message: "Unable to fetch inventory", error: error.message });
+  }
+});
+
+// Admin-only debug endpoint to investigate "Already exists" reports
+// where the product is not visible in the regular paginated list.
+router.get("/debug", requireRole("admin", "manager"), async (req, res) => {
+  const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+  if (!search) {
+    return res.status(400).json({ message: "search query is required" });
+  }
+  try {
+    const result = await query(
+      `SELECT id, name, company_name, product_size, tile_size, finish,
+              design_code, stock_sqft, status, created_at
+         FROM products
+        WHERE name ILIKE $1
+           OR company_name ILIKE $1
+           OR product_size ILIKE $1
+           OR tile_size ILIKE $1
+           OR design_code ILIKE $1
+           OR finish ILIKE $1
+        ORDER BY id ASC
+        LIMIT 200`,
+      [`%${search}%`]
+    );
+    return res.json({
+      total_matches: result.rowCount,
+      matches: result.rows,
+    });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Unable to run inventory debug search", error: error.message });
   }
 });
 
