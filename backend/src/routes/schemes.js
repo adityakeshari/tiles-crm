@@ -637,15 +637,24 @@ router.post("/claims", requireRole("admin", "manager", "operations", "sales"), a
       }
     }
 
+    // Also populate the legacy mason_name / mason_mobile columns from the
+    // resolved mason master row so historical reports (and any prod DBs
+    // still running the original NOT NULL constraint from migration 014)
+    // remain consistent. Migration 031 makes those columns NULLABLE so the
+    // INSERT is also safe on updated databases.
+    const masonName = mason?.name || "";
+    const masonMobile = mason?.mobile || "";
+
     const claimResult = await client.query(
       `INSERT INTO adhesive_token_claims (
          site_name, project_id, invoice_number, sale_date, customer_name,
-         mason_id, adhesive_company, adhesive_type,
+         mason_id, mason_name, mason_mobile,
+         adhesive_company, adhesive_type,
          sold_bag_quantity, claimed_bag_quantity, total_token_amount,
          status, verification_status, payment_date, remarks, token_photo_url,
          created_by, verified_by, verified_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending', $12, NULL, $13, $14, $15, NULL, NULL)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending', $14, NULL, $15, $16, $17, NULL, NULL)
        RETURNING *`,
       [
         claim.site_name,
@@ -654,6 +663,8 @@ router.post("/claims", requireRole("admin", "manager", "operations", "sales"), a
         claim.sale_date,
         claim.customer_name,
         claim.mason_id,
+        masonName,
+        masonMobile,
         claim.adhesive_company,
         claim.adhesive_type,
         claim.sold_bag_quantity,
@@ -699,9 +710,21 @@ router.post("/claims", requireRole("admin", "manager", "operations", "sales"), a
     return res.status(201).json(detail);
   } catch (error) {
     await client.query("ROLLBACK");
+    // Log the full error to PM2 stderr so the next 500 (if any) is debuggable.
+    process.stderr.write(
+      `[adhesive-claim-insert] code=${error?.code || ""} detail=${error?.detail || ""} message=${error?.message || ""}\n`
+    );
     if (error && error.code === "23505") {
       return res.status(409).json({
         message: "Duplicate token claim for this mason, invoice and sale date",
+      });
+    }
+    // 23502 = NOT NULL violation, 23503 = FK violation, 23514 = CHECK constraint
+    if (error && (error.code === "23502" || error.code === "23503" || error.code === "23514")) {
+      return res.status(400).json({
+        message: `Adhesive claim payload invalid: ${error.message}`,
+        column: error.column || null,
+        constraint: error.constraint || null,
       });
     }
     return res.status(500).json({ message: "Unable to create adhesive token claim", error: error.message });
