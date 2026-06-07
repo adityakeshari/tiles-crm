@@ -27,11 +27,22 @@ export default function PageHeader({
             </button>
           </div>
         ) : (
-          <div className="hero-pills">
-            <span className="hero-pill hero-pill-strong">Workspace: {workspaceLabel}</span>
-            <span className="hero-pill hero-pill-strong">Unit: {unitLabel}</span>
-            <span className="hero-pill hero-pill-strong">View: {viewLabel}</span>
-          </div>
+          <>
+            {/* Desktop: full pill row — unchanged; CSS hides this on mobile (≤768px) */}
+            <div className="hero-pills hero-pills-desktop">
+              <span className="hero-pill hero-pill-strong">Workspace: {workspaceLabel}</span>
+              <span className="hero-pill hero-pill-strong">Unit: {unitLabel}</span>
+              <span className="hero-pill hero-pill-strong">View: {viewLabel}</span>
+            </div>
+
+            {/* Mobile: single compact selector-style chip replacing the 3-pill card; CSS hides on desktop */}
+            <div className="workspace-compact-bar" aria-label={`Workspace ${workspaceLabel}, ${unitLabel}, ${viewLabel}`}>
+              <span className="workspace-compact-label">Workspace</span>
+              <span className="workspace-compact-value">{workspaceLabel}</span>
+              <span className="workspace-compact-chevron" aria-hidden="true">▾</span>
+              <span className="workspace-compact-meta">{unitLabel} · {viewLabel}</span>
+            </div>
+          </>
         )}
       </section>
     );

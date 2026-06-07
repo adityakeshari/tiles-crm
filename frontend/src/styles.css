@@ -4672,6 +4672,222 @@ button.sidebar-item-active .sidebar-dot {
   }
 }
 
+/* ==================================================================
+ * Mobile header redesign — compact greeting bar + avatar/profile menu
+ * + compact workspace selector chip (mobile top section only).
+ * Desktop keeps the existing topbar/toolbar/hero-pills untouched;
+ * the swap is pure CSS show/hide at the 768px breakpoint.
+ * ================================================================== */
+
+/* Hide the new compact mobile elements on desktop by default */
+.topbar-mobile-bar,
+.workspace-compact-bar {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  /* Collapse the old greeting/role/workspace heading + desktop button row */
+  .topbar.topbar-compact .hero-copy,
+  .topbar-toolbar-desktop,
+  .hero-pills-desktop {
+    display: none;
+  }
+
+  .topbar.topbar-compact {
+    padding: 0.55rem 0.75rem;
+  }
+
+  /* Single-line compact greeting bar */
+  .topbar-mobile-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    width: 100%;
+  }
+
+  .topbar-mobile-greeting {
+    margin: 0;
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: #f5f8ff;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .topbar-mobile-name {
+    color: #f5f8ff;
+  }
+
+  .topbar-mobile-sep {
+    margin: 0 0.3rem;
+    color: rgba(245, 248, 255, 0.4);
+  }
+
+  .topbar-mobile-role {
+    color: rgba(245, 248, 255, 0.78);
+    font-weight: 500;
+  }
+
+  .topbar-mobile-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 0 0 auto;
+  }
+
+  .topbar-mobile-bell {
+    position: relative;
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
+    border: 1px solid rgba(245, 248, 255, 0.22);
+    background: rgba(255, 255, 255, 0.08);
+    color: #f5f8ff;
+    font-size: 1rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+
+  .topbar-mobile-bell-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 17px;
+    height: 17px;
+    padding: 0 3px;
+    border-radius: 999px;
+    background: var(--crm-accent, #f0a500);
+    color: #1a1d27;
+    font-size: 0.62rem;
+    font-weight: 700;
+    line-height: 17px;
+    text-align: center;
+  }
+
+  /* Avatar + dropdown profile menu */
+  .topbar-profile-menu {
+    position: relative;
+  }
+
+  .topbar-profile-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
+    border: 1px solid rgba(245, 248, 255, 0.3);
+    background: rgba(255, 255, 255, 0.14);
+    color: #f5f8ff;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+
+  .topbar-profile-menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: transparent;
+  }
+
+  .topbar-profile-menu-panel {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    right: 0;
+    z-index: 41;
+    min-width: 180px;
+    display: flex;
+    flex-direction: column;
+    background: var(--crm-surface);
+    border: 1px solid var(--crm-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+    padding: 0.35rem;
+  }
+
+  .topbar-profile-menu-identity {
+    padding: 0.5rem 0.6rem 0.4rem;
+    border-bottom: 1px solid var(--crm-navy-100);
+    margin-bottom: 0.25rem;
+  }
+
+  .topbar-profile-menu-name {
+    margin: 0;
+    font-size: 0.86rem;
+    font-weight: 700;
+    color: var(--crm-navy-900);
+  }
+
+  .topbar-profile-menu-role {
+    margin: 0.1rem 0 0;
+    font-size: 0.74rem;
+    color: var(--crm-navy-500);
+  }
+
+  .topbar-profile-menu-panel button {
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 0.5rem 0.6rem;
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: var(--crm-navy-800);
+    border-radius: 8px;
+    cursor: pointer;
+  }
+
+  .topbar-profile-menu-panel button:hover {
+    background: var(--crm-navy-100);
+  }
+
+  .topbar-profile-menu-logout {
+    color: var(--crm-danger, #c0392b);
+  }
+
+  /* Compact workspace selector chip — replaces the oversized 3-pill workspace card */
+  .workspace-compact-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.65rem;
+    border: 1px solid var(--crm-border);
+    border-radius: 999px;
+    background: var(--crm-surface);
+    font-size: 0.78rem;
+  }
+
+  .workspace-compact-label {
+    font-weight: 600;
+    color: var(--crm-navy-500);
+  }
+
+  .workspace-compact-value {
+    font-weight: 700;
+    color: var(--crm-navy-900);
+  }
+
+  .workspace-compact-chevron {
+    color: var(--crm-navy-400);
+    font-size: 0.7rem;
+  }
+
+  .workspace-compact-meta {
+    margin-left: auto;
+    color: var(--crm-navy-400);
+    font-size: 0.72rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
 /* 5) Narrow-phone pass — 360 / 390 / 412px share this bucket today
  *    with nothing tuned specifically for them. Small, safe tweaks
  *    so the header and key text don't feel cramped at the smallest
