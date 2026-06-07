@@ -113,19 +113,15 @@ function requireTaskApiKey(req, res, next) {
   next();
 }
 
-async function ensureActiveAssignedUser(executor, assignedTo) {
+async function ensureAssignedUserExists(executor, assignedTo) {
   const userResult = await runDbQuery(
     executor,
-    "SELECT id, name, is_active FROM users WHERE id = $1 LIMIT 1",
+    "SELECT id, name, role, roles FROM users WHERE id = $1 LIMIT 1",
     [assignedTo]
   );
 
   if (userResult.rowCount === 0) {
     return { ok: false, status: 400, message: "Assigned user does not exist" };
-  }
-
-  if (userResult.rows[0]?.is_active === false) {
-    return { ok: false, status: 400, message: "Assigned user is inactive" };
   }
 
   return { ok: true, user: userResult.rows[0] };
@@ -209,7 +205,7 @@ externalRouter.post("/external-create", requireTaskApiKey, async (req, res) => {
   const task = validation.value;
 
   try {
-    const assignedUserCheck = await ensureActiveAssignedUser(pool, task.assigned_to);
+    const assignedUserCheck = await ensureAssignedUserExists(pool, task.assigned_to);
 
     if (!assignedUserCheck.ok) {
       return res.status(assignedUserCheck.status).json({ message: assignedUserCheck.message });
@@ -266,7 +262,7 @@ externalRouter.post("/external-bulk-create", requireTaskApiKey, async (req, res)
       }
 
       const task = validation.value;
-      const assignedUserCheck = await ensureActiveAssignedUser(client, task.assigned_to);
+      const assignedUserCheck = await ensureAssignedUserExists(client, task.assigned_to);
 
       if (!assignedUserCheck.ok) {
         await client.query("ROLLBACK");
