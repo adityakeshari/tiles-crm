@@ -3130,6 +3130,10 @@ button.sidebar-item-active .sidebar-dot {
   overflow-x: auto;
 }
 
+.workspace-tab-nav::-webkit-scrollbar {
+  height: 0;
+}
+
 .workspace-tab-nav button.nav-btn,
 .workspace-tab-nav button.active-nav {
   min-width: 0;
@@ -3173,6 +3177,34 @@ button.sidebar-item-active .sidebar-dot {
 .workspace-tab-nav button.active-nav:hover {
   background: var(--crm-navy-800);
   color: #fff;
+}
+
+@media (max-width: 768px) {
+  .workspace-tab-nav {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0.45rem;
+    padding: 0.35rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    scroll-behavior: smooth;
+  }
+
+  .workspace-tab-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .workspace-tab-nav button.nav-btn,
+  .workspace-tab-nav button.active-nav {
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding: 0.55rem 0.9rem;
+    font-size: 0.8rem;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
 }
 
 /* 7) When a workspace stack sits below the tab nav, give the inner
