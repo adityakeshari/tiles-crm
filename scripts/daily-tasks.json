@@ -1,0 +1,15 @@
+{
+  "force": false,
+  "tasks": [
+    {
+      "title": "Daily sales and collection plan",
+      "description": "Prepare today sales target and collection follow-up list",
+      "assigned_to": 1,
+      "priority": "High",
+      "due_date": "2026-06-08",
+      "due_time": "11:00",
+      "status": "Pending",
+      "source": "chatgpt"
+    }
+  ]
+}
