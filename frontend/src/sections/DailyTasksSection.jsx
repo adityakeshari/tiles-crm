@@ -7,6 +7,24 @@ function getTaskDueLabel(task, formatDate) {
   return timeValue ? `${dateLabel} | ${timeValue}` : dateLabel;
 }
 
+function getTaskSourceLabel(source) {
+  const normalizedSource = String(source || "").trim().toLowerCase();
+
+  if (normalizedSource === "chatgpt") {
+    return "ChatGPT";
+  }
+
+  if (normalizedSource === "claude") {
+    return "Claude";
+  }
+
+  if (normalizedSource === "automation") {
+    return "Auto";
+  }
+
+  return "";
+}
+
 function DailyTasksSectionImpl({
   user,
   users,
@@ -316,6 +334,9 @@ function DailyTasksSectionImpl({
                 <div className="chip-row">
                   <span className="legend-chip">Due {getTaskDueLabel(task, formatDate)}</span>
                   <span className="legend-chip">Assigned by {task.assigned_by_name || "System"}</span>
+                  {getTaskSourceLabel(task.source) ? (
+                    <span className="legend-chip">Source {getTaskSourceLabel(task.source)}</span>
+                  ) : null}
                   {task.verified_by_name ? <span className="legend-chip">Verified by {task.verified_by_name}</span> : null}
                 </div>
                 {task.description ? <p>{task.description}</p> : <p className="muted">No description added yet.</p>}

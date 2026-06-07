@@ -1,9 +1,10 @@
 import express from "express";
-import { query } from "../db.js";
+import { pool, query } from "../db.js";
 import { requireRole } from "../middleware/auth.js";
-import { validateDailyTaskPayload } from "../utils/validation.js";
+import { validateDailyTaskPayload, validateExternalDailyTaskPayload } from "../utils/validation.js";
 
 const router = express.Router();
+const externalRouter = express.Router();
 const DEFAULT_LIST_LIMIT = 100;
 const MAX_LIST_LIMIT = 300;
 const ACTIVE_TASK_STATUSES = ["pending", "in_progress", "hold"];
@@ -78,6 +79,231 @@ function parsePositiveInteger(value) {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
+
+async function runDbQuery(executor, text, params = []) {
+  if (typeof executor === "function") {
+    return executor(text, params);
+  }
+
+  return executor.query(text, params);
+}
+
+function getTaskApiKeyConfig() {
+  return process.env.TASK_API_KEY || process.env.INTERNAL_API_KEY || process.env.CRM_OWNER_SUMMARY_API_KEY || "";
+}
+
+function requireTaskApiKey(req, res, next) {
+  const configuredKey = getTaskApiKeyConfig();
+
+  if (!configuredKey) {
+    return res.status(503).json({ message: "Task external API key is not configured" });
+  }
+
+  const providedKey =
+    req.headers["x-task-api-key"] ||
+    req.headers["x-internal-api-key"] ||
+    (typeof req.headers.authorization === "string" && req.headers.authorization.startsWith("Bearer ")
+      ? req.headers.authorization.replace("Bearer ", "")
+      : "");
+
+  if (typeof providedKey !== "string" || providedKey !== configuredKey) {
+    return res.status(401).json({ message: "Invalid task API key" });
+  }
+
+  next();
+}
+
+async function ensureActiveAssignedUser(executor, assignedTo) {
+  const userResult = await runDbQuery(
+    executor,
+    "SELECT id, name, is_active FROM users WHERE id = $1 LIMIT 1",
+    [assignedTo]
+  );
+
+  if (userResult.rowCount === 0) {
+    return { ok: false, status: 400, message: "Assigned user does not exist" };
+  }
+
+  if (userResult.rows[0]?.is_active === false) {
+    return { ok: false, status: 400, message: "Assigned user is inactive" };
+  }
+
+  return { ok: true, user: userResult.rows[0] };
+}
+
+async function findExistingTaskDuplicate(executor, { title, assigned_to, due_date }) {
+  const duplicateResult = await runDbQuery(
+    executor,
+    `SELECT id, title, assigned_to, due_date, status, source
+     FROM daily_tasks
+     WHERE LOWER(BTRIM(title)) = LOWER(BTRIM($1))
+       AND assigned_to = $2
+       AND due_date = $3
+     ORDER BY id DESC
+     LIMIT 1`,
+    [title, assigned_to, due_date]
+  );
+
+  return duplicateResult.rows[0] || null;
+}
+
+async function insertDailyTask(executor, {
+  title,
+  description,
+  assigned_to,
+  assigned_by,
+  priority,
+  due_date,
+  due_time,
+  status,
+  remarks,
+  completed_at,
+  verified_by,
+  source = "manual",
+}) {
+  const result = await runDbQuery(
+    executor,
+    `INSERT INTO daily_tasks (
+       title,
+       description,
+       assigned_to,
+       assigned_by,
+       priority,
+       due_date,
+       due_time,
+       status,
+       remarks,
+       completed_at,
+       verified_by,
+       source,
+       updated_at
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP)
+     RETURNING *`,
+    [
+      title,
+      description,
+      assigned_to,
+      assigned_by,
+      priority,
+      due_date,
+      due_time,
+      status,
+      remarks,
+      completed_at,
+      verified_by,
+      source,
+    ]
+  );
+
+  return result.rows[0];
+}
+
+externalRouter.post("/external-create", requireTaskApiKey, async (req, res) => {
+  const validation = validateExternalDailyTaskPayload(req.body);
+
+  if (!validation.ok) {
+    return res.status(400).json({ message: validation.message });
+  }
+
+  const task = validation.value;
+
+  try {
+    const assignedUserCheck = await ensureActiveAssignedUser(pool, task.assigned_to);
+
+    if (!assignedUserCheck.ok) {
+      return res.status(assignedUserCheck.status).json({ message: assignedUserCheck.message });
+    }
+
+    if (!task.force) {
+      const duplicateTask = await findExistingTaskDuplicate(pool, task);
+
+      if (duplicateTask) {
+        return res.status(409).json({
+          message: "Duplicate daily task already exists for the same assignee and due date",
+          existingTask: duplicateTask,
+        });
+      }
+    }
+
+    const createdTask = await insertDailyTask(pool, {
+      ...task,
+      assigned_by: null,
+      completed_at: DONE_TASK_STATUSES.includes(task.status) ? new Date().toISOString() : null,
+      verified_by: null,
+    });
+
+    return res.status(201).json({ ok: true, task: createdTask });
+  } catch (error) {
+    return res.status(500).json({ message: "Unable to create external daily task", error: error.message });
+  }
+});
+
+externalRouter.post("/external-bulk-create", requireTaskApiKey, async (req, res) => {
+  const items = Array.isArray(req.body?.tasks) ? req.body.tasks : [];
+  const force = Boolean(req.body?.force);
+
+  if (!items.length) {
+    return res.status(400).json({ message: "At least one task is required" });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const createdTasks = [];
+
+    for (let index = 0; index < items.length; index += 1) {
+      const validation = validateExternalDailyTaskPayload({
+        ...items[index],
+        force: force || items[index]?.force,
+      });
+
+      if (!validation.ok) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: `Task ${index + 1}: ${validation.message}` });
+      }
+
+      const task = validation.value;
+      const assignedUserCheck = await ensureActiveAssignedUser(client, task.assigned_to);
+
+      if (!assignedUserCheck.ok) {
+        await client.query("ROLLBACK");
+        return res.status(assignedUserCheck.status).json({ message: `Task ${index + 1}: ${assignedUserCheck.message}` });
+      }
+
+      if (!task.force) {
+        const duplicateTask = await findExistingTaskDuplicate(client, task);
+
+        if (duplicateTask) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({
+            message: `Task ${index + 1}: duplicate daily task already exists for the same assignee and due date`,
+            existingTask: duplicateTask,
+          });
+        }
+      }
+
+      const createdTask = await insertDailyTask(client, {
+        ...task,
+        assigned_by: null,
+        completed_at: DONE_TASK_STATUSES.includes(task.status) ? new Date().toISOString() : null,
+        verified_by: null,
+      });
+
+      createdTasks.push(createdTask);
+    }
+
+    await client.query("COMMIT");
+    return res.status(201).json({ ok: true, tasks: createdTasks });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    return res.status(500).json({ message: "Unable to bulk create external daily tasks", error: error.message });
+  } finally {
+    client.release();
+  }
+});
 
 function buildAccessConditions(user, params) {
   const conditions = [];
@@ -275,39 +501,15 @@ router.post("/", async (req, res) => {
   }
 
   try {
-    const result = await query(
-      `INSERT INTO daily_tasks (
-         title,
-         description,
-         assigned_to,
-         assigned_by,
-         priority,
-         due_date,
-         due_time,
-         status,
-         remarks,
-         completed_at,
-         verified_by,
-         updated_at
-       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
-       RETURNING *`,
-      [
-        task.title,
-        task.description,
-        task.assigned_to,
-        req.user.id,
-        task.priority,
-        task.due_date,
-        task.due_time,
-        task.status,
-        task.remarks,
-        DONE_TASK_STATUSES.includes(task.status) ? new Date().toISOString() : null,
-        task.status === "verified" ? req.user.id : null,
-      ]
-    );
+    const createdTask = await insertDailyTask(query, {
+      ...task,
+      assigned_by: req.user.id,
+      completed_at: DONE_TASK_STATUSES.includes(task.status) ? new Date().toISOString() : null,
+      verified_by: task.status === "verified" ? req.user.id : null,
+      source: "manual",
+    });
 
-    return res.status(201).json(result.rows[0]);
+    return res.status(201).json(createdTask);
   } catch (error) {
     return res.status(500).json({ message: "Unable to create daily task", error: error.message });
   }
@@ -445,4 +647,5 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
+export { externalRouter as externalDailyTasksRouter };
 export default router;

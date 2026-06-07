@@ -16,6 +16,7 @@ const operationsTaskTypes = new Set(["delivery", "site_visit", "installation", "
 const operationsTaskStatuses = new Set(["pending", "in_progress", "completed", "delayed"]);
 const dailyTaskPriorities = new Set(["low", "medium", "high", "urgent"]);
 const dailyTaskStatuses = new Set(["pending", "in_progress", "completed", "verified", "hold"]);
+const dailyTaskSources = new Set(["manual", "chatgpt", "claude", "automation"]);
 const plumbingWorkTypes = new Set([
   "bathroom",
   "kitchen",
@@ -349,6 +350,44 @@ export function validateDailyTaskPayload(payload) {
       due_time: due_time ? due_time.slice(0, 5) : null,
       status,
       remarks,
+    },
+  };
+}
+
+export function validateExternalDailyTaskPayload(payload) {
+  const baseValidation = validateDailyTaskPayload({
+    ...payload,
+    priority: normalizeString(payload.priority || "medium").toLowerCase(),
+    status: normalizeString(payload.status || "pending").toLowerCase(),
+  });
+
+  if (!baseValidation.ok) {
+    return baseValidation;
+  }
+
+  const source = normalizeString(payload.source || "automation").toLowerCase();
+  const force = Boolean(payload.force);
+
+  if (!dailyTaskSources.has(source) || source === "manual") {
+    return {
+      ok: false,
+      message: "Task source is invalid",
+    };
+  }
+
+  if (baseValidation.value.status === "verified") {
+    return {
+      ok: false,
+      message: "External API cannot create verified tasks",
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      ...baseValidation.value,
+      source,
+      force,
     },
   };
 }
