@@ -3934,3 +3934,191 @@ button.sidebar-item-active .sidebar-dot {
   gap: 0.75rem;
   flex-wrap: wrap;
 }
+
+/* ==================================================================
+ * Mobile Fix Batch 1 — navigation + touch usability only
+ * Targets: 360px / 390px / 412px (phones) and 768px (small tablet)
+ * Frontend CSS only — no layout redesign, no table card-view yet,
+ * desktop (>1080px) styling is untouched.
+ * ================================================================== */
+
+/* 1) Give the `app-layout-mobile` class (already applied by App.jsx
+ *    whenever isMobileSidebar is true) a real, intentional rule so it
+ *    is no longer dead weight. Value matches the existing 1080px
+ *    collapse — purely makes the class meaningful, no visual change. */
+.app-layout.app-layout-mobile {
+  grid-template-columns: 1fr;
+}
+
+/* 2) Sidebar drawer must always be a clean VERTICAL menu. The older
+ *    `.sidebar-nav { flex-direction: row; flex-wrap: wrap }` rule
+ *    (added for the pre-drawer "collapse to a row" approach) was
+ *    leaking into the drawer because nothing scoped to
+ *    `.sidebar-drawer` overrode it. These selectors are 3 classes
+ *    deep (0,3,0 specificity) so they win over that 1-class rule
+ *    regardless of source order, with no risk to desktop styling
+ *    (the drawer classes only exist on mobile). */
+@media (max-width: 1080px) {
+  .sidebar.sidebar-drawer .sidebar-nav {
+    flex-direction: column;
+    flex-wrap: nowrap;
+  }
+
+  .sidebar.sidebar-drawer .sidebar-group {
+    flex: 0 0 auto;
+  }
+}
+
+/* 3) Touch targets — raise interactive controls toward the ~44px
+ *    recommended minimum on phones/small tablets only. Desktop
+ *    (>768px) keeps its existing compact sizing. Checkboxes/radios
+ *    are excluded so they don't balloon to 44px squares. */
+@media (max-width: 768px) {
+  button,
+  .secondary {
+    min-height: 44px;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    min-height: 44px;
+  }
+
+  .sidebar-toggle {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Compact in-table action buttons: bump from 28-30px to 40px —
+     enough for comfortable tapping without breaking row density. */
+  .data-table .lead-actions button,
+  .data-table td.col-actions button,
+  .lead-actions button,
+  .purchase-item-line .purchase-inline-btn {
+    min-height: 40px;
+  }
+
+  .purchase-item-line input,
+  .purchase-item-line select {
+    min-height: 40px;
+  }
+
+  /* 4) Header cleanup — let the greeting wrap onto its own line and
+   *    the action buttons wrap into a tidy row instead of crowding
+   *    a single line or overflowing horizontally. */
+  .topbar.topbar-compact {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.6rem;
+  }
+
+  .topbar.topbar-compact .hero-copy {
+    width: 100%;
+  }
+
+  .topbar.topbar-compact .hero-copy h1 {
+    white-space: normal;
+    line-height: 1.5;
+  }
+
+  .topbar.topbar-compact .toolbar {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .topbar.topbar-compact .toolbar button {
+    flex: 1 1 auto;
+  }
+}
+
+/* 5) Narrow-phone pass — 360 / 390 / 412px share this bucket today
+ *    with nothing tuned specifically for them. Small, safe tweaks
+ *    so the header and key text don't feel cramped at the smallest
+ *    widths; nothing here changes layout structure. */
+@media (max-width: 412px) {
+  .topbar.topbar-compact .hero-copy h1 {
+    font-size: 0.92rem;
+  }
+
+  .toolbar button,
+  .toolbar .secondary {
+    font-size: 0.82rem;
+    padding: 0.55rem 0.65rem;
+  }
+
+  .stat-card strong {
+    font-size: 1.15rem;
+  }
+
+  .module-header,
+  .page-intro {
+    padding: 0.8rem 0.9rem;
+  }
+}
+
+/* ==================================================================
+ * Mobile Fix Batch 1.1 — touch-target specificity follow-up
+ * Closes the 4 gaps identified in MOBILE_BATCH_1_VERIFY.md where
+ * pre-existing selectors of equal/higher specificity kept buttons
+ * and selects below the 40-44px touch target on mobile. Each rule
+ * below intentionally repeats the exact colliding selector so the
+ * cascade resolves by source order at equal specificity, gated by
+ * the same max-width: 768px condition — nothing changes above that
+ * width, no globals are touched, and no table card-view is added.
+ * ================================================================== */
+
+@media (max-width: 768px) {
+  .app-main .stock-ledger-table .data-table .lead-actions button,
+  .app-main .stock-ledger-list .data-table .lead-actions button {
+    min-height: 40px;
+  }
+
+  .filter-row select {
+    min-height: 44px;
+  }
+
+  .adhesive-actions-grid button {
+    min-height: 40px;
+  }
+
+  .data-table button {
+    min-height: 40px;
+  }
+}
+
+/* ==================================================================
+ * Mobile Fix Batch 2 — Leads card-view (mobile-only field reveal)
+ *
+ * Note: the Leads list (LeadWorkspaceSection) already renders every
+ * lead as a card — `.lead-card` in the overview list and the pipeline
+ * board — on EVERY screen size. There is no Leads <table> to convert,
+ * so "card view" here means: make sure the existing card carries all
+ * the essentials (name, mobile, requirement/interest, status,
+ * follow-up date, assigned person, actions) on a phone, the way a
+ * well-designed table row would.
+ *
+ * `LeadCard` now always renders two extra lines — requirement and
+ * assigned-person — wrapped in `.lead-card-mobile-meta`. They're
+ * hidden by default (so desktop/tablet cards stay pixel-identical to
+ * before) and revealed only at <=768px below. `.lead-card` scoping
+ * keeps this rule from leaking into any other `*-mobile-meta` class
+ * a future module might add.
+ *
+ * COPY THIS PATTERN for other modules' mobile card work:
+ *   1. Render the extra fields unconditionally in JSX with a shared
+ *      "<component>-mobile-meta" class.
+ *   2. Hide them by default: `.your-card .your-component-mobile-meta { display: none; }`
+ *   3. Reveal them in this same `@media (max-width: 768px)` query.
+ * No JS/state required, fully reversible (delete the JSX lines + this block).
+ * ================================================================== */
+
+.lead-card .lead-card-mobile-meta {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .lead-card .lead-card-mobile-meta {
+    display: block;
+  }
+}

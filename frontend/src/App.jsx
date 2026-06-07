@@ -397,6 +397,15 @@ const DEFAULT_LIST_LIMITS = {
   invoices: 50,
 };
 const MAX_LIST_LIMIT = 300;
+const emptyOwnerOverviewData = {
+  complaints: null,
+  projects: null,
+  purchases: null,
+  plumbing: null,
+  schemes: null,
+  expenses: null,
+  dailyReport: null,
+};
 
 const dealerCategories = ["A", "B", "C"];
 
@@ -1945,6 +1954,9 @@ export default function App() {
   const [billingFromFilter, setBillingFromFilter] = useState("");
   const [billingToFilter, setBillingToFilter] = useState("");
   const [dashboardSummary, setDashboardSummary] = useState(null);
+  const [ownerOverviewData, setOwnerOverviewData] = useState(emptyOwnerOverviewData);
+  const [ownerOverviewLoading, setOwnerOverviewLoading] = useState(false);
+  const [ownerOverviewError, setOwnerOverviewError] = useState("");
   const [dailyReport, setDailyReport] = useState(null);
   const [dailyReportDate, setDailyReportDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [reportsView, setReportsView] = useState("overview");
@@ -2020,6 +2032,7 @@ export default function App() {
 
     return views.filter((item) => allowedViews.has(item.id));
   }, [user]);
+  const canViewOwnerDashboard = Boolean(user) && isAdmin(user);
 
   useEffect(() => {
     if (!user) {
@@ -3048,6 +3061,20 @@ export default function App() {
       fastMovingSkuCount,
     };
   }, [filteredLeads, focusedFollowupBoard, focusedOperationsBoard, overdueFollowups.length, filteredProducts]);
+  const ownerOverviewHasData = useMemo(
+    () =>
+      Boolean(
+        dashboardSummary ||
+          ownerOverviewData.complaints ||
+          ownerOverviewData.projects ||
+          ownerOverviewData.purchases ||
+          ownerOverviewData.plumbing ||
+          ownerOverviewData.schemes ||
+          ownerOverviewData.expenses ||
+          ownerOverviewData.dailyReport
+      ),
+    [dashboardSummary, ownerOverviewData]
+  );
 
   const summaryCards = useMemo(() => {
     const baseCards = [
@@ -3233,6 +3260,15 @@ export default function App() {
       const requestOptions = createRequestOptions(signal);
 
       if (view === "overview") {
+        if (!canViewOwnerDashboard) {
+          setOwnerOverviewData(emptyOwnerOverviewData);
+          setOwnerOverviewError("");
+          setOwnerOverviewLoading(false);
+        } else {
+          setOwnerOverviewLoading(true);
+          setOwnerOverviewError("");
+        }
+
         const [statsData, leadsData, summaryData, _usersData, inventoryData, billingData] = await Promise.all([
           api.getStats(requestOptions),
           api.getLeads({ ...requestOptions, limit: listLimits.leads }),
@@ -3253,6 +3289,62 @@ export default function App() {
         setBillingSummary(billingData.summary || null);
         setBillingReports(billingData.reports || {});
         syncSelectedLeadState(leadsData);
+
+        if (canViewOwnerDashboard) {
+          const ownerOverviewReportDate = getLocalDateInputValue();
+          const ownerResults = await Promise.allSettled([
+            api.getComplaintsDashboard({ ...requestOptions, limit: listLimits.complaints }),
+            api.getProjectsDashboard({ ...requestOptions, limit: listLimits.projects }),
+            api.getPurchases({
+              ...requestOptions,
+              limit: listLimits.purchases,
+            }),
+            api.getPlumbingDashboard(requestOptions),
+            api.getSchemesDashboard({ ...requestOptions, limit: listLimits.claims, mason_limit: listLimits.masons }),
+            api.getExpensesDashboard(requestOptions),
+            api.getDailyReport({ date: ownerOverviewReportDate }, requestOptions),
+          ]);
+
+          if (dashboardLoadRef.current !== requestId || signal?.aborted) {
+            return false;
+          }
+
+          const [
+            complaintsResult,
+            projectsResult,
+            purchasesResult,
+            plumbingResult,
+            schemesResult,
+            expensesResult,
+            dailyReportResult,
+          ] = ownerResults;
+
+          const nextOwnerOverviewData = {
+            complaints: complaintsResult.status === "fulfilled" ? complaintsResult.value?.summary || null : null,
+            projects: projectsResult.status === "fulfilled" ? projectsResult.value?.summary || null : null,
+            purchases: purchasesResult.status === "fulfilled" ? purchasesResult.value?.summary || null : null,
+            plumbing: plumbingResult.status === "fulfilled" ? plumbingResult.value?.summary || null : null,
+            schemes: schemesResult.status === "fulfilled" ? schemesResult.value?.summary || null : null,
+            expenses: expensesResult.status === "fulfilled" ? expensesResult.value?.summary || null : null,
+            dailyReport: dailyReportResult.status === "fulfilled" ? dailyReportResult.value || null : null,
+          };
+
+          const failedLabels = ownerResults
+            .map((result, index) => {
+              if (result.status === "fulfilled") {
+                return "";
+              }
+
+              return ["complaints", "projects", "purchases", "plumbing", "tokens", "expenses", "daily report"][index];
+            })
+            .filter(Boolean);
+
+          setOwnerOverviewData(nextOwnerOverviewData);
+          setOwnerOverviewError(
+            failedLabels.length ? `Some owner widgets could not refresh: ${failedLabels.join(", ")}.` : ""
+          );
+          setOwnerOverviewLoading(false);
+        }
       } else if (view === "pipeline") {
         const leadsData = await api.getLeads({ ...requestOptions, limit: listLimits.leads });
         setLeads(leadsData);
@@ -3452,6 +3544,9 @@ export default function App() {
         setError(requestError.message);
       }
     } finally {
+      if (view === "overview" && canViewOwnerDashboard && dashboardLoadRef.current === requestId) {
+        setOwnerOverviewLoading(false);
+      }
       if (!silent && dashboardLoadRef.current === requestId) {
         setLoading(false);
       }
@@ -6634,98 +6729,138 @@ export default function App() {
             ))}
           </section>
 
-          <section className="panel">
-            <div className="section-head">
-              <h2>Owner mission control</h2>
-              <span>One-screen business health for owner, manager, and cashier flow</span>
-            </div>
-            <div className="report-grid">
-              <StatCard label="Today sales" value={`Rs ${Number(dashboardSummary?.sales_today?.amount || 0).toLocaleString("en-IN")}`} tone="accent" />
-              <StatCard label="Today collection" value={`Rs ${Number(dashboardSummary?.collection_today?.amount || 0).toLocaleString("en-IN")}`} tone="accent" />
-              <StatCard label="Pending billing" value={billingSummary?.pending_bills ?? 0} tone="danger" />
-              <StatCard label="Pending approvals" value={pendingInvoiceApprovalCount} tone="danger" />
-              <StatCard label="Stock alerts" value={productHealthSummary.highStockCount} />
-              <StatCard label="Missing product data" value={productHealthSummary.missingPricingCount + productHealthSummary.missingWeightCount + productHealthSummary.missingPackagingCount} tone="danger" />
-              <StatCard label="Low margin products" value={productHealthSummary.lowMarginCount} tone="danger" />
-              <StatCard label="Daily purchase" value={`Rs ${Number(dashboardSummary?.purchases_today?.amount || 0).toLocaleString("en-IN")}`} />
-              <StatCard label="Daily expense" value={`Rs ${Number(dashboardSummary?.expenses_today?.amount || 0).toLocaleString("en-IN")}`} />
-              <StatCard label="Monthly overhead" value={`Rs ${Number(billingSummary?.monthly_overhead || 0).toLocaleString("en-IN")}`} />
-              <StatCard label="Overhead / box" value={`Rs ${Number(billingSummary?.overhead_per_box || 0).toLocaleString("en-IN")}`} />
-              <StatCard label="Outstanding" value={`Rs ${Number(dashboardSummary?.pending_payments?.amount || 0).toLocaleString("en-IN")}`} />
-              <StatCard label="Gross profit" value={`Rs ${Number(billingSummary?.gross_profit || 0).toLocaleString("en-IN")}`} />
-              <StatCard label="Net profit" value={`Rs ${Number(billingSummary?.net_profit || 0).toLocaleString("en-IN")}`} />
-            </div>
-            <div className="report-grid">
-              <article className="detail-card">
-                <span className="audience-tag">Operator Entry</span>
-                <h3>Poonam workflow</h3>
-                <p className="muted">Lead - Billing - Purchase Entry - Expense - Token</p>
-                <div className="chip-row">
-                  <span className="legend-chip">Draft bills {draftInvoiceCount}</span>
-                  <span className="legend-chip">Pending purchase value Rs {Number(dashboardSummary?.purchases_today?.amount || 0).toLocaleString("en-IN")}</span>
-                </div>
-              </article>
-              <article className="detail-card">
-                <span className="audience-tag">Manager Approval</span>
-                <h3>Ayush workflow</h3>
-                <p className="muted">Lead review - Approval - Pricing - Collection - Pending work</p>
-                <div className="chip-row">
-                  <span className="legend-chip">Invoice approvals {pendingInvoiceApprovalCount}</span>
-                  <span className="legend-chip">Follow-ups pending {dashboardSummary?.followups_pending?.count ?? 0}</span>
-                </div>
-              </article>
-              <article className="detail-card">
-                <span className="audience-tag">Owner Control</span>
-                <h3>Escalation watch</h3>
-                <p className="muted">Low margin, missing product master data, and outstanding payment focus.</p>
-                <div className="chip-row">
-                  <span className="legend-chip">Low margin {productHealthSummary.lowMarginCount}</span>
-                  <span className="legend-chip">Outstanding Rs {Number(dashboardSummary?.pending_payments?.amount || 0).toLocaleString("en-IN")}</span>
-                </div>
-              </article>
-            </div>
-            <div className="content-grid compact-grid">
-              <section className="panel">
-                <div className="section-head">
-                  <h3>Top profitable products</h3>
-                  <span>This month</span>
-                </div>
-                <div className="mini-list">
-                  {(billingReports?.top_profitable_products || []).slice(0, 5).map((item) => (
-                    <div key={`profit-${item.product_name}`} className="timeline-item">
-                      <strong>{item.product_name}</strong>
-                      <p className="muted">
-                        Sales Rs {Number(item.sales_total || 0).toLocaleString("en-IN")} | Profit Rs {Number(item.estimated_profit || 0).toLocaleString("en-IN")}
-                      </p>
-                    </div>
-                  ))}
-                  {!(billingReports?.top_profitable_products || []).length ? (
-                    <p className="muted">No profitable products snapshot available yet.</p>
-                  ) : null}
-                </div>
-              </section>
-              <section className="panel">
-                <div className="section-head">
-                  <h3>Low-profit products</h3>
-                  <span>Watchlist</span>
-                </div>
-                <div className="mini-list">
-                  {(billingReports?.low_profit_products || []).slice(0, 5).map((item) => (
-                    <div key={`low-profit-${item.product_name}`} className="timeline-item">
-                      <strong>{item.product_name}</strong>
-                      <p className="muted">
-                        Sales Rs {Number(item.sales_total || 0).toLocaleString("en-IN")} | Profit Rs {Number(item.estimated_profit || 0).toLocaleString("en-IN")}
-                      </p>
-                    </div>
-                  ))}
-                  {billingSummary?.overhead_warning ? <p className="field-error-message">{billingSummary.overhead_warning}</p> : null}
-                  {!(billingReports?.low_profit_products || []).length ? (
-                    <p className="muted">No low-profit product snapshot available yet.</p>
-                  ) : null}
-                </div>
-              </section>
-            </div>
-          </section>
+          {canViewOwnerDashboard ? (
+            <section className="panel">
+              <div className="section-head">
+                <h2>Owner dashboard</h2>
+                <span>Phase 1 owner-only control view using existing CRM summary APIs</span>
+              </div>
+              {ownerOverviewLoading ? <p className="loading-banner">Refreshing owner dashboard...</p> : null}
+              {ownerOverviewError ? <p className="field-error-message">{ownerOverviewError}</p> : null}
+              {!ownerOverviewLoading && !ownerOverviewHasData ? (
+                <EmptyState
+                  title="Owner dashboard is waiting for live data"
+                  message="Once overview summaries load, owner cards will appear here without changing your current CRM workflow."
+                  compact
+                />
+              ) : (
+                <>
+                  <div className="report-grid">
+                    <article className="detail-card">
+                      <span className="audience-tag">Row 1</span>
+                      <h3>Today's Sales</h3>
+                      <p>{formatCurrency(dashboardSummary?.sales_today?.amount || 0)}</p>
+                      <div className="chip-row">
+                        <span className="legend-chip">Dashboard summary</span>
+                      </div>
+                    </article>
+                    <article className="detail-card">
+                      <span className="audience-tag">Row 1</span>
+                      <h3>Today's Collection</h3>
+                      <p>{formatCurrency(dashboardSummary?.collection_today?.amount || 0)}</p>
+                      <div className="chip-row">
+                        <span className="legend-chip">Dashboard summary</span>
+                      </div>
+                    </article>
+                    <article className="detail-card">
+                      <span className="audience-tag">Row 1</span>
+                      <h3>Outstanding Amount</h3>
+                      <p>{formatCurrency(dashboardSummary?.pending_payments?.amount || 0)}</p>
+                      <div className="chip-row">
+                        <span className="legend-chip">Existing dashboard source</span>
+                      </div>
+                    </article>
+                    <article className="detail-card">
+                      <span className="audience-tag">Row 1</span>
+                      <h3>Open Complaints</h3>
+                      <p>{Number(ownerOverviewData.complaints?.open_complaints || 0).toLocaleString("en-IN")}</p>
+                      <div className="chip-row">
+                        <span className="legend-chip">Urgent {Number(ownerOverviewData.complaints?.urgent_complaints || 0).toLocaleString("en-IN")}</span>
+                        <span className="legend-chip">Closed {Number(ownerOverviewData.complaints?.closed_complaints || 0).toLocaleString("en-IN")}</span>
+                      </div>
+                    </article>
+                  </div>
+                  <div className="report-grid">
+                    <article className="detail-card">
+                      <span className="audience-tag">Row 2</span>
+                      <h3>Lead Pipeline Summary</h3>
+                      <p>{Number(focusStats.totalLeads || 0).toLocaleString("en-IN")} leads</p>
+                      <div className="chip-row">
+                        <span className="legend-chip">Open {Number(focusStats.openLeads || 0).toLocaleString("en-IN")}</span>
+                        <span className="legend-chip">Converted {Number(focusStats.convertedLeads || 0).toLocaleString("en-IN")}</span>
+                        <span className="legend-chip">Conversion {focusStats.conversionRate}%</span>
+                      </div>
+                    </article>
+                    <article className="detail-card">
+                      <span className="audience-tag">Row 2</span>
+                      <h3>Follow-up Summary</h3>
+                      <p>{Number(focusStats.pendingFollowups || 0).toLocaleString("en-IN")} pending</p>
+                      <div className="chip-row">
+                        <span className="legend-chip">Due today {Number(focusStats.dueToday || 0).toLocaleString("en-IN")}</span>
+                        <span className="legend-chip">Overdue {Number(focusStats.overdueFollowups || 0).toLocaleString("en-IN")}</span>
+                      </div>
+                    </article>
+                    <article className="detail-card">
+                      <span className="audience-tag">Row 2</span>
+                      <h3>Daily Report Summary</h3>
+                      <p>{formatCurrency(ownerOverviewData.dailyReport?.net_cash || 0)} net cash</p>
+                      <div className="chip-row">
+                        <span className="legend-chip">Sales {formatCurrency(ownerOverviewData.dailyReport?.sales?.amount || 0)}</span>
+                        <span className="legend-chip">Expense {formatCurrency(ownerOverviewData.dailyReport?.expense?.amount || 0)}</span>
+                      </div>
+                    </article>
+                    <article className="detail-card">
+                      <span className="audience-tag">Row 2</span>
+                      <h3>Projects Summary</h3>
+                      <p>{Number(ownerOverviewData.projects?.active_projects || 0).toLocaleString("en-IN")} active</p>
+                      <div className="chip-row">
+                        <span className="legend-chip">Total {Number(ownerOverviewData.projects?.total_projects || 0).toLocaleString("en-IN")}</span>
+                        <span className="legend-chip">Pending {formatCurrency(ownerOverviewData.projects?.pending_payment || 0)}</span>
+                      </div>
+                    </article>
+                  </div>
+                  <div className="report-grid">
+                    <article className="detail-card">
+                      <span className="audience-tag">Row 3</span>
+                      <h3>Purchase Summary</h3>
+                      <p>{formatCurrency(ownerOverviewData.purchases?.total_amount || 0)}</p>
+                      <div className="chip-row">
+                        <span className="legend-chip">Pending {formatCurrency(ownerOverviewData.purchases?.pending_amount || 0)}</span>
+                        <span className="legend-chip">Paid {formatCurrency(ownerOverviewData.purchases?.paid_amount || 0)}</span>
+                      </div>
+                    </article>
+                    <article className="detail-card">
+                      <span className="audience-tag">Row 3</span>
+                      <h3>Plumbing Summary</h3>
+                      <p>{Number(ownerOverviewData.plumbing?.ongoing_jobs || 0).toLocaleString("en-IN")} ongoing</p>
+                      <div className="chip-row">
+                        <span className="legend-chip">Total jobs {Number(ownerOverviewData.plumbing?.total_jobs || 0).toLocaleString("en-IN")}</span>
+                        <span className="legend-chip">Value {formatCurrency(ownerOverviewData.plumbing?.total_plumbing_value || 0)}</span>
+                      </div>
+                    </article>
+                    <article className="detail-card">
+                      <span className="audience-tag">Row 3</span>
+                      <h3>Adhesive Token Summary</h3>
+                      <p>{Number(ownerOverviewData.schemes?.pending_claims || 0).toLocaleString("en-IN")} pending claims</p>
+                      <div className="chip-row">
+                        <span className="legend-chip">Pending payout {formatCurrency(ownerOverviewData.schemes?.pending_token_payout || 0)}</span>
+                        <span className="legend-chip">Paid payout {formatCurrency(ownerOverviewData.schemes?.paid_token_payout || 0)}</span>
+                      </div>
+                    </article>
+                    <article className="detail-card">
+                      <span className="audience-tag">Row 3</span>
+                      <h3>Expense Summary</h3>
+                      <p>{formatCurrency(ownerOverviewData.expenses?.monthly_expenses || 0)}</p>
+                      <div className="chip-row">
+                        <span className="legend-chip">Gross profit {formatCurrency(ownerOverviewData.expenses?.gross_project_profit || 0)}</span>
+                        <span className="legend-chip">Net profit {formatCurrency(ownerOverviewData.expenses?.monthly_net_profit_after_expenses || 0)}</span>
+                      </div>
+                    </article>
+                  </div>
+                </>
+              )}
+            </section>
+          ) : null}
 
           <section className="content-grid">
             <section className="panel">
@@ -12092,6 +12227,13 @@ function formatDate(value) {
   }
 
   return new Date(value).toLocaleDateString();
+}
+
+function getLocalDateInputValue(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function formatDateInput(value) {

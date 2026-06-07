@@ -38,17 +38,15 @@ router.get("/summary", async (_req, res) => {
            WHERE DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)
         ),
         pending_payments AS (
+          -- Canonical outstanding formula:
+          -- approved invoice grand total - approved invoice payments received.
+          -- Credit notes / adjustments are not modeled yet, so remaining_amount
+          -- is the current authoritative receivable field.
           SELECT
-            COALESCE(SUM(GREATEST(q_total - COALESCE(p_total, 0), 0)), 0)::numeric AS amount,
-            COUNT(*) FILTER (WHERE COALESCE(p_total, 0) < q_total)::int AS lead_count
-          FROM (
-            SELECT
-              l.id,
-              COALESCE((SELECT MAX(final_amount) FROM quotations WHERE lead_id = l.id), 0) AS q_total,
-              COALESCE((SELECT SUM(amount) FROM payments WHERE lead_id = l.id), 0) AS p_total
-            FROM leads l
-            WHERE l.status IN ('converted', 'quotation_given', 'negotiation', 'interested')
-          ) ledger
+            COALESCE(SUM(i.remaining_amount), 0)::numeric AS amount,
+            COUNT(*) FILTER (WHERE COALESCE(i.remaining_amount, 0) > 0)::int AS lead_count
+          FROM invoices i
+          WHERE i.status = 'approved'
         ),
         active_customers AS (
           SELECT COUNT(*)::int AS count

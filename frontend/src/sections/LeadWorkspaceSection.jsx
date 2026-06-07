@@ -34,6 +34,22 @@ function LeadCard({ lead, selected, onSelect, onDelete, canDelete = false, forma
         <p className="muted lead-card-line">
           Budget Rs {lead.budget || 0} | Next follow-up: {lead.latest_followup ? formatDateTime(lead.latest_followup) : "Not scheduled"}
         </p>
+        {/* Mobile Fix Batch 2 — Leads card-view: the Leads list already renders
+            as cards (not a table) on every screen size, so there's no table to
+            convert. These two lines simply surface the requirement/product
+            interest and assigned-person fields — present in `lead` already —
+            so a phone user gets the same essentials a table row would carry.
+            They're rendered unconditionally here but kept hidden above the
+            768px breakpoint via `.lead-card-mobile-meta` in styles.css, so the
+            desktop/tablet card is pixel-identical to before. Other modules can
+            copy this same "always render in JSX, reveal via CSS at <=768px"
+            pattern instead of building a separate mobile-only render path. */}
+        <p className="muted lead-card-line lead-card-mobile-meta">
+          Interested in: {lead.requirement || "Not noted yet"}
+        </p>
+        <p className="muted lead-card-line lead-card-mobile-meta">
+          Assigned to: {lead.assigned_to_name || "Unassigned"}
+        </p>
       </div>
       <div className="lead-card-footer">
         <span className={`status-chip status-${lead.status}`}>{lead.status_label || lead.status}</span>

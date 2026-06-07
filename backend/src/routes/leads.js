@@ -67,15 +67,13 @@ router.get("/dashboard/stats", async (_req, res) => {
       const [overview, stageCounts, sourceCounts, followupSummary, staffPerformance, dealerSummary, operationsSummary] =
         await Promise.all([
         query(
-          `WITH payment_totals AS (
-             SELECT lead_id, COALESCE(SUM(amount), 0)::int AS total_paid
-             FROM payments
-             GROUP BY lead_id
-           ),
-           quotation_totals AS (
-             SELECT lead_id, COALESCE(MAX(final_amount), 0)::int AS quoted_amount
-             FROM quotations
-             GROUP BY lead_id
+          `WITH invoice_outstanding AS (
+             -- Canonical outstanding formula:
+             -- approved invoice grand total - approved invoice payments received.
+             -- remaining_amount is used as the current source of truth.
+             SELECT COALESCE(SUM(remaining_amount), 0)::int AS pending_collections
+             FROM invoices
+             WHERE status = 'approved'
            )
            SELECT
              COUNT(*)::int AS total_leads,
@@ -93,10 +91,8 @@ router.get("/dashboard/stats", async (_req, res) => {
                1
              ) AS conversion_rate,
              COALESCE((SELECT SUM(amount)::int FROM payments WHERE DATE(created_at) >= DATE_TRUNC('month', CURRENT_DATE)), 0) AS monthly_revenue,
-             COALESCE((SELECT SUM(total_paid)::int FROM payment_totals), 0) AS collected_payments,
-             COALESCE((SELECT SUM(GREATEST(q.quoted_amount - COALESCE(p.total_paid, 0), 0))::int
-                      FROM quotation_totals q
-                      LEFT JOIN payment_totals p ON p.lead_id = q.lead_id), 0) AS pending_collections
+             COALESCE((SELECT SUM(amount)::int FROM payments), 0) AS collected_payments,
+             COALESCE((SELECT pending_collections FROM invoice_outstanding), 0) AS pending_collections
            FROM leads`
         ),
         query(

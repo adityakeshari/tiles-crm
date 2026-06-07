@@ -102,16 +102,14 @@ router.get("/", requireInternalApiKey, async (_req, res) => {
              AND (p.created_at AT TIME ZONE '${TIMEZONE}')::date <= c.today_ist
         ),
         outstanding AS (
+          -- Canonical outstanding formula:
+          -- approved invoice grand total - approved invoice payments received.
+          -- remaining_amount is treated as the current source of truth until
+          -- credit notes / adjustments exist as separate modeled entities.
           SELECT
-            COALESCE(SUM(GREATEST(q_total - COALESCE(p_total, 0), 0)), 0)::numeric AS customer_outstanding
-          FROM (
-            SELECT
-              l.id,
-              COALESCE((SELECT MAX(final_amount) FROM quotations WHERE lead_id = l.id), 0) AS q_total,
-              COALESCE((SELECT SUM(amount) FROM payments WHERE lead_id = l.id), 0) AS p_total
-            FROM leads l
-            WHERE l.status IN ('converted', 'quotation_given', 'negotiation', 'interested')
-          ) ledger
+            COALESCE(SUM(remaining_amount), 0)::numeric AS customer_outstanding
+          FROM invoices
+          WHERE status = 'approved'
         ),
         dealer_outstanding AS (
           SELECT COALESCE(SUM(outstanding_payment), 0)::numeric AS dealer_outstanding

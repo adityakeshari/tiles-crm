@@ -164,23 +164,22 @@ router.get("/collection", async (req, res) => {
 router.get("/customer-pending", async (_req, res) => {
   try {
     const result = await query(
-      `SELECT l.id,
-              l.name,
-              l.phone,
-              l.location,
-              COALESCE(q.final_amount, 0)::numeric AS quoted_amount,
-              COALESCE(p.paid_total, 0)::numeric AS paid_amount,
-              GREATEST(COALESCE(q.final_amount, 0) - COALESCE(p.paid_total, 0), 0)::numeric AS pending_amount,
-              l.status
-         FROM leads l
-         LEFT JOIN LATERAL (
-           SELECT final_amount FROM quotations WHERE lead_id = l.id ORDER BY id DESC LIMIT 1
-         ) q ON true
-         LEFT JOIN (
-           SELECT lead_id, SUM(amount)::numeric AS paid_total FROM payments GROUP BY lead_id
-         ) p ON p.lead_id = l.id
-         WHERE l.status IN ('converted', 'quotation_given', 'negotiation', 'interested')
-           AND GREATEST(COALESCE(q.final_amount, 0) - COALESCE(p.paid_total, 0), 0) > 0
+      `SELECT
+              COALESCE(i.lead_id, 0) AS id,
+              COALESCE(NULLIF(MAX(i.customer_name), ''), NULLIF(MAX(l.name), ''), 'Walk-in Customer') AS name,
+              COALESCE(NULLIF(MAX(i.customer_mobile), ''), NULLIF(MAX(l.phone), ''), '') AS phone,
+              COALESCE(NULLIF(MAX(i.customer_address), ''), NULLIF(MAX(l.location), ''), '') AS location,
+              -- quoted_amount is kept as a backward-compatible key for old report consumers.
+              COALESCE(SUM(i.grand_total), 0)::numeric AS quoted_amount,
+              COALESCE(SUM(i.grand_total), 0)::numeric AS billed_amount,
+              COALESCE(SUM(i.received_amount), 0)::numeric AS paid_amount,
+              COALESCE(SUM(i.remaining_amount), 0)::numeric AS pending_amount,
+              COALESCE(MAX(l.status), 'approved') AS status
+         FROM invoices i
+         LEFT JOIN leads l ON l.id = i.lead_id
+         WHERE i.status = 'approved'
+         GROUP BY COALESCE(i.lead_id, 0), COALESCE(NULLIF(i.customer_mobile, ''), NULLIF(i.customer_name, ''), CAST(i.id AS TEXT))
+         HAVING COALESCE(SUM(i.remaining_amount), 0) > 0
          ORDER BY pending_amount DESC
          LIMIT 500`
     );

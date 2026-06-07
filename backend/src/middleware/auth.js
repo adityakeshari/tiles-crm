@@ -23,7 +23,7 @@ export function requireAuth(req, res, next) {
   const token = header?.startsWith("Bearer ") ? header.replace("Bearer ", "") : queryToken;
 
   try {
-    req.user = jwt.verify(token, process.env.JWT_SECRET || "change-me");
+    req.user = jwt.verify(token, process.env.JWT_SECRET);
     req.user.roles = normalizeRoles(req.user);
     next();
   } catch (error) {
