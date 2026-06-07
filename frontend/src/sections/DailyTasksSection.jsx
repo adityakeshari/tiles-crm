@@ -15,6 +15,22 @@ function getTaskDueLabel(task, formatDate) {
   return timeValue ? `${dateLabel} | ${timeValue}` : dateLabel;
 }
 
+// Compact "4:00 PM" style time for the staff checklist row — falls back to the due date when no time is set.
+function getCompactDueLabel(task, formatDate) {
+  const timeValue = String(task?.due_time || "").slice(0, 5);
+  if (timeValue) {
+    const [hourPart, minutePart] = timeValue.split(":");
+    const hour = Number(hourPart);
+    if (!Number.isNaN(hour) && minutePart) {
+      const period = hour >= 12 ? "PM" : "AM";
+      const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+      return `${hour12}:${minutePart} ${period}`;
+    }
+    return timeValue;
+  }
+  return formatDate(task?.due_date);
+}
+
 function getTaskSourceLabel(source) {
   const normalizedSource = String(source || "").trim().toLowerCase();
 
@@ -240,24 +256,22 @@ function DailyTasksSectionImpl({
     <section className={`stack workspace-stack daily-tasks-layout ${canManageAllTasks ? "manager-view" : "staff-view"}`}>
       <WorkspaceTabs value={tab} onChange={setTab} tabs={visibleTabs} />
 
-      <section className="panel daily-task-command-panel">
-        <div className="section-head">
-          <h2>Daily Command Center</h2>
-          <span>
-            {canManageAllTasks
-              ? "Assign, track, and review showroom work from one daily board."
-              : "See your assigned work first and update progress quickly."}
-          </span>
-        </div>
-        <div className="report-grid daily-task-snapshot-grid">
-          <StatCard label="Total Tasks" value={taskMetrics.total} />
-          <StatCard label="Completed" value={taskMetrics.completed} tone="accent" />
-          <StatCard label="In Progress" value={taskMetrics.inProgress} />
-          <StatCard label="Pending" value={taskMetrics.pending} tone="warning" />
-          <StatCard label="Overdue" value={taskMetrics.overdue} tone="danger" />
-          <StatCard label="Overall %" value={`${taskMetrics.overallPercent}%`} />
-        </div>
-      </section>
+      {canManageAllTasks ? (
+        <section className="panel daily-task-command-panel">
+          <div className="section-head">
+            <h2>Daily Command Center</h2>
+            <span>Assign, track, and review showroom work from one daily board.</span>
+          </div>
+          <div className="report-grid daily-task-snapshot-grid">
+            <StatCard label="Total Tasks" value={taskMetrics.total} />
+            <StatCard label="Completed" value={taskMetrics.completed} tone="accent" />
+            <StatCard label="In Progress" value={taskMetrics.inProgress} />
+            <StatCard label="Pending" value={taskMetrics.pending} tone="warning" />
+            <StatCard label="Overdue" value={taskMetrics.overdue} tone="danger" />
+            <StatCard label="Overall %" value={`${taskMetrics.overallPercent}%`} />
+          </div>
+        </section>
+      ) : null}
 
       <section
         className={`panel daily-task-form-panel ${
@@ -427,7 +441,7 @@ function DailyTasksSectionImpl({
 
       <section className="panel daily-task-board-panel">
         <div className="section-head">
-          <h2>{tab === "summary" ? "Staff-wise task summary" : canManageAllTasks ? "Task board" : "My task board"}</h2>
+          <h2>{tab === "summary" ? "Staff-wise task summary" : canManageAllTasks ? "Task board" : "Today's Work"}</h2>
           <span>{tab === "summary" ? `${staffSummary.length} staff summaries` : `${tasks.length} tasks in current view`}</span>
         </div>
 
@@ -702,7 +716,7 @@ function DailyTasksSectionImpl({
                       <p className="daily-task-row-title">{task.title}</p>
                       <div className="daily-task-row-meta">
                         <span className="daily-task-row-meta-item daily-task-row-due">
-                          {getTaskDueLabel(task, formatDate)}
+                          {getCompactDueLabel(task, formatDate)}
                         </span>
                         <span className="daily-task-row-meta-item daily-task-row-priority">
                           <span className={`daily-task-row-priority-dot priority-${task.priority}`} aria-hidden="true" />
@@ -733,30 +747,32 @@ function DailyTasksSectionImpl({
           )}
       </section>
 
-      <section className="panel daily-task-eod-panel">
-        <div className="section-head">
-          <h2>EOD Review</h2>
-          <span>End-of-day carry forward snapshot using current daily task data.</span>
-        </div>
-        <div className="report-grid daily-task-snapshot-grid">
-          <StatCard label="Completed today" value={eodMetrics.completedToday} tone="accent" />
-          <StatCard label="Pending" value={eodMetrics.pending} tone="warning" />
-          <StatCard label="In Progress" value={eodMetrics.inProgress} />
-          <StatCard label="Delayed" value={eodMetrics.delayed} tone="danger" />
-          <StatCard label="Carry forward" value={eodMetrics.carryForward} />
-        </div>
-        <div className="daily-task-eod-notes">
-          <label>Owner notes snapshot</label>
-          <textarea
-            readOnly
-            value={
-              eodMetrics.ownerNotes.length
-                ? eodMetrics.ownerNotes.join("\n")
-                : "No special carry-forward notes from current tasks."
-            }
-          />
-        </div>
-      </section>
+      {canManageAllTasks ? (
+        <section className="panel daily-task-eod-panel">
+          <div className="section-head">
+            <h2>EOD Review</h2>
+            <span>End-of-day carry forward snapshot using current daily task data.</span>
+          </div>
+          <div className="report-grid daily-task-snapshot-grid">
+            <StatCard label="Completed today" value={eodMetrics.completedToday} tone="accent" />
+            <StatCard label="Pending" value={eodMetrics.pending} tone="warning" />
+            <StatCard label="In Progress" value={eodMetrics.inProgress} />
+            <StatCard label="Delayed" value={eodMetrics.delayed} tone="danger" />
+            <StatCard label="Carry forward" value={eodMetrics.carryForward} />
+          </div>
+          <div className="daily-task-eod-notes">
+            <label>Owner notes snapshot</label>
+            <textarea
+              readOnly
+              value={
+                eodMetrics.ownerNotes.length
+                  ? eodMetrics.ownerNotes.join("\n")
+                  : "No special carry-forward notes from current tasks."
+              }
+            />
+          </div>
+        </section>
+      ) : null}
 
       {!canManageAllTasks && activeDetailTask ? (
         <div
