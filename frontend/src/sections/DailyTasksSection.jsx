@@ -220,16 +220,23 @@ function DailyTasksSectionImpl({
         urgent_tasks: Number(base.urgent_tasks || 0),
         score_percent: scorePercent,
       };
-    });
+    }).filter((item) =>
+      Number(item.total_tasks || 0) > 0 ||
+      Number(item.pending_tasks || 0) > 0 ||
+      Number(item.completed_tasks || 0) > 0 ||
+      Number(item.verified_tasks || 0) > 0 ||
+      Number(item.overdue_tasks || 0) > 0 ||
+      Number(item.urgent_tasks || 0) > 0
+    );
 
     return merged.length ? merged : (Array.isArray(staffSummary) ? staffSummary : []);
   }, [staffSummary, users]);
 
   return (
-    <section className="stack workspace-stack">
+    <section className={`stack workspace-stack daily-tasks-layout ${canManageAllTasks ? "manager-view" : "staff-view"}`}>
       <WorkspaceTabs value={tab} onChange={setTab} tabs={visibleTabs} />
 
-      <section className="panel">
+      <section className="panel daily-task-command-panel">
         <div className="section-head">
           <h2>Daily Command Center</h2>
           <span>
@@ -248,7 +255,11 @@ function DailyTasksSectionImpl({
         </div>
       </section>
 
-      <section className="panel">
+      <section
+        className={`panel daily-task-form-panel ${
+          !canManageAllTasks && !editingTaskId ? "is-mobile-placeholder" : ""
+        }`}
+      >
         {canManageAllTasks ? (
           <>
             <div className="section-head daily-task-create-head">
@@ -410,7 +421,7 @@ function DailyTasksSectionImpl({
         )}
       </section>
 
-      <section className="panel">
+      <section className="panel daily-task-board-panel">
         <div className="section-head">
           <h2>{tab === "summary" ? "Staff-wise task summary" : canManageAllTasks ? "Task board" : "My task board"}</h2>
           <span>{tab === "summary" ? `${staffSummary.length} staff summaries` : `${tasks.length} tasks in current view`}</span>
@@ -510,29 +521,97 @@ function DailyTasksSectionImpl({
                     <h3>{task.title}</h3>
                     <p className="muted">{task.assigned_to_name || "Unassigned"}</p>
                   </div>
-                  <span className={`status-chip status-${task.status}`}>{labelize(task.status)}</span>
+                  <div className="daily-task-card-head-actions">
+                    {canUpdateTask(task) ? (
+                      <button
+                        type="button"
+                        className={`daily-task-complete-toggle ${
+                          ["completed", "verified"].includes(String(task.status || "")) ? "is-complete" : ""
+                        } ${String(task.status || "") === "verified" ? "is-locked" : ""}`}
+                        onClick={() => {
+                          if (String(task.status || "") !== "verified") {
+                            handleQuickDailyTaskStatusUpdate(task, "completed");
+                          }
+                        }}
+                        disabled={
+                          busyAction === `daily-task-status-${task.id}` || String(task.status || "") === "verified"
+                        }
+                        aria-label={
+                          String(task.status || "") === "verified"
+                            ? "Task verified"
+                            : ["completed", "verified"].includes(String(task.status || ""))
+                              ? "Task completed"
+                              : "Mark task completed"
+                        }
+                        title={
+                          String(task.status || "") === "verified"
+                            ? "Verified task"
+                            : ["completed", "verified"].includes(String(task.status || ""))
+                              ? "Completed"
+                              : "Tap to complete"
+                        }
+                      >
+                        <span className="daily-task-complete-icon">
+                          {String(task.status || "") === "verified" ? "✓" : ["completed", "verified"].includes(String(task.status || "")) ? "✓" : ""}
+                        </span>
+                        <span className="daily-task-complete-label">
+                          {String(task.status || "") === "verified"
+                            ? "Verified"
+                            : ["completed", "verified"].includes(String(task.status || ""))
+                              ? "Done"
+                              : "Complete"}
+                        </span>
+                      </button>
+                    ) : null}
+                    <span className={`status-chip status-${task.status}`}>{labelize(task.status)}</span>
+                  </div>
                 </div>
                 <div className="daily-task-card-meta">
-                  <span className="legend-chip">Task ID #{task.id}</span>
-                  <span className="legend-chip">Date {formatDate(task.created_at)}</span>
                   <span className={`priority-chip priority-${task.priority}`}>{labelize(task.priority)}</span>
                   <span className="legend-chip">Deadline {getTaskDueLabel(task, formatDate)}</span>
-                  <span className="legend-chip">Done {getTaskProgressPercent(task)}%</span>
                   <span className={`legend-chip ${task.is_overdue ? "legend-urgent" : ""}`}>
-                    {task.is_overdue ? "Overdue Yes" : "Overdue No"}
+                    {task.is_overdue ? "Overdue" : "On Track"}
                   </span>
-                  <span className="legend-chip">By {task.assigned_by_name || "System"}</span>
-                  <span className={`legend-chip daily-task-source-chip daily-task-source-${String(task.source || "manual").toLowerCase()}`}>
-                    {getTaskSourceLabel(task.source)}
-                  </span>
-                  {task.verified_by_name ? <span className="legend-chip">Verified by {task.verified_by_name}</span> : null}
                 </div>
-                {task.description ? <p>{task.description}</p> : <p className="muted">No description added yet.</p>}
-                <p className="muted daily-task-card-timestamps">
-                  Created {formatDateTime(task.created_at)} | Updated {formatDateTime(task.updated_at)}
-                  {task.completed_at ? ` | Completed ${formatDateTime(task.completed_at)}` : ""}
-                </p>
-                <p className="muted daily-task-remarks"><strong>Remarks:</strong> {task.remarks || "No remarks yet."}</p>
+                <div className="daily-task-secondary-desktop">
+                  <div className="daily-task-card-meta">
+                    <span className="legend-chip">Task ID #{task.id}</span>
+                    <span className="legend-chip">Date {formatDate(task.created_at)}</span>
+                    <span className="legend-chip">Done {getTaskProgressPercent(task)}%</span>
+                    <span className="legend-chip">By {task.assigned_by_name || "System"}</span>
+                    <span className={`legend-chip daily-task-source-chip daily-task-source-${String(task.source || "manual").toLowerCase()}`}>
+                      {getTaskSourceLabel(task.source)}
+                    </span>
+                    {task.verified_by_name ? <span className="legend-chip">Verified by {task.verified_by_name}</span> : null}
+                  </div>
+                  {task.description ? <p>{task.description}</p> : <p className="muted">No description added yet.</p>}
+                  <p className="muted daily-task-card-timestamps">
+                    Created {formatDateTime(task.created_at)} | Updated {formatDateTime(task.updated_at)}
+                    {task.completed_at ? ` | Completed ${formatDateTime(task.completed_at)}` : ""}
+                  </p>
+                  <p className="muted daily-task-remarks"><strong>Remarks:</strong> {task.remarks || "No remarks yet."}</p>
+                </div>
+                <details className="daily-task-mobile-details">
+                  <summary>Show details</summary>
+                  <div className="daily-task-mobile-details-body">
+                    <div className="daily-task-card-meta">
+                      <span className="legend-chip">Task ID #{task.id}</span>
+                      <span className="legend-chip">Date {formatDate(task.created_at)}</span>
+                      <span className="legend-chip">Done {getTaskProgressPercent(task)}%</span>
+                      <span className="legend-chip">By {task.assigned_by_name || "System"}</span>
+                      <span className={`legend-chip daily-task-source-chip daily-task-source-${String(task.source || "manual").toLowerCase()}`}>
+                        {getTaskSourceLabel(task.source)}
+                      </span>
+                      {task.verified_by_name ? <span className="legend-chip">Verified by {task.verified_by_name}</span> : null}
+                    </div>
+                    {task.description ? <p>{task.description}</p> : <p className="muted">No description added yet.</p>}
+                    <p className="muted daily-task-card-timestamps">
+                      Created {formatDateTime(task.created_at)} | Updated {formatDateTime(task.updated_at)}
+                      {task.completed_at ? ` | Completed ${formatDateTime(task.completed_at)}` : ""}
+                    </p>
+                    <p className="muted daily-task-remarks"><strong>Remarks:</strong> {task.remarks || "No remarks yet."}</p>
+                  </div>
+                </details>
                 <div className="lead-actions daily-task-actions">
                   {(canManageAllTasks || canUpdateTask(task)) ? (
                     <button type="button" className="secondary" onClick={() => startEditingTask(task)}>
@@ -551,6 +630,7 @@ function DailyTasksSectionImpl({
                   {canUpdateTask(task) && !["completed", "verified"].includes(task.status) ? (
                     <button
                       type="button"
+                      className="daily-task-inline-complete"
                       onClick={() => handleQuickDailyTaskStatusUpdate(task, "completed")}
                       disabled={busyAction === `daily-task-status-${task.id}`}
                     >
@@ -590,7 +670,7 @@ function DailyTasksSectionImpl({
           )}
       </section>
 
-      <section className="panel">
+      <section className="panel daily-task-eod-panel">
         <div className="section-head">
           <h2>EOD Review</h2>
           <span>End-of-day carry forward snapshot using current daily task data.</span>

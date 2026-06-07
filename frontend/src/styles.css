@@ -4018,11 +4018,93 @@ button.sidebar-item-active .sidebar-dot {
   min-height: 38px;
 }
 
+.daily-task-card-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.daily-task-complete-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 44px;
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid rgba(14, 107, 52, 0.25);
+  background: rgba(14, 107, 52, 0.06);
+  color: #0e6b34;
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.daily-task-complete-toggle:hover {
+  background: rgba(14, 107, 52, 0.12);
+  transform: none;
+}
+
+.daily-task-complete-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 2px solid currentColor;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.82rem;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.daily-task-complete-label {
+  white-space: nowrap;
+}
+
+.daily-task-complete-toggle.is-complete {
+  background: rgba(14, 107, 52, 0.14);
+  border-color: rgba(14, 107, 52, 0.34);
+}
+
+.daily-task-complete-toggle.is-complete .daily-task-complete-icon {
+  background: currentColor;
+  color: #fff;
+}
+
+.daily-task-complete-toggle.is-locked {
+  background: rgba(20, 52, 95, 0.1);
+  border-color: rgba(20, 52, 95, 0.2);
+  color: var(--crm-navy-700);
+  cursor: default;
+}
+
 .daily-task-card-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
   margin-bottom: 0.5rem;
+}
+
+.daily-task-secondary-desktop {
+  display: block;
+}
+
+.daily-task-mobile-details {
+  display: none;
+}
+
+.daily-task-mobile-details summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--crm-navy-700);
+  margin: 0.2rem 0 0.35rem;
+}
+
+.daily-task-mobile-details-body {
+  display: grid;
+  gap: 0.35rem;
 }
 
 .daily-task-card-timestamps,
@@ -4061,6 +4143,10 @@ button.sidebar-item-active .sidebar-dot {
 
 .daily-task-actions button {
   flex: 1 1 112px;
+}
+
+.daily-task-inline-complete {
+  display: inline-flex;
 }
 
 .daily-task-summary-card {
@@ -4296,6 +4382,42 @@ button.sidebar-item-active .sidebar-dot {
 }
 
 @media (max-width: 768px) {
+  .daily-tasks-layout.staff-view .daily-task-board-panel {
+    order: 1;
+  }
+
+  .daily-tasks-layout.staff-view .daily-task-command-panel {
+    order: 2;
+  }
+
+  .daily-tasks-layout.staff-view .daily-task-form-panel.is-mobile-placeholder {
+    display: none;
+  }
+
+  .daily-tasks-layout.staff-view .daily-task-form-panel:not(.is-mobile-placeholder) {
+    order: 3;
+  }
+
+  .daily-tasks-layout.staff-view .daily-task-eod-panel {
+    order: 4;
+  }
+
+  .daily-tasks-layout.manager-view .daily-task-command-panel {
+    order: 1;
+  }
+
+  .daily-tasks-layout.manager-view .daily-task-board-panel {
+    order: 2;
+  }
+
+  .daily-tasks-layout.manager-view .daily-task-form-panel {
+    order: 3;
+  }
+
+  .daily-tasks-layout.manager-view .daily-task-eod-panel {
+    order: 4;
+  }
+
   .daily-task-create-head {
     align-items: stretch;
   }
@@ -4311,12 +4433,61 @@ button.sidebar-item-active .sidebar-dot {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .daily-task-command-panel .section-head span,
+  .daily-task-eod-panel .section-head span {
+    display: none;
+  }
+
+  .daily-task-snapshot-grid {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(132px, 1fr);
+    overflow-x: auto;
+    gap: 0.55rem;
+    padding-bottom: 0.2rem;
+    scroll-snap-type: x proximity;
+  }
+
+  .daily-task-snapshot-grid > * {
+    scroll-snap-align: start;
+  }
+
   .daily-task-card .lead-actions button {
     min-height: 42px;
   }
 
   .daily-task-actions button {
     width: 100%;
+  }
+
+  .daily-task-inline-complete {
+    display: none;
+  }
+
+  .daily-task-card-head-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .daily-task-complete-toggle {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .daily-task-secondary-desktop {
+    display: none;
+  }
+
+  .daily-task-mobile-details {
+    display: block;
+  }
+
+  .daily-task-eod-notes {
+    margin-top: 0.65rem;
+  }
+
+  .daily-task-eod-notes textarea {
+    min-height: 88px;
   }
 
   .lead-card .lead-card-mobile-meta {
