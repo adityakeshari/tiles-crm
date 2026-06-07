@@ -3916,6 +3916,55 @@ button.sidebar-item-active .sidebar-dot {
   gap: 0.5rem;
 }
 
+.daily-task-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+
+.daily-task-toolbar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 0.8rem;
+}
+
+.daily-task-card-grid,
+.daily-task-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.75rem;
+}
+
+.daily-task-card {
+  border-left: 4px solid var(--crm-navy-300);
+}
+
+.daily-task-card.priority-urgent {
+  border-left-color: #d14343;
+}
+
+.daily-task-card.priority-high {
+  border-left-color: #ef8f1f;
+}
+
+.daily-task-card.priority-medium {
+  border-left-color: #d7b159;
+}
+
+.daily-task-card.priority-low {
+  border-left-color: #6b8bc7;
+}
+
+.daily-task-card .lead-actions {
+  margin-top: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.daily-task-card .lead-actions button {
+  min-height: 34px;
+}
+
 .purchase-ledger-detail-item {
   display: grid;
   grid-template-columns: minmax(220px, 1.4fr) minmax(220px, 1fr) auto;
@@ -4118,6 +4167,17 @@ button.sidebar-item-active .sidebar-dot {
 }
 
 @media (max-width: 768px) {
+  .daily-task-toolbar,
+  .daily-task-form,
+  .daily-task-card-grid,
+  .daily-task-summary-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .daily-task-card .lead-actions button {
+    min-height: 40px;
+  }
+
   .lead-card .lead-card-mobile-meta {
     display: block;
   }

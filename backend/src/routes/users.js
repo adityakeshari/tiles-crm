@@ -18,7 +18,7 @@ function getEffectiveRoles(user) {
   return [];
 }
 
-router.get("/", requireRole("admin", "manager", "operations", "accounts"), async (_req, res) => {
+router.get("/", requireRole("admin", "owner", "manager", "operations", "accounts"), async (_req, res) => {
   try {
     const result = await query(
       "SELECT id, name, phone, role, roles FROM users ORDER BY id DESC"

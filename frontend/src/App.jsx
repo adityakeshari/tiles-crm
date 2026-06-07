@@ -11,6 +11,7 @@ const AdhesiveTokensSection = lazy(() => import("./sections/AdhesiveTokensSectio
 const RegisteredMasonsSection = lazy(() => import("./sections/RegisteredMasonsSection.jsx"));
 const ProjectsSection = lazy(() => import("./sections/ProjectsSection.jsx"));
 const LeadWorkspaceSection = lazy(() => import("./sections/LeadWorkspaceSection.jsx"));
+const DailyTasksSection = lazy(() => import("./sections/DailyTasksSection.jsx"));
 
 // Enterprise sidebar hierarchy. Sub-item IDs map to existing currentView IDs -
 // no business logic / API / route changes; only the navigation surface is restructured.
@@ -43,7 +44,7 @@ const navGroups = [
     label: "Operations",
     items: [
       { id: "complaints", label: "Complaints" },
-      { id: "operations", label: "Tasks" },
+      { id: "operations", label: "Daily Tasks" },
     ],
   },
   {
@@ -106,7 +107,7 @@ const views = [
   { id: "overview", label: "Overview" },
   { id: "pipeline", label: "Pipeline" },
   { id: "followups", label: "Follow-ups" },
-  { id: "operations", label: "Operations" },
+  { id: "operations", label: "Daily Tasks" },
   { id: "projects", label: "Projects" },
   { id: "plumbing", label: "Plumbing" },
   { id: "complaints", label: "Complaints" },
@@ -140,9 +141,9 @@ const viewMeta = {
     audience: "Sales & Manager",
   },
   operations: {
-    title: "Operation Tasks",
-    description: "Delivery, installation, site visits and service handoffs.",
-    audience: "Manager & Operations",
+    title: "Daily Tasks",
+    description: "Assign daily work, track progress, and verify completion without leaving CRM.",
+    audience: "Admin / Manager / Staff",
   },
   projects: {
     title: "Projects",
@@ -382,7 +383,7 @@ const adhesiveTokenValues = [
   { value: 40, label: "40" },
   { value: 50, label: "50" },
 ];
-const leadDrivenViews = new Set(["overview", "pipeline", "followups", "operations", "quotations"]);
+const leadDrivenViews = new Set(["overview", "pipeline", "followups", "quotations"]);
 const DEFAULT_API_TIMEOUT_MS = 15000;
 const DEFAULT_LIST_LIMITS = {
   leads: 40,
@@ -405,6 +406,7 @@ const emptyOwnerOverviewData = {
   schemes: null,
   expenses: null,
   dailyReport: null,
+  dailyTasks: null,
 };
 
 const dealerCategories = ["A", "B", "C"];
@@ -453,6 +455,27 @@ const emptyOperationsTask = {
   scheduled_for: "",
   status: "pending",
   assigned_to: "",
+};
+
+function createEmptyDailyTask() {
+  return {
+    title: "",
+    description: "",
+    assigned_to: "",
+    priority: "medium",
+    due_date: getLocalDateInputValue(),
+    due_time: "",
+    status: "pending",
+    remarks: "",
+  };
+}
+
+const emptyDailyTaskFilters = {
+  search: "",
+  status: "all",
+  assigned_to: "all",
+  priority: "all",
+  due_date: "",
 };
 
 const emptyUser = {
@@ -997,6 +1020,30 @@ function validateOperationsTaskForm(form) {
 
   if (!isValidDateInput(form.scheduled_for)) {
     return "Operations schedule is invalid.";
+  }
+
+  return "";
+}
+
+function validateDailyTaskForm(form, { canManageAllTasks = false, canVerifyDailyTasks = false } = {}) {
+  if (canManageAllTasks && !normalizeText(form.title)) {
+    return "Task title is required.";
+  }
+
+  if (canManageAllTasks && !normalizeText(form.assigned_to)) {
+    return "Assigned staff is required.";
+  }
+
+  if (!isValidDateInput(form.due_date)) {
+    return "Due date is invalid.";
+  }
+
+  if (!["pending", "in_progress", "completed", "verified", "hold"].includes(normalizeText(form.status))) {
+    return "Task status is invalid.";
+  }
+
+  if (normalizeText(form.status) === "verified" && !canVerifyDailyTasks) {
+    return "Only admin can verify tasks.";
   }
 
   return "";
@@ -1817,6 +1864,9 @@ export default function App() {
   const [payments, setPayments] = useState([]);
   const [operationsBoard, setOperationsBoard] = useState([]);
   const [operationsTasks, setOperationsTasks] = useState([]);
+  const [dailyTasks, setDailyTasks] = useState([]);
+  const [dailyTaskSummary, setDailyTaskSummary] = useState(null);
+  const [dailyTaskStaffSummary, setDailyTaskStaffSummary] = useState([]);
   const [quotations, setQuotations] = useState([]);
   const [schemeTokens, setSchemeTokens] = useState([]);
   const [schemeSummary, setSchemeSummary] = useState(null);
@@ -1845,12 +1895,17 @@ export default function App() {
   const [plumbingSummary, setPlumbingSummary] = useState(null);
   const [expenses, setExpenses] = useState([]);
   const [expenseSummary, setExpenseSummary] = useState(null);
+  const [dailyTaskViewTab, setDailyTaskViewTab] = useState("today");
+  const [dailyTaskFilters, setDailyTaskFilters] = useState(emptyDailyTaskFilters);
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [followupForm, setFollowupForm] = useState(emptyFollowup);
   const [followupFormErrors, setFollowupFormErrors] = useState({});
   const [paymentForm, setPaymentForm] = useState(emptyPayment);
   const [operationsTaskForm, setOperationsTaskForm] = useState(emptyOperationsTask);
+  const [dailyTaskForm, setDailyTaskForm] = useState(createEmptyDailyTask);
+  const [dailyTaskFormErrors, setDailyTaskFormErrors] = useState({});
+  const [editingDailyTaskId, setEditingDailyTaskId] = useState(null);
   const [quotationForm, setQuotationForm] = useState(emptyQuotation);
   const [quotationFormErrors, setQuotationFormErrors] = useState({});
   const [schemeTokenForm, setSchemeTokenForm] = useState(emptySchemeToken);
@@ -1992,8 +2047,8 @@ export default function App() {
   const purchasePostSaveActionRef = useRef("draft");
 
   const visibleViews = useMemo(() => {
-    if (!user || isAdmin(user) || hasRole(user, "manager")) {
-      return hasRole(user, "manager") && !isAdmin(user)
+    if (!user || isAdmin(user) || hasRole(user, "owner") || hasRole(user, "manager")) {
+      return hasRole(user, "manager") && !isAdmin(user) && !hasRole(user, "owner")
         ? views.filter((item) => item.id !== "team")
         : views;
     }
@@ -2030,9 +2085,14 @@ export default function App() {
       ["reports", "purchases", "purchase_costing", "expenses"].forEach((item) => allowedViews.add(item));
     }
 
+    allowedViews.add("operations");
+
     return views.filter((item) => allowedViews.has(item.id));
   }, [user]);
   const canViewOwnerDashboard = Boolean(user) && isAdmin(user);
+  const canManageDailyTasks = Boolean(user) && (isAdmin(user) || hasRole(user, "owner") || hasRole(user, "manager"));
+  const canVerifyDailyTasks = Boolean(user) && (isAdmin(user) || hasRole(user, "owner"));
+  const canDeleteDailyTasks = Boolean(user) && (isAdmin(user) || hasRole(user, "owner"));
 
   useEffect(() => {
     if (!user) {
@@ -2427,6 +2487,23 @@ export default function App() {
 
     return leadDraftDirty || editingLeadDirty || followupDirty || paymentDirty || operationsDirty || quotationDirty;
   }, [editingLead, leadForm, followupForm, paymentForm, operationsTaskForm, quotationForm, selectedLead]);
+  const isDailyTaskDraftDirty = useMemo(() => {
+    if (!canManageDailyTasks && !editingDailyTaskId) {
+      return false;
+    }
+
+    return (
+      Boolean(editingDailyTaskId) ||
+      hasDraftValue(dailyTaskForm.title) ||
+      hasDraftValue(dailyTaskForm.description) ||
+      hasDraftValue(dailyTaskForm.assigned_to) ||
+      hasDraftValue(dailyTaskForm.remarks) ||
+      hasDraftValue(dailyTaskForm.due_time) ||
+      (dailyTaskForm.due_date && dailyTaskForm.due_date !== getLocalDateInputValue()) ||
+      normalizeText(dailyTaskForm.priority) !== "medium" ||
+      normalizeText(dailyTaskForm.status) !== "pending"
+    );
+  }, [canManageDailyTasks, dailyTaskForm, editingDailyTaskId]);
   const isBillingDraftDirty = useMemo(() => {
     const invoiceDirty =
       Boolean(editingInvoiceId) ||
@@ -2496,8 +2573,12 @@ export default function App() {
       return true;
     }
 
-    if (currentView === "overview" || currentView === "operations") {
+    if (currentView === "overview") {
       return isLeadWorkspaceDirty;
+    }
+
+    if (currentView === "operations") {
+      return isDailyTaskDraftDirty;
     }
 
     if (currentView === "billing") {
@@ -2521,9 +2602,12 @@ export default function App() {
     autoRefreshIntervalMs,
     busyAction,
     currentView,
+    dailyTaskForm,
+    editingDailyTaskId,
     inventoryWorkspaceTab,
     isBillingDraftDirty,
     isComplaintDraftDirty,
+    isDailyTaskDraftDirty,
     isDocumentVisible,
     isInventoryDraftDirty,
     isLeadWorkspaceDirty,
@@ -3071,7 +3155,8 @@ export default function App() {
           ownerOverviewData.plumbing ||
           ownerOverviewData.schemes ||
           ownerOverviewData.expenses ||
-          ownerOverviewData.dailyReport
+          ownerOverviewData.dailyReport ||
+          ownerOverviewData.dailyTasks
       ),
     [dashboardSummary, ownerOverviewData]
   );
@@ -3231,7 +3316,7 @@ export default function App() {
   }
 
   async function loadUsersForView(view, signal) {
-    if (!hasAnyRole(user, ["admin", "manager", "operations"])) {
+    if (!hasAnyRole(user, ["admin", "owner", "manager", "operations"])) {
       return null;
     }
 
@@ -3303,6 +3388,7 @@ export default function App() {
             api.getSchemesDashboard({ ...requestOptions, limit: listLimits.claims, mason_limit: listLimits.masons }),
             api.getExpensesDashboard(requestOptions),
             api.getDailyReport({ date: ownerOverviewReportDate }, requestOptions),
+            api.getDailyTaskSummary(requestOptions),
           ]);
 
           if (dashboardLoadRef.current !== requestId || signal?.aborted) {
@@ -3317,6 +3403,7 @@ export default function App() {
             schemesResult,
             expensesResult,
             dailyReportResult,
+            dailyTasksResult,
           ] = ownerResults;
 
           const nextOwnerOverviewData = {
@@ -3327,6 +3414,7 @@ export default function App() {
             schemes: schemesResult.status === "fulfilled" ? schemesResult.value?.summary || null : null,
             expenses: expensesResult.status === "fulfilled" ? expensesResult.value?.summary || null : null,
             dailyReport: dailyReportResult.status === "fulfilled" ? dailyReportResult.value || null : null,
+            dailyTasks: dailyTasksResult.status === "fulfilled" ? dailyTasksResult.value || null : null,
           };
 
           const failedLabels = ownerResults
@@ -3335,7 +3423,7 @@ export default function App() {
                 return "";
               }
 
-              return ["complaints", "projects", "purchases", "plumbing", "tokens", "expenses", "daily report"][index];
+              return ["complaints", "projects", "purchases", "plumbing", "tokens", "expenses", "daily report", "daily tasks"][index];
             })
             .filter(Boolean);
 
@@ -3359,15 +3447,24 @@ export default function App() {
         setLeads(leadsData);
         syncSelectedLeadState(leadsData);
       } else if (view === "operations") {
-        const [operationsData, leadsData] = await Promise.all([
-          api.getOperationsBoard(requestOptions),
-          api.getLeads({ ...requestOptions, limit: listLimits.leads }),
+        const assignedTaskFilter =
+          canManageDailyTasks && dailyTaskFilters.assigned_to !== "all" ? dailyTaskFilters.assigned_to : "";
+        const [dailyTasksData] = await Promise.all([
+          api.getDailyTasks({
+            ...requestOptions,
+            limit: listLimits.leads,
+            view: dailyTaskViewTab === "summary" ? "" : dailyTaskViewTab,
+            search: dailyTaskFilters.search,
+            status: dailyTaskFilters.status === "all" ? "" : dailyTaskFilters.status,
+            assigned_to: assignedTaskFilter,
+            priority: dailyTaskFilters.priority === "all" ? "" : dailyTaskFilters.priority,
+            due_date: dailyTaskFilters.due_date,
+          }),
           loadUsersForView(view, signal),
         ]);
-
-        setOperationsBoard(operationsData || []);
-        setLeads(leadsData);
-        syncSelectedLeadState(leadsData);
+        setDailyTasks(dailyTasksData?.tasks || []);
+        setDailyTaskSummary(dailyTasksData?.summary || null);
+        setDailyTaskStaffSummary(dailyTasksData?.staffSummary || []);
       } else if (view === "quotations") {
         const [leadsData, inventoryData] = await Promise.all([
           api.getLeads({ ...requestOptions, limit: listLimits.leads }),
@@ -3589,6 +3686,8 @@ export default function App() {
     billingPaymentFilter,
     billingFromFilter,
     billingToFilter,
+    dailyTaskViewTab,
+    dailyTaskFilters,
     dailyReportDate,
     inventoryLedgerSearch,
   ]);
@@ -3943,6 +4042,125 @@ export default function App() {
       }
       await loadDashboard();
     }, "Operations task marked done.");
+  }
+
+  function resetDailyTaskForm() {
+    setDailyTaskForm(createEmptyDailyTask());
+    setDailyTaskFormErrors({});
+    setEditingDailyTaskId(null);
+  }
+
+  function startEditingDailyTask(task) {
+    setEditingDailyTaskId(task.id);
+    setDailyTaskFormErrors({});
+    setDailyTaskForm({
+      title: task.title || "",
+      description: task.description || "",
+      assigned_to: String(task.assigned_to || ""),
+      priority: task.priority || "medium",
+      due_date: formatDateInput(task.due_date),
+      due_time: String(task.due_time || "").slice(0, 5),
+      status: task.status || "pending",
+      remarks: task.remarks || "",
+    });
+  }
+
+  async function handleSaveDailyTask(event) {
+    event.preventDefault();
+
+    const validationErrors = canManageDailyTasks
+      ? validateRequiredFields(dailyTaskForm, {
+          title: "Task title is required.",
+          assigned_to: "Assigned staff is required.",
+          due_date: "Due date is required.",
+        })
+      : {};
+    setDailyTaskFormErrors(validationErrors);
+
+    if (Object.keys(validationErrors).length) {
+      setError("");
+      focusFirstInvalidField(event.currentTarget, validationErrors);
+      return;
+    }
+
+    const validationError = validateDailyTaskForm(dailyTaskForm, {
+      canManageAllTasks: canManageDailyTasks,
+      canVerifyDailyTasks,
+    });
+
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    const payload = {
+      ...dailyTaskForm,
+      assigned_to: dailyTaskForm.assigned_to || null,
+      due_time: dailyTaskForm.due_time || null,
+    };
+
+    await runBusyAction("save-daily-task", async () => {
+      if (editingDailyTaskId) {
+        await api.updateDailyTask(editingDailyTaskId, payload);
+      } else {
+        await api.createDailyTask(payload);
+      }
+
+      resetDailyTaskForm();
+      await loadDashboard({ forceView: "operations" });
+    }, editingDailyTaskId ? "Daily task updated." : "Daily task created.");
+  }
+
+  async function handleQuickDailyTaskStatusUpdate(task, status) {
+    await runBusyAction(`daily-task-status-${task.id}`, async () => {
+      await api.updateDailyTask(task.id, {
+        status,
+        remarks: task.remarks || "",
+      });
+      if (editingDailyTaskId === task.id) {
+        setDailyTaskForm((current) => ({ ...current, status }));
+      }
+      await loadDashboard({ forceView: "operations", silent: true });
+    }, "Task status updated.");
+  }
+
+  async function handleDeleteDailyTask(taskId) {
+    await runBusyAction("delete-daily-task", async () => {
+      await api.deleteDailyTask(taskId);
+      if (editingDailyTaskId === taskId) {
+        resetDailyTaskForm();
+      }
+      await loadDashboard({ forceView: "operations" });
+    }, "Daily task deleted.");
+  }
+
+  function requestDeleteDailyTask(task) {
+    setPendingDelete({
+      type: "daily-task",
+      id: task.id,
+      entityLabel: "Daily Task",
+      message: `This will permanently remove the task "${task.title}".`,
+      subtext: `${task.assigned_to_name || "Unassigned"} | ${formatDate(task.due_date)}`,
+    });
+  }
+
+  function requestVerifyDailyTask(task) {
+    openActionConfirmation({
+      title: "Verify task completion?",
+      message: `Mark "${task.title}" as verified?`,
+      confirmLabel: "Verify Task",
+      tone: "accent",
+      subtext: task.assigned_to_name || "Assigned staff not available",
+      onConfirm: async () => {
+        await runBusyAction(`verify-daily-task-${task.id}`, async () => {
+          await api.verifyDailyTask(task.id);
+          if (editingDailyTaskId === task.id) {
+            setDailyTaskForm((current) => ({ ...current, status: "verified" }));
+          }
+          await loadDashboard({ forceView: "operations", silent: true });
+        }, "Daily task verified.");
+      },
+    });
   }
 
   async function handleCreateQuotation(event) {
@@ -5741,6 +5959,10 @@ export default function App() {
       await handleDeleteUser(pendingDelete.id);
     }
 
+    if (pendingDelete.type === "daily-task") {
+      await handleDeleteDailyTask(pendingDelete.id);
+    }
+
     setPendingDelete(null);
   }
 
@@ -6353,6 +6575,9 @@ export default function App() {
     setPayments([]);
     setOperationsBoard([]);
     setOperationsTasks([]);
+    setDailyTasks([]);
+    setDailyTaskSummary(null);
+    setDailyTaskStaffSummary([]);
     setQuotations([]);
     setSchemeTokens([]);
     setSchemeSummary(null);
@@ -6383,6 +6608,8 @@ export default function App() {
     setExpenseSummary(null);
     setNotifications([]);
     setShowNotifications(false);
+    setDailyTaskViewTab("today");
+    setDailyTaskFilters(emptyDailyTaskFilters);
     setUsers([]);
     setDealers([]);
     setProducts([]);
@@ -6444,6 +6671,9 @@ export default function App() {
     setEditingExpenseId(null);
     setPendingDelete(null);
     setSchemeTokenForm(emptySchemeToken);
+    setDailyTaskForm(createEmptyDailyTask());
+    setDailyTaskFormErrors({});
+    setEditingDailyTaskId(null);
     setComplaintForm(emptyComplaint);
     setEditingComplaintId(null);
     setUserForm(emptyUser);
@@ -6857,6 +7087,18 @@ export default function App() {
                       </div>
                     </article>
                   </div>
+                  <div className="report-grid">
+                    <article className="detail-card">
+                      <span className="audience-tag">Daily Tasks</span>
+                      <h3>Task Summary</h3>
+                      <p>{Number(ownerOverviewData.dailyTasks?.today_total_tasks || 0).toLocaleString("en-IN")} today</p>
+                      <div className="chip-row">
+                        <span className="legend-chip">Completed {Number(ownerOverviewData.dailyTasks?.today_completed_tasks || 0).toLocaleString("en-IN")}</span>
+                        <span className="legend-chip">Pending {Number(ownerOverviewData.dailyTasks?.today_pending_tasks || 0).toLocaleString("en-IN")}</span>
+                        <span className="legend-chip">Overdue {Number(ownerOverviewData.dailyTasks?.overdue_tasks || 0).toLocaleString("en-IN")}</span>
+                      </div>
+                    </article>
+                  </div>
                 </>
               )}
             </section>
@@ -7096,7 +7338,7 @@ export default function App() {
                           const target = leads.find((lead) => lead.id === task.lead_id);
                           if (target) {
                             setSelectedLead(target);
-                            setCurrentView("operations");
+                            setCurrentView("pipeline");
                           }
                         }}
                       >
@@ -7135,7 +7377,7 @@ export default function App() {
         </>
       ) : null}
 
-      {["overview", "pipeline", "followups", "operations"].includes(currentView) ? (
+      {["overview", "pipeline", "followups"].includes(currentView) ? (
         <Suspense fallback={<LazySectionFallback label="lead workspace" />}>
           <LeadWorkspaceSection
             currentView={currentView}
@@ -7220,6 +7462,43 @@ export default function App() {
             plumbingJobStatuses={plumbingJobStatuses}
             clearFieldErrorFromEvent={clearFieldErrorFromEvent}
             getFieldErrorClass={getFieldErrorClass}
+          />
+        </Suspense>
+      ) : null}
+
+      {currentView === "operations" ? (
+        <Suspense fallback={<LazySectionFallback label="daily tasks" />}>
+          <DailyTasksSection
+            user={user}
+            users={users}
+            tasks={dailyTasks}
+            summary={dailyTaskSummary}
+            staffSummary={dailyTaskStaffSummary}
+            tab={dailyTaskViewTab}
+            setTab={setDailyTaskViewTab}
+            filters={dailyTaskFilters}
+            setFilters={setDailyTaskFilters}
+            form={dailyTaskForm}
+            setForm={setDailyTaskForm}
+            formErrors={dailyTaskFormErrors}
+            editingTaskId={editingDailyTaskId}
+            handleSaveTask={handleSaveDailyTask}
+            startEditingTask={startEditingDailyTask}
+            resetDailyTaskForm={resetDailyTaskForm}
+            requestDeleteDailyTask={requestDeleteDailyTask}
+            requestVerifyDailyTask={requestVerifyDailyTask}
+            handleQuickDailyTaskStatusUpdate={handleQuickDailyTaskStatusUpdate}
+            busyAction={busyAction}
+            loading={loading}
+            error={error}
+            canManageAllTasks={canManageDailyTasks}
+            canVerifyDailyTasks={canVerifyDailyTasks}
+            canDeleteDailyTasks={canDeleteDailyTasks}
+            EmptyState={EmptyState}
+            StatCard={StatCard}
+            labelize={labelize}
+            formatDate={formatDate}
+            formatDateTime={formatDateTime}
           />
         </Suspense>
       ) : null}

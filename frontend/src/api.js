@@ -144,6 +144,38 @@ export const api = {
   getStats: (options) => request("/leads/dashboard/stats", options),
   getFollowupBoard: (options) => request("/leads/dashboard/followups", options),
   getOperationsBoard: (options) => request("/leads/dashboard/operations", options),
+  getDailyTasks: (options = {}) =>
+    request(
+      withQuery("/daily-tasks", {
+        limit: options.limit,
+        view: options.view,
+        search: options.search,
+        status: options.status,
+        assigned_to: options.assigned_to,
+        priority: options.priority,
+        due_date: options.due_date,
+      }),
+      options
+    ),
+  getDailyTaskSummary: (options = {}) => request("/daily-tasks/summary", options),
+  createDailyTask: (payload) =>
+    request("/daily-tasks", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateDailyTask: (id, payload) =>
+    request(`/daily-tasks/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  verifyDailyTask: (id) =>
+    request(`/daily-tasks/${id}/verify`, {
+      method: "PUT",
+    }),
+  deleteDailyTask: (id) =>
+    request(`/daily-tasks/${id}`, {
+      method: "DELETE",
+    }),
   getDashboardSummary: (options) => request("/dashboard/summary", options),
   getDailyReport: (params = {}, options) =>
     request(withQuery("/reports/daily", { date: params.date }), options),

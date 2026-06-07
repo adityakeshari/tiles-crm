@@ -14,6 +14,8 @@ const followupTypes = new Set(["call", "whatsapp", "visit", "reminder"]);
 const followupStatuses = new Set(["pending", "completed", "overdue"]);
 const operationsTaskTypes = new Set(["delivery", "site_visit", "installation", "measurement"]);
 const operationsTaskStatuses = new Set(["pending", "in_progress", "completed", "delayed"]);
+const dailyTaskPriorities = new Set(["low", "medium", "high", "urgent"]);
+const dailyTaskStatuses = new Set(["pending", "in_progress", "completed", "verified", "hold"]);
 const plumbingWorkTypes = new Set([
   "bathroom",
   "kitchen",
@@ -294,6 +296,59 @@ export function validateOperationsTaskPayload(payload) {
       status,
       scheduled_for: scheduled_for || null,
       assigned_to,
+    },
+  };
+}
+
+export function validateDailyTaskPayload(payload) {
+  const title = normalizeString(payload.title);
+  const description = normalizeOptionalString(payload.description);
+  const priority = normalizeString(payload.priority || "medium");
+  const due_date = normalizeOptionalString(payload.due_date);
+  const due_time = normalizeOptionalString(payload.due_time);
+  const status = normalizeString(payload.status || "pending");
+  const remarks = normalizeOptionalString(payload.remarks);
+  const assignedToValue = payload.assigned_to;
+  const assigned_to =
+    assignedToValue === "" || assignedToValue === null || typeof assignedToValue === "undefined"
+      ? null
+      : Number(assignedToValue);
+
+  if (!title) {
+    return { ok: false, message: "Task title is required" };
+  }
+
+  if (!assigned_to || !Number.isInteger(assigned_to) || assigned_to <= 0) {
+    return { ok: false, message: "Assigned user is required" };
+  }
+
+  if (!dailyTaskPriorities.has(priority)) {
+    return { ok: false, message: "Task priority is invalid" };
+  }
+
+  if (!dailyTaskStatuses.has(status)) {
+    return { ok: false, message: "Task status is invalid" };
+  }
+
+  if (!due_date || Number.isNaN(new Date(due_date).getTime())) {
+    return { ok: false, message: "Due date is required" };
+  }
+
+  if (due_time && !/^\d{2}:\d{2}(:\d{2})?$/.test(due_time)) {
+    return { ok: false, message: "Due time is invalid" };
+  }
+
+  return {
+    ok: true,
+    value: {
+      title,
+      description,
+      assigned_to,
+      priority,
+      due_date: due_date.slice(0, 10),
+      due_time: due_time ? due_time.slice(0, 5) : null,
+      status,
+      remarks,
     },
   };
 }
