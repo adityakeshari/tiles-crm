@@ -4151,6 +4151,95 @@ button.sidebar-item-active .sidebar-dot {
 
 /* Staff flat-checklist (Phase 1 — staff view only; manager card grid above is untouched) */
 /* Staff checklist — flat Microsoft To Do style list. No cards, no per-row borders/shadows. */
+/* Time-wise schedule checklist (staff redesign) — flat sections grouped by time of day, no card UI */
+.daily-task-schedule {
+  display: flex;
+  flex-direction: column;
+}
+
+.daily-task-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0 0 0.85rem;
+}
+
+.daily-task-progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--crm-navy-100);
+  overflow: hidden;
+}
+
+.daily-task-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--crm-accent, #f0a500), #27c47a);
+  transition: width 0.4s ease;
+}
+
+.daily-task-progress-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--crm-navy-500);
+  text-align: center;
+}
+
+.daily-task-time-section {
+  margin-bottom: 0.9rem;
+}
+
+.daily-task-time-section:last-child {
+  margin-bottom: 0;
+}
+
+.daily-task-time-section-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.2rem;
+  border-bottom: 1px solid var(--crm-navy-100);
+}
+
+.daily-task-time-section-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.daily-task-time-section-title {
+  font-weight: 700;
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--crm-navy-700);
+}
+
+.daily-task-time-section-range {
+  font-size: 0.74rem;
+  color: var(--crm-navy-400);
+  flex: 1;
+}
+
+.daily-task-time-section-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: var(--crm-navy-100);
+  color: var(--crm-navy-500);
+  white-space: nowrap;
+}
+
+.daily-task-time-section-badge.is-complete {
+  background: rgba(39, 196, 122, 0.16);
+  color: #1a8a52;
+}
+
+.daily-task-time-section .daily-task-checklist {
+  border-top: none;
+}
+
 .daily-task-checklist-hint {
   margin: 0 0 0.5rem;
   padding: 0.35rem 0.6rem;
