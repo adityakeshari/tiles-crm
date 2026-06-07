@@ -513,6 +513,7 @@ function DailyTasksSectionImpl({
             />
           )
         ) : tasks.length ? (
+          canManageAllTasks ? (
           <div className="daily-task-card-grid">
             {tasks.map((task) => (
               <article key={task.id} className={`detail-card daily-task-card priority-${task.priority}`}>
@@ -661,6 +662,100 @@ function DailyTasksSectionImpl({
               </article>
               ))}
             </div>
+          ) : (
+            <ul className="daily-task-checklist">
+              {tasks.map((task) => {
+                const isDone = ["completed", "verified"].includes(String(task.status || ""));
+                const isVerified = String(task.status || "") === "verified";
+                return (
+                  <li
+                    key={task.id}
+                    className={`daily-task-row priority-${task.priority} ${isDone ? "is-done" : ""}`}
+                  >
+                    <button
+                      type="button"
+                      className={`daily-task-row-check ${isDone ? "is-complete" : ""} ${isVerified ? "is-locked" : ""}`}
+                      onClick={() => {
+                        if (canUpdateTask(task) && !isVerified) {
+                          handleQuickDailyTaskStatusUpdate(task, "completed");
+                        }
+                      }}
+                      disabled={!canUpdateTask(task) || busyAction === `daily-task-status-${task.id}` || isVerified}
+                      aria-label={isVerified ? "Task verified" : isDone ? "Task completed" : "Mark task complete"}
+                      title={isVerified ? "Verified" : isDone ? "Completed" : "Tap to mark complete"}
+                    >
+                      <span className="daily-task-row-check-mark">{isDone ? "✓" : ""}</span>
+                    </button>
+
+                    <div className="daily-task-row-body">
+                      <p className="daily-task-row-title">{task.title}</p>
+                      <div className="daily-task-row-meta">
+                        <span className="daily-task-row-due">{getTaskDueLabel(task, formatDate)}</span>
+                        <span
+                          className={`daily-task-row-priority-dot priority-${task.priority}`}
+                          role="img"
+                          aria-label={`${labelize(task.priority)} priority`}
+                          title={`${labelize(task.priority)} priority`}
+                        />
+                        {task.is_overdue ? <span className="daily-task-row-flag">Overdue</span> : null}
+                        {task.status === "hold" ? (
+                          <span className="daily-task-row-flag daily-task-row-flag-hold">On hold</span>
+                        ) : null}
+                      </div>
+
+                      {canUpdateTask(task) ? (
+                        <div className="daily-task-row-actions">
+                          {task.status !== "hold" && !isDone ? (
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={() => handleQuickDailyTaskStatusUpdate(task, "hold")}
+                              disabled={busyAction === `daily-task-status-${task.id}`}
+                            >
+                              Hold
+                            </button>
+                          ) : null}
+                          <button type="button" className="secondary" onClick={() => startEditingTask(task)}>
+                            Remark
+                          </button>
+                        </div>
+                      ) : null}
+
+                      <details className="daily-task-row-details">
+                        <summary>Details</summary>
+                        <div className="daily-task-row-details-body">
+                          <div className="daily-task-card-meta">
+                            <span className="legend-chip">Task ID #{task.id}</span>
+                            <span className="legend-chip">Date {formatDate(task.created_at)}</span>
+                            <span
+                              className={`legend-chip daily-task-source-chip daily-task-source-${String(task.source || "manual").toLowerCase()}`}
+                            >
+                              {getTaskSourceLabel(task.source)}
+                            </span>
+                            {task.verified_by_name ? (
+                              <span className="legend-chip">Verified by {task.verified_by_name}</span>
+                            ) : null}
+                          </div>
+                          <p className="muted daily-task-card-timestamps">
+                            Created {formatDateTime(task.created_at)} | Updated {formatDateTime(task.updated_at)}
+                            {task.completed_at ? ` | Completed ${formatDateTime(task.completed_at)}` : ""}
+                          </p>
+                          {task.description ? (
+                            <p>{task.description}</p>
+                          ) : (
+                            <p className="muted">No description added yet.</p>
+                          )}
+                          <p className="muted daily-task-remarks">
+                            <strong>Remarks:</strong> {task.remarks || "No remarks yet."}
+                          </p>
+                        </div>
+                      </details>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )
           ) : (
             <EmptyState
               title={emptyState.title}
