@@ -667,7 +667,9 @@ function DailyTasksSectionImpl({
               ))}
             </div>
           ) : (
-            <ul className="daily-task-checklist">
+            <>
+              <p className="daily-task-checklist-hint">Tap circle to complete task</p>
+              <ul className="daily-task-checklist">
               {tasks.map((task) => {
                 const isDone = ["completed", "verified"].includes(String(task.status || ""));
                 const isVerified = String(task.status || "") === "verified";
@@ -719,7 +721,8 @@ function DailyTasksSectionImpl({
                   </li>
                 );
               })}
-            </ul>
+              </ul>
+            </>
           )
           ) : (
             <EmptyState
