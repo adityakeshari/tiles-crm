@@ -3450,16 +3450,18 @@ export default function App() {
         const assignedTaskFilter =
           canManageDailyTasks && dailyTaskFilters.assigned_to !== "all" ? dailyTaskFilters.assigned_to : "";
         const [dailyTasksData] = await Promise.all([
-          api.getDailyTasks({
-            ...requestOptions,
-            limit: listLimits.leads,
-            view: dailyTaskViewTab === "summary" ? "" : dailyTaskViewTab,
-            search: dailyTaskFilters.search,
-            status: dailyTaskFilters.status === "all" ? "" : dailyTaskFilters.status,
-            assigned_to: assignedTaskFilter,
-            priority: dailyTaskFilters.priority === "all" ? "" : dailyTaskFilters.priority,
-            due_date: dailyTaskFilters.due_date,
-          }),
+          api.getDailyTasks(
+            {
+              limit: listLimits.leads,
+              view: dailyTaskViewTab === "summary" ? "" : dailyTaskViewTab,
+              search: dailyTaskFilters.search,
+              status: dailyTaskFilters.status === "all" ? "" : dailyTaskFilters.status,
+              assigned_to: assignedTaskFilter,
+              priority: dailyTaskFilters.priority === "all" ? "" : dailyTaskFilters.priority,
+              due_date: dailyTaskFilters.due_date,
+            },
+            requestOptions
+          ),
           loadUsersForView(view, signal),
         ]);
         setDailyTasks(dailyTasksData?.tasks || []);

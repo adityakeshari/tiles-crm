@@ -144,16 +144,16 @@ export const api = {
   getStats: (options) => request("/leads/dashboard/stats", options),
   getFollowupBoard: (options) => request("/leads/dashboard/followups", options),
   getOperationsBoard: (options) => request("/leads/dashboard/operations", options),
-  getDailyTasks: (options = {}) =>
+  getDailyTasks: (params = {}, options = {}) =>
     request(
       withQuery("/daily-tasks", {
-        limit: options.limit,
-        view: options.view,
-        search: options.search,
-        status: options.status,
-        assigned_to: options.assigned_to,
-        priority: options.priority,
-        due_date: options.due_date,
+        limit: params.limit,
+        view: params.view,
+        search: params.search,
+        status: params.status,
+        assigned_to: params.assigned_to,
+        priority: params.priority,
+        due_date: params.due_date,
       }),
       options
     ),
