@@ -1848,6 +1848,23 @@ button.secondary.danger-soft:hover {
   border-radius: var(--radius-xl);
 }
 
+.session-timeout-modal {
+  border: 1px solid rgba(212, 164, 55, 0.28);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(251, 248, 240, 0.98) 100%);
+  box-shadow:
+    0 28px 60px rgba(7, 20, 43, 0.2),
+    0 8px 18px rgba(11, 31, 74, 0.12);
+}
+
+.session-timeout-modal .section-head {
+  align-items: center;
+}
+
+.session-timeout-modal strong {
+  color: var(--crm-navy-900);
+}
+
 .admin-panel .panel {
   background: var(--crm-surface-soft);
 }

@@ -385,6 +385,10 @@ const adhesiveTokenValues = [
 ];
 const leadDrivenViews = new Set(["overview", "pipeline", "followups", "quotations"]);
 const DEFAULT_API_TIMEOUT_MS = 15000;
+const WARNING_AFTER_MS = 25 * 60 * 1000;
+const LOGOUT_AFTER_MS = 30 * 60 * 1000;
+const MOBILE_BACKGROUND_LOGOUT_MS = 60 * 60 * 1000;
+const SESSION_LAST_ACTIVE_STORAGE_KEY = "tiles-crm-last-active-at";
 const DEFAULT_LIST_LIMITS = {
   leads: 40,
   projects: 40,
@@ -2020,10 +2024,17 @@ export default function App() {
   const [busyAction, setBusyAction] = useState("");
   const [pendingDelete, setPendingDelete] = useState(null);
   const [pendingAction, setPendingAction] = useState(null);
+  const [showSessionTimeoutWarning, setShowSessionTimeoutWarning] = useState(false);
+  const [sessionWarningCountdown, setSessionWarningCountdown] = useState(Math.ceil((LOGOUT_AFTER_MS - WARNING_AFTER_MS) / 1000));
   const [toasts, setToasts] = useState([]);
   const [listLimits, setListLimits] = useState(DEFAULT_LIST_LIMITS);
   const dashboardLoadRef = useRef(0);
   const purchasePostSaveActionRef = useRef("draft");
+  const sessionWarningTimerRef = useRef(null);
+  const sessionLogoutTimerRef = useRef(null);
+  const sessionCountdownIntervalRef = useRef(null);
+  const lastActivityAtRef = useRef(Date.now());
+  const backgroundedAtRef = useRef(null);
 
   const visibleViews = useMemo(() => {
     if (!user || isAdmin(user) || hasRole(user, "owner") || hasRole(user, "manager")) {
@@ -6532,9 +6543,42 @@ export default function App() {
     }));
   }
 
-  function handleLogout() {
+  function clearSessionTimeoutTimers() {
+    if (sessionWarningTimerRef.current) {
+      window.clearTimeout(sessionWarningTimerRef.current);
+      sessionWarningTimerRef.current = null;
+    }
+    if (sessionLogoutTimerRef.current) {
+      window.clearTimeout(sessionLogoutTimerRef.current);
+      sessionLogoutTimerRef.current = null;
+    }
+    if (sessionCountdownIntervalRef.current) {
+      window.clearInterval(sessionCountdownIntervalRef.current);
+      sessionCountdownIntervalRef.current = null;
+    }
+  }
+
+  function resetSessionWarningState() {
+    setShowSessionTimeoutWarning(false);
+    setSessionWarningCountdown(Math.ceil((LOGOUT_AFTER_MS - WARNING_AFTER_MS) / 1000));
+    if (sessionCountdownIntervalRef.current) {
+      window.clearInterval(sessionCountdownIntervalRef.current);
+      sessionCountdownIntervalRef.current = null;
+    }
+  }
+
+  function clearSessionAuthData() {
+    clearSessionTimeoutTimers();
     localStorage.removeItem("tiles-crm-token");
     localStorage.removeItem("tiles-crm-user");
+    localStorage.removeItem(SESSION_LAST_ACTIVE_STORAGE_KEY);
+    resetSessionWarningState();
+    backgroundedAtRef.current = null;
+    lastActivityAtRef.current = Date.now();
+  }
+
+  function handleLogout() {
+    clearSessionAuthData();
     setToken(null);
     setUser(null);
     setSelectedLead(null);
@@ -6652,6 +6696,119 @@ export default function App() {
     setMasonWorkingAreaInput("");
     setEditingMasonId(null);
   }
+
+  const performAutomaticLogout = useCallback(() => {
+    clearSessionAuthData();
+    setToken(null);
+    setUser(null);
+    pushToast("You were logged out due to inactivity.", "error");
+  }, []);
+
+  const scheduleSessionTimeouts = useCallback(() => {
+    if (!token) {
+      clearSessionTimeoutTimers();
+      return;
+    }
+
+    clearSessionTimeoutTimers();
+    resetSessionWarningState();
+
+    sessionWarningTimerRef.current = window.setTimeout(() => {
+      setShowSessionTimeoutWarning(true);
+      setSessionWarningCountdown(Math.ceil((LOGOUT_AFTER_MS - WARNING_AFTER_MS) / 1000));
+
+      sessionCountdownIntervalRef.current = window.setInterval(() => {
+        setSessionWarningCountdown((current) => {
+          if (current <= 1) {
+            window.clearInterval(sessionCountdownIntervalRef.current);
+            sessionCountdownIntervalRef.current = null;
+            return 0;
+          }
+          return current - 1;
+        });
+      }, 1000);
+    }, WARNING_AFTER_MS);
+
+    sessionLogoutTimerRef.current = window.setTimeout(() => {
+      performAutomaticLogout();
+    }, LOGOUT_AFTER_MS);
+  }, [performAutomaticLogout, token]);
+
+  const markUserActivity = useCallback(() => {
+    if (!token) {
+      return;
+    }
+
+    const now = Date.now();
+    lastActivityAtRef.current = now;
+    backgroundedAtRef.current = null;
+    localStorage.setItem(SESSION_LAST_ACTIVE_STORAGE_KEY, String(now));
+    scheduleSessionTimeouts();
+  }, [scheduleSessionTimeouts, token]);
+
+  const continueWorkingSession = useCallback(() => {
+    markUserActivity();
+  }, [markUserActivity]);
+
+  useEffect(() => {
+    if (!token || typeof document === "undefined" || typeof window === "undefined") {
+      clearSessionTimeoutTimers();
+      resetSessionWarningState();
+      return undefined;
+    }
+
+    const activityEvents = ["mousemove", "click", "keydown", "scroll", "touchstart", "touchmove"];
+
+    const handleBackgroundStart = () => {
+      const now = Date.now();
+      backgroundedAtRef.current = now;
+      localStorage.setItem(SESSION_LAST_ACTIVE_STORAGE_KEY, String(now));
+    };
+
+    const handleForegroundReturn = () => {
+      const stored = Number(localStorage.getItem(SESSION_LAST_ACTIVE_STORAGE_KEY) || 0);
+      const backgroundAt = backgroundedAtRef.current || stored || lastActivityAtRef.current;
+      const elapsed = backgroundAt ? Date.now() - backgroundAt : 0;
+
+      if (elapsed >= MOBILE_BACKGROUND_LOGOUT_MS) {
+        performAutomaticLogout();
+        return;
+      }
+
+      markUserActivity();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        handleBackgroundStart();
+      } else {
+        handleForegroundReturn();
+      }
+    };
+
+    activityEvents.forEach((eventName) => {
+      window.addEventListener(eventName, markUserActivity, { passive: true });
+    });
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pagehide", handleBackgroundStart);
+    window.addEventListener("pageshow", handleForegroundReturn);
+    window.addEventListener("focus", handleForegroundReturn);
+    window.addEventListener("blur", handleBackgroundStart);
+
+    markUserActivity();
+
+    return () => {
+      activityEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, markUserActivity);
+      });
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pagehide", handleBackgroundStart);
+      window.removeEventListener("pageshow", handleForegroundReturn);
+      window.removeEventListener("focus", handleForegroundReturn);
+      window.removeEventListener("blur", handleBackgroundStart);
+      clearSessionTimeoutTimers();
+    };
+  }, [markUserActivity, performAutomaticLogout, token]);
 
   if (!token) {
     return (
@@ -6910,6 +7067,35 @@ export default function App() {
               </button>
               <button type="button" className={pendingAction.tone === "danger" ? "danger" : ""} onClick={confirmPendingAction} disabled={Boolean(busyAction)}>
                 {pendingAction.confirmLabel}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {showSessionTimeoutWarning ? (
+        <div className="modal-backdrop" role="presentation">
+          <section
+            className="panel modal-card session-timeout-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="session-timeout-title"
+          >
+            <div className="section-head">
+              <h2 id="session-timeout-title">Session timeout warning</h2>
+              <span className="status-chip status-pending">Auto logout protection</span>
+            </div>
+            <p>Your session will expire in 5 minutes due to inactivity.</p>
+            <p className="muted">
+              Continue working to keep your CRM session active. Automatic logout in{" "}
+              <strong>{Math.max(0, sessionWarningCountdown)}</strong> seconds.
+            </p>
+            <div className="lead-actions">
+              <button type="button" className="secondary" onClick={continueWorkingSession}>
+                Continue Working
+              </button>
+              <button type="button" className="danger" onClick={handleLogout}>
+                Logout Now
               </button>
             </div>
           </section>
