@@ -2423,6 +2423,86 @@ export default function App() {
     () => (leads || []).filter((lead) => !normalizeText(lead.phone)).length,
     [leads]
   );
+  const dataQualityMonitor = useMemo(() => {
+    const groups = [
+      {
+        key: "product_master",
+        icon: "📦",
+        title: "Product Master",
+        issues: [
+          { label: "Missing company", count: inventorySummary?.missing_company_count ?? productHealthSummary.missingCompanyCount },
+          { label: "Missing size", count: inventorySummary?.missing_size_count ?? productHealthSummary.missingSizeCount },
+          { label: "Missing weight", count: inventorySummary?.missing_weight_count ?? productHealthSummary.missingWeightCount },
+          { label: "Missing packaging", count: inventorySummary?.missing_packaging_count ?? productHealthSummary.missingPackagingCount },
+          { label: "Missing pricing", count: inventorySummary?.missing_pricing_count ?? productHealthSummary.missingPricingCount },
+        ],
+      },
+      {
+        key: "customer_data",
+        icon: "👤",
+        title: "Customer Data",
+        issues: [{ label: "Missing mobile", count: customerMissingMobileCount }],
+      },
+      {
+        key: "approvals",
+        icon: "🧾",
+        title: "Approvals",
+        issues: [{ label: "Pending approvals", count: pendingInvoiceApprovalCount }],
+      },
+      {
+        key: "profitability",
+        icon: "💰",
+        title: "Profitability",
+        issues: [{ label: "Low margin items", count: productHealthSummary.lowMarginCount }],
+      },
+    ].map((group) => {
+      const issueCount = group.issues.reduce((sum, item) => sum + Number(item.count || 0), 0);
+      const tone = issueCount === 0 ? "healthy" : issueCount <= 5 ? "warning" : "critical";
+      return {
+        ...group,
+        issueCount,
+        tone,
+        statusLabel: issueCount === 0 ? "Healthy" : issueCount <= 5 ? "Needs Attention" : "Critical",
+      };
+    });
+
+    const priorityAlerts = groups
+      .flatMap((group) =>
+        group.issues
+          .filter((item) => Number(item.count || 0) > 0)
+          .map((item) => ({
+            ...item,
+            groupTitle: group.title,
+            tone: Number(item.count || 0) > 5 ? "critical" : "warning",
+          }))
+      )
+      .sort((left, right) => Number(right.count || 0) - Number(left.count || 0));
+
+    const totalIssues = groups.reduce((sum, group) => sum + group.issueCount, 0);
+    const score = Math.max(0, 100 - totalIssues);
+    const scoreTone = score >= 95 ? "healthy" : score >= 80 ? "warning" : "critical";
+    const scoreStatusLabel = score >= 95 ? "Excellent" : score >= 80 ? "Needs Attention" : "Critical";
+
+    return {
+      groups,
+      priorityAlerts,
+      totalIssues,
+      score,
+      scoreTone,
+      scoreStatusLabel,
+      allHealthy: totalIssues === 0,
+    };
+  }, [
+    customerMissingMobileCount,
+    inventorySummary,
+    pendingInvoiceApprovalCount,
+    productHealthSummary.lowMarginCount,
+    productHealthSummary.missingCompanyCount,
+    productHealthSummary.missingPackagingCount,
+    productHealthSummary.missingPricingCount,
+    productHealthSummary.missingSizeCount,
+    productHealthSummary.missingWeightCount,
+  ]);
   const expenseCategorySummary = useMemo(() => {
     const totals = new Map();
     (expenses || []).forEach((expense) => {
@@ -7418,54 +7498,119 @@ export default function App() {
           ) : null}
 
           <section className="content-grid">
-            <section className="panel">
+            <section className="panel full-span data-quality-monitor-panel">
               <div className="section-head">
                 <h2>Data quality monitor</h2>
-                <span>Fix the basics before costing and approvals scale up</span>
+                <span>Instant trust signal for master data, approvals, and margin discipline</span>
               </div>
-              <div className="stack">
-                <HighlightRow label="Products missing company" value={inventorySummary?.missing_company_count ?? productHealthSummary.missingCompanyCount} />
-                <HighlightRow label="Products missing size" value={inventorySummary?.missing_size_count ?? productHealthSummary.missingSizeCount} />
-                <HighlightRow label="Products missing weight" value={inventorySummary?.missing_weight_count ?? productHealthSummary.missingWeightCount} tone="danger" />
-                <HighlightRow label="Products missing pricing" value={inventorySummary?.missing_pricing_count ?? productHealthSummary.missingPricingCount} tone="danger" />
-                <HighlightRow label="Products missing packaging" value={inventorySummary?.missing_packaging_count ?? productHealthSummary.missingPackagingCount} />
-                <HighlightRow label="Customers missing mobile" value={customerMissingMobileCount} />
-                <HighlightRow label="Pending approvals" value={pendingInvoiceApprovalCount} tone="danger" />
-                <HighlightRow label="Low margin items" value={productHealthSummary.lowMarginCount} tone="danger" />
-              </div>
-              <div className="lead-actions">
-                <button type="button" className="secondary" onClick={() => setCurrentView("inventory")}>Open Product Master</button>
-                {visibleViews.some((view) => view.id === "billing") ? (
-                  <button type="button" className="secondary" onClick={() => setCurrentView("billing")}>Open Billing / Approval</button>
-                ) : null}
-                <button type="button" className="secondary" onClick={() => setCurrentView("pipeline")}>Open Leads</button>
-              </div>
-            </section>
 
-            <section className="panel">
-              <div className="section-head">
-                <h2>Foundation warnings</h2>
-                <span>Pricing should not be trusted until the product master is complete</span>
-              </div>
-              <div className="list">
-                {filteredProducts
-                  .filter((product) => getProductDataGaps(product).length)
-                  .slice(0, 5)
-                  .map((product) => (
-                    <article key={product.id} className="detail-card">
-                      <div className="section-head">
-                        <div>
-                          <h3>{product.name}</h3>
-                          <p className="muted">{getProductCompany(product) || "Company missing"} | {getProductSize(product) || "Size missing"}</p>
+              <div className="data-quality-hero-grid">
+                <article className={`data-quality-score-card tone-${dataQualityMonitor.scoreTone}`}>
+                  <span className="audience-tag">Data Quality Score</span>
+                  <div className="data-quality-score-row">
+                    <div>
+                      <h3>Data Quality Score</h3>
+                      <strong>{dataQualityMonitor.score}%</strong>
+                    </div>
+                    <span className={`status-chip data-quality-status-badge tone-${dataQualityMonitor.scoreTone}`}>
+                      {dataQualityMonitor.scoreTone === "healthy"
+                        ? "Excellent"
+                        : dataQualityMonitor.scoreTone === "warning"
+                          ? "Needs Attention"
+                          : "Critical"}
+                    </span>
+                  </div>
+                  <div className="data-quality-progress-track" aria-hidden="true">
+                    <span
+                      className={`data-quality-progress-fill tone-${dataQualityMonitor.scoreTone}`}
+                      style={{ width: `${dataQualityMonitor.score}%` }}
+                    />
+                  </div>
+                  <p className="muted">
+                    {dataQualityMonitor.allHealthy
+                      ? "All monitoring metrics are healthy right now."
+                      : `${dataQualityMonitor.totalIssues.toLocaleString("en-IN")} live issues are reducing master-data confidence.`}
+                  </p>
+                </article>
+
+                {dataQualityMonitor.allHealthy ? (
+                  <article className="data-quality-success-card">
+                    <strong>Data Quality Healthy</strong>
+                    <p>All required master data is complete.</p>
+                    <span>Costing, billing and approvals can be trusted.</span>
+                  </article>
+                ) : (
+                  <article className="data-quality-alerts-card">
+                    <div className="section-head">
+                      <h3>Priority alerts</h3>
+                      <span>Highest impact first</span>
+                    </div>
+                    <div className="stack">
+                      {dataQualityMonitor.priorityAlerts.slice(0, 6).map((alert) => (
+                        <div key={`${alert.groupTitle}-${alert.label}`} className={`data-quality-alert-row tone-${alert.tone}`}>
+                          <div>
+                            <strong>{alert.label}</strong>
+                            <span>{alert.groupTitle}</span>
+                          </div>
+                          <span className="legend-chip">{Number(alert.count || 0).toLocaleString("en-IN")}</span>
                         </div>
-                        <span className="legend-chip product-completeness-chip">{getProductCompletenessPercent(product)}%</span>
+                      ))}
+                    </div>
+                  </article>
+                )}
+              </div>
+
+              <div className="data-quality-category-grid">
+                {dataQualityMonitor.groups.map((group) => (
+                  <article key={group.key} className={`data-quality-category-card tone-${group.tone}`}>
+                    <div className="data-quality-category-head">
+                      <span className="data-quality-category-icon" aria-hidden="true">{group.icon}</span>
+                      <div>
+                        <h3>{group.title}</h3>
+                        <p>{group.statusLabel}</p>
                       </div>
-                      <p className="muted">Missing: {getProductDataGaps(product).map(formatProductDataGapLabel).join(", ")}</p>
-                    </article>
-                  ))}
-                {!filteredProducts.filter((product) => getProductDataGaps(product).length).length ? (
-                  <EmptyState title="Product master looks healthy" message="No immediate product data gaps are blocking costing prep." compact />
+                      <span className={`status-chip data-quality-issue-badge tone-${group.tone}`}>
+                        {group.issueCount === 0
+                          ? "0 Issues"
+                          : `${group.issueCount.toLocaleString("en-IN")} Issue${group.issueCount > 1 ? "s" : ""}`}
+                      </span>
+                    </div>
+                    <div className="data-quality-category-list">
+                      {group.issues.map((item) => (
+                        <div key={item.label} className="data-quality-category-item">
+                          <span>{item.label}</span>
+                          <strong>{Number(item.count || 0).toLocaleString("en-IN")}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                ))}
+              </div>
+
+              <div className="data-quality-action-grid">
+                <button type="button" className="data-quality-action-card" onClick={() => setCurrentView("inventory")}>
+                  <span className="data-quality-action-icon" aria-hidden="true">📦</span>
+                  <div>
+                    <strong>Product Master</strong>
+                    <span>Open -&gt;</span>
+                  </div>
+                </button>
+                {visibleViews.some((view) => view.id === "billing") ? (
+                  <button type="button" className="data-quality-action-card" onClick={() => setCurrentView("billing")}>
+                    <span className="data-quality-action-icon" aria-hidden="true">💳</span>
+                    <div>
+                      <strong>Billing &amp; Approval</strong>
+                      <span>Open -&gt;</span>
+                    </div>
+                  </button>
                 ) : null}
+                <button type="button" className="data-quality-action-card" onClick={() => setCurrentView("pipeline")}>
+                  <span className="data-quality-action-icon" aria-hidden="true">👥</span>
+                  <div>
+                    <strong>Leads</strong>
+                    <span>Open -&gt;</span>
+                  </div>
+                </button>
               </div>
             </section>
           </section>
