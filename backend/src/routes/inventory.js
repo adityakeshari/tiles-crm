@@ -7,6 +7,17 @@ const router = express.Router();
 const DEFAULT_LIST_LIMIT = 100;
 const MAX_LIST_LIMIT = 300;
 
+// Validates ":id" route params before they reach SQL. Non-numeric ids
+// (e.g. "/inventory/undefined" from a stale frontend state) previously hit
+// Postgres as NaN and surfaced as 500s; they are client errors, not server errors.
+function parseProductId(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0 || String(parsed) !== String(value).trim()) {
+    return null;
+  }
+  return parsed;
+}
+
 function normalizeDuplicateMatchValue(value) {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
@@ -379,7 +390,12 @@ router.post("/", requireRole("admin", "manager", "accounts", "operations", "oper
 });
 
 router.put("/:id", requireRole("admin", "manager"), async (req, res) => {
-  const { id } = req.params;
+  const id = parseProductId(req.params.id);
+
+  if (id === null) {
+    return res.status(400).json({ message: "Product id is invalid" });
+  }
+
   const validation = validateProductPayload(req.body);
 
   if (!validation.ok) {
@@ -389,7 +405,7 @@ router.put("/:id", requireRole("admin", "manager"), async (req, res) => {
   const product = validation.value;
 
   try {
-    const similarProduct = await findSimilarProduct(product, Number(id));
+    const similarProduct = await findSimilarProduct(product, id);
 
     if (similarProduct) {
       return res.status(409).json({
@@ -485,7 +501,11 @@ router.put("/:id", requireRole("admin", "manager"), async (req, res) => {
 });
 
 router.delete("/:id", requireRole("admin"), async (req, res) => {
-  const { id } = req.params;
+  const id = parseProductId(req.params.id);
+
+  if (id === null) {
+    return res.status(400).json({ message: "Product id is invalid" });
+  }
 
   try {
     const result = await query("DELETE FROM products WHERE id = $1 RETURNING id", [id]);
@@ -501,3 +521,4 @@ router.delete("/:id", requireRole("admin"), async (req, res) => {
 });
 
 export default router;
+

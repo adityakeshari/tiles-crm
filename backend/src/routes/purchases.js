@@ -226,7 +226,7 @@ async function syncPurchaseInventory(client, purchase, direction) {
 
   await client.query(
     `UPDATE products
-     SET stock_sqft = GREATEST(stock_sqft + $1, 0)
+     SET stock_sqft = GREATEST(COALESCE(stock_sqft, 0) + $1, 0)
      WHERE id = $2`,
     [direction * quantity, product.id]
   );

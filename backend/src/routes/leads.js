@@ -16,6 +16,23 @@ const DEFAULT_LIST_LIMIT = 100;
 const MAX_LIST_LIMIT = 300;
 const DASHBOARD_TTL_MS = 3000;
 
+// Centralized numeric-id validation for every ":id"-style route param.
+// Non-numeric values (stale frontend state, manual URLs) previously reached
+// Postgres and produced 500s; they are client errors and now return 400.
+function numericParamValidator(paramName) {
+  return (req, res, next, value) => {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isInteger(parsed) || parsed <= 0 || String(parsed) !== String(value).trim()) {
+      return res.status(400).json({ message: `Invalid ${paramName} in URL` });
+    }
+    return next();
+  };
+}
+
+for (const paramName of ["id", "leadId", "followupId", "taskId", "quotationId"]) {
+  router.param(paramName, numericParamValidator(paramName));
+}
+
 function clampNumber(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
@@ -754,18 +771,24 @@ router.post("/:id/quotations", async (req, res) => {
         continue;
       }
 
+      // FOR UPDATE locks the row inside this transaction so two concurrent
+      // approvals cannot both pass the stock check and oversell the same stock.
       const productResult = await client.query(
-        "SELECT * FROM products WHERE id = $1 LIMIT 1",
+        "SELECT * FROM products WHERE id = $1 LIMIT 1 FOR UPDATE",
         [item.product_id]
       );
       const product = productResult.rows[0];
 
       if (!product) {
-        throw new Error(`Inventory product ${item.product_id} not found`);
+        const missingError = new Error(`Inventory product ${item.product_id} not found`);
+        missingError.statusCode = 409;
+        throw missingError;
       }
 
-      if (quotation.status === "approved" && product.stock_sqft < item.quantity_sqft) {
-        throw new Error(`Insufficient stock for ${product.name}`);
+      if (quotation.status === "approved" && Number(product.stock_sqft || 0) < item.quantity_sqft) {
+        const stockError = new Error(`Insufficient stock for ${product.name}`);
+        stockError.statusCode = 409;
+        throw stockError;
       }
 
       resolvedItems.push({
@@ -816,7 +839,7 @@ router.post("/:id/quotations", async (req, res) => {
       if (quotation.status === "approved" && item.product_id) {
         await client.query(
           `UPDATE products
-           SET stock_sqft = stock_sqft - $1
+           SET stock_sqft = GREATEST(COALESCE(stock_sqft, 0) - $1, 0)
            WHERE id = $2`,
           [item.quantity_sqft, item.product_id]
         );
@@ -833,7 +856,7 @@ router.post("/:id/quotations", async (req, res) => {
     });
   } catch (error) {
     await client.query("ROLLBACK");
-    return res.status(500).json({ message: "Unable to create quotation", error: error.message });
+    return res.status(error.statusCode || 500).json({ message: "Unable to create quotation", error: error.message });
   } finally {
     invalidateCachePrefix("leads:");
     client.release();

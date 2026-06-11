@@ -554,7 +554,7 @@ async function applyLotInventory(client, lotDetail, direction) {
     if (direction > 0) {
       await client.query(
         `UPDATE products
-         SET stock_sqft = stock_sqft + $1,
+         SET stock_sqft = GREATEST(COALESCE(stock_sqft, 0) + $1, 0),
              last_purchase_rate = $2,
              landed_cost_per_unit = $3,
              minimum_allowed_rate = $4,
@@ -579,7 +579,7 @@ async function applyLotInventory(client, lotDetail, direction) {
     } else {
       await client.query(
         `UPDATE products
-         SET stock_sqft = GREATEST(stock_sqft - $1, 0),
+         SET stock_sqft = GREATEST(COALESCE(stock_sqft, 0) - $1, 0),
              cost_updated_at = CURRENT_TIMESTAMP
          WHERE id = $2`,
         [netUsableQuantity, item.product_id]

@@ -348,13 +348,18 @@ async function assertInventoryAvailability(client, items) {
     const product = productMap.get(item.product_id);
 
     if (!product) {
-      throw new Error(`Inventory product missing for item ${item.product_name}`);
+      const missingError = new Error(`Inventory product missing for item ${item.product_name}`);
+      missingError.statusCode = 409;
+      throw missingError;
     }
 
     const quantity = Math.round(Number(item.quantity || 0));
 
     if (quantity > Number(product.stock_sqft || 0)) {
-      throw new Error(`Insufficient stock for ${product.name}. Available ${product.stock_sqft}, required ${quantity}.`);
+      // Business-rule rejection, not a server failure: surfaced as 409 instead of 500.
+      const stockError = new Error(`Insufficient stock for ${product.name}. Available ${product.stock_sqft ?? 0}, required ${quantity}.`);
+      stockError.statusCode = 409;
+      throw stockError;
     }
   }
 }
@@ -370,9 +375,11 @@ async function applyInventoryDelta(client, items, direction) {
       continue;
     }
 
+    // COALESCE: a NULL stock_sqft would otherwise stay NULL forever (NULL + x = NULL).
+    // GREATEST: deductions can never push stock below zero even under concurrent writes.
     await client.query(
       `UPDATE products
-       SET stock_sqft = stock_sqft + $1
+       SET stock_sqft = GREATEST(COALESCE(stock_sqft, 0) + $1, 0)
        WHERE id = $2`,
       [direction * quantity, item.product_id]
     );
@@ -951,7 +958,7 @@ router.post(
       return res.status(201).json(detail);
     } catch (error) {
       await client.query("ROLLBACK");
-      return res.status(500).json({ message: "Unable to create invoice", error: error.message });
+      return res.status(error.statusCode || 500).json({ message: "Unable to create invoice", error: error.message });
     } finally {
       client.release();
     }
@@ -1103,7 +1110,7 @@ router.put(
       return res.json(detail);
     } catch (error) {
       await client.query("ROLLBACK");
-      return res.status(500).json({ message: "Unable to update invoice", error: error.message });
+      return res.status(error.statusCode || 500).json({ message: "Unable to update invoice", error: error.message });
     } finally {
       client.release();
     }

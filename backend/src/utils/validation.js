@@ -97,6 +97,13 @@ const complaintStatuses = new Set([
 ]);
 const complaintPriorities = new Set(["low", "medium", "high", "urgent"]);
 
+// Guards every validator against missing/non-object bodies (e.g. requests with
+// no Content-Type header leave req.body undefined). Without this, property
+// access inside validators throws a TypeError that surfaces as a 500.
+function ensureObjectPayload(payload) {
+  return payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
+}
+
 function normalizeString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -118,6 +125,7 @@ function toInteger(value, fallback = 0) {
 }
 
 export function validateLeadPayload(payload) {
+  payload = ensureObjectPayload(payload);
   const name = normalizeString(payload.name);
   const phone = normalizeString(payload.phone);
   const location = normalizeOptionalString(payload.location);
@@ -1432,6 +1440,7 @@ export function validateDealerPayload(payload) {
 }
 
 export function validateProductPayload(payload) {
+  payload = ensureObjectPayload(payload);
   const name = normalizeString(payload.name);
   const company_name = normalizeOptionalString(payload.company_name);
   const design_code = normalizeOptionalString(payload.design_code);

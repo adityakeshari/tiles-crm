@@ -1842,6 +1842,7 @@ export default function App() {
   const [stats, setStats] = useState(null);
   const [followupBoard, setFollowupBoard] = useState([]);
   const [selectedLead, setSelectedLead] = useState(null);
+  const [createLeadMode, setCreateLeadMode] = useState(false);
   const [editingLead, setEditingLead] = useState(emptyLead);
   const [followups, setFollowups] = useState([]);
   const [payments, setPayments] = useState([]);
@@ -3252,13 +3253,14 @@ export default function App() {
   );
 
   const summaryCards = useMemo(() => {
+    // Dashboard de-clutter: keep the shared tail short. Plumbing value and
+    // fast-moving SKU counts live inside their own modules (Plumbing, Inventory)
+    // where they have context and actions; they added noise here.
     const baseCards = [
       { label: "Today Walk-ins", value: focusStats.todayWalkins },
       { label: "Open Leads", value: focusStats.openLeads },
       { label: "Conversion %", value: `${focusStats.conversionRate}%` },
       { label: "Collected Value", value: `Rs ${focusStats.collectedValue}` },
-      { label: "Plumbing Value", value: `Rs ${focusStats.plumbingValue}` },
-      { label: "Fast-moving SKUs", value: focusStats.fastMovingSkuCount },
     ];
 
     if (workspaceFilter === "operations") {
@@ -3318,14 +3320,16 @@ export default function App() {
       },
     ].filter(Boolean);
 
+    // Owner view keeps only the 8 decision KPIs plus two trend numbers.
+    // Dropped duplicates: "New Leads" already equals "Today Walk-ins" and
+    // "Hot Leads" equals "Open Leads" from baseCards, so baseCards is omitted.
+    // Module-level counts (Sales/Operations Leads, Open Ops Tasks) moved to
+    // their own modules where they are actionable.
     return [
       ...priorityCards,
       { label: "Overdue Follow-ups", value: focusStats.overdueFollowups },
       { label: "Monthly Revenue", value: `Rs ${stats?.monthly_revenue ?? 0}` },
-      { label: "Sales Leads", value: focusStats.salesLeads },
-      { label: "Operations Leads", value: focusStats.operationsLeads },
-      { label: "Open Ops Tasks", value: focusStats.openOpsTasks },
-      ...baseCards,
+      { label: "Conversion %", value: `${focusStats.conversionRate}%` },
     ];
   }, [focusStats, workspaceFilter, stats?.monthly_revenue, dashboardSummary]);
 
@@ -3380,10 +3384,34 @@ export default function App() {
 
   function openNewLeadFlow() {
     setSelectedLead(null);
+    setCreateLeadMode(true);
     setEditingLead(emptyLead);
     setLeadForm(emptyLead);
     setLeadFormErrors({});
-    setCurrentView("overview");
+    setCurrentView("pipeline");
+  }
+
+  function closeNewLeadFlow() {
+    setCreateLeadMode(false);
+    setSelectedLead(null);
+    setEditingLead(emptyLead);
+    setLeadForm(emptyLead);
+    setLeadFormErrors({});
+  }
+
+  function handleSelectLead(lead) {
+    setCreateLeadMode(false);
+    setSelectedLead(lead);
+  }
+
+  function handleSelectView(viewId) {
+    if (viewId === "pipeline" || viewId === "followups") {
+      setCreateLeadMode(false);
+      setSelectedLead(null);
+      setEditingLead(emptyLead);
+    }
+
+    setCurrentView(viewId);
   }
 
   function syncSelectedProjectState(nextProjects) {
@@ -3424,6 +3452,33 @@ export default function App() {
     const usersData = await api.getUsers(createRequestOptions(signal, 12000));
     setUsers(usersData || []);
     return usersData || [];
+  }
+
+  async function loadPurchaseCostingData(requestOptions) {
+    const costingData = await api
+      .getPurchaseCostingDashboard({
+        ...requestOptions,
+        limit: listLimits.purchaseLots,
+        search: purchaseLotSearch,
+        status: purchaseLotStatusFilter === "all" ? "" : purchaseLotStatusFilter,
+      })
+      .catch(() => ({ lots: [], summary: null, reports: {}, references: { products: [] } }));
+    setPurchaseLots(costingData.lots || []);
+    setPurchaseCostingSummary(costingData.summary || null);
+    setPurchaseCostingReports(costingData.reports || {});
+    setPurchaseCostingReferences(costingData.references || { products: [] });
+    setSelectedPurchaseLot((current) => {
+      if (!costingData.lots?.length) {
+        return null;
+      }
+
+      if (current) {
+        const matchingLot = costingData.lots.find((lot) => lot.id === current.id);
+        return matchingLot ? { ...current, ...matchingLot } : costingData.lots[0];
+      }
+
+      return costingData.lots[0];
+    });
   }
 
   async function loadDashboard(options = {}) {
@@ -3661,31 +3716,15 @@ export default function App() {
         setPurchaseSummary(purchasesData.summary || null);
         setProducts(inventoryData.products || []);
         setSuppliers(Array.isArray(suppliersData) ? suppliersData : []);
+
+        // The "costing" tab lives inside the Purchase Center view but has its
+        // own dataset. Without this, the tab opened empty until the user
+        // performed a costing action (which force-reloaded it).
+        if (purchaseWorkspaceTab === "costing") {
+          await loadPurchaseCostingData(requestOptions);
+        }
       } else if (view === "purchase_costing") {
-        const costingData = await api
-          .getPurchaseCostingDashboard({
-            ...requestOptions,
-            limit: listLimits.purchaseLots,
-            search: purchaseLotSearch,
-            status: purchaseLotStatusFilter === "all" ? "" : purchaseLotStatusFilter,
-          })
-          .catch(() => ({ lots: [], summary: null, reports: {}, references: { products: [] } }));
-        setPurchaseLots(costingData.lots || []);
-        setPurchaseCostingSummary(costingData.summary || null);
-        setPurchaseCostingReports(costingData.reports || {});
-        setPurchaseCostingReferences(costingData.references || { products: [] });
-        setSelectedPurchaseLot((current) => {
-          if (!costingData.lots?.length) {
-            return null;
-          }
-
-          if (current) {
-            const matchingLot = costingData.lots.find((lot) => lot.id === current.id);
-            return matchingLot ? { ...current, ...matchingLot } : costingData.lots[0];
-          }
-
-          return costingData.lots[0];
-        });
+        await loadPurchaseCostingData(requestOptions);
       } else if (view === "billing") {
         const billingData = await api
           .getBillingDashboard({
@@ -3780,6 +3819,7 @@ export default function App() {
     purchasePaymentFilter,
     purchaseLotSearch,
     purchaseLotStatusFilter,
+    purchaseWorkspaceTab,
     billingSearch,
     billingStatusFilter,
     billingPaymentFilter,
@@ -3841,6 +3881,7 @@ export default function App() {
     purchasePaymentFilter,
     purchaseLotSearch,
     purchaseLotStatusFilter,
+    purchaseWorkspaceTab,
     billingSearch,
     billingStatusFilter,
     billingPaymentFilter,
@@ -3851,6 +3892,12 @@ export default function App() {
     token,
     user?.id,
   ]);
+
+  useEffect(() => {
+    if (currentView !== "pipeline") {
+      setCreateLeadMode(false);
+    }
+  }, [currentView]);
 
   useEffect(() => {
     if (selectedLead) {
@@ -3979,6 +4026,8 @@ export default function App() {
       await api.createLead(normalizeLeadPayload(leadForm));
       setLeadForm(emptyLead);
       setLeadFormErrors({});
+      setCreateLeadMode(false);
+      setSelectedLead(null);
       await loadDashboard();
     }, "Lead saved.");
   }
@@ -7231,7 +7280,7 @@ export default function App() {
           visibleViews={visibleViews}
           isAdminUser={isAdmin(user)}
           currentView={currentView}
-          onSelectView={setCurrentView}
+          onSelectView={handleSelectView}
           isMobileSidebar={isMobileSidebar}
           isSidebarMobileOpen={isSidebarMobileOpen}
           isSidebarCollapsed={isSidebarCollapsed}
@@ -7355,31 +7404,10 @@ export default function App() {
                 />
               ) : (
                 <>
+                  {/* Dashboard de-clutter: Today's Sales / Collection / Outstanding
+                      were removed from this panel because the same three numbers
+                      already lead the KPI cards at the top of the page. */}
                   <div className="report-grid">
-                    <article className="detail-card">
-                      <span className="audience-tag">Row 1</span>
-                      <h3>Today's Sales</h3>
-                      <p>{formatCurrency(dashboardSummary?.sales_today?.amount || 0)}</p>
-                      <div className="chip-row">
-                        <span className="legend-chip">Dashboard summary</span>
-                      </div>
-                    </article>
-                    <article className="detail-card">
-                      <span className="audience-tag">Row 1</span>
-                      <h3>Today's Collection</h3>
-                      <p>{formatCurrency(dashboardSummary?.collection_today?.amount || 0)}</p>
-                      <div className="chip-row">
-                        <span className="legend-chip">Dashboard summary</span>
-                      </div>
-                    </article>
-                    <article className="detail-card">
-                      <span className="audience-tag">Row 1</span>
-                      <h3>Outstanding Amount</h3>
-                      <p>{formatCurrency(dashboardSummary?.pending_payments?.amount || 0)}</p>
-                      <div className="chip-row">
-                        <span className="legend-chip">Existing dashboard source</span>
-                      </div>
-                    </article>
                     <article className="detail-card">
                       <span className="audience-tag">Row 1</span>
                       <h3>Open Complaints</h3>
@@ -7604,7 +7632,7 @@ export default function App() {
                     </div>
                   </button>
                 ) : null}
-                <button type="button" className="data-quality-action-card" onClick={() => setCurrentView("pipeline")}>
+                <button type="button" className="data-quality-action-card" onClick={() => handleSelectView("pipeline")}>
                   <span className="data-quality-action-icon" aria-hidden="true">👥</span>
                   <div>
                     <strong>Leads</strong>
@@ -7627,21 +7655,9 @@ export default function App() {
                     : `${todaysFollowups.length} today`}
                 </span>
               </div>
-              <div className="stack">
-                {workspaceFilter === "operations" ? (
-                  <>
-                    <HighlightRow label="Open tasks" value={focusStats.openOpsTasks} />
-                    <HighlightRow label="Delayed" value={focusStats.delayedOpsTasks} tone="danger" />
-                    <HighlightRow label="Completed" value={focusStats.completedOpsTasks} tone="accent" />
-                  </>
-                ) : (
-                  <>
-                    <HighlightRow label="Pending" value={focusStats.pendingFollowups} />
-                    <HighlightRow label="Overdue" value={focusStats.overdueFollowups} tone="danger" />
-                    <HighlightRow label="Due today" value={focusStats.dueToday} tone="accent" />
-                  </>
-                )}
-              </div>
+              {/* Dashboard de-clutter: the pending/overdue/due-today highlight rows
+                  duplicated the KPI cards above; this panel now goes straight to
+                  the actionable item list. */}
               <div className="mini-list">
                 {workspaceFilter === "operations"
                   ? focusedOperationsBoard.slice(0, 4).map((task) => (
@@ -7652,7 +7668,7 @@ export default function App() {
                         onClick={() => {
                           const target = leads.find((lead) => lead.id === task.lead_id);
                           if (target) {
-                            setSelectedLead(target);
+                            handleSelectLead(target);
                             setCurrentView("pipeline");
                           }
                         }}
@@ -7670,7 +7686,7 @@ export default function App() {
                         onClick={() => {
                           const target = leads.find((lead) => lead.id === item.lead_id);
                           if (target) {
-                            setSelectedLead(target);
+                            handleSelectLead(target);
                             setCurrentView("followups");
                           }
                         }}
@@ -7711,6 +7727,7 @@ export default function App() {
             filteredLeads={filteredLeads}
             selectedLead={selectedLead}
             setSelectedLead={setSelectedLead}
+            onSelectLead={handleSelectLead}
             setCurrentView={setCurrentView}
             isAdmin={isAdmin}
             user={user}
@@ -7719,6 +7736,13 @@ export default function App() {
             normalizeUserRoles={normalizeUserRoles}
             editingLead={editingLead}
             setEditingLead={setEditingLead}
+            createLeadMode={createLeadMode}
+            leadForm={leadForm}
+            setLeadForm={setLeadForm}
+            leadFormErrors={leadFormErrors}
+            setLeadFormErrors={setLeadFormErrors}
+            handleCreateLead={handleCreateLead}
+            closeNewLeadFlow={closeNewLeadFlow}
             users={users}
             followupForm={followupForm}
             setFollowupForm={setFollowupForm}
@@ -7773,6 +7797,10 @@ export default function App() {
             getQuotationPdfUrl={getQuotationPdfUrl}
             followupTypes={followupTypes}
             paymentTypes={paymentTypes}
+            customerTypes={customerTypes}
+            requirementCategories={requirementCategories}
+            timelines={timelines}
+            leadSources={leadSources}
             plumbingWorkTypes={plumbingWorkTypes}
             plumbingJobStatuses={plumbingJobStatuses}
             clearFieldErrorFromEvent={clearFieldErrorFromEvent}
@@ -7970,8 +7998,10 @@ export default function App() {
                   onOpenLead={() => {
                     const target = leads.find((lead) => lead.id === job.lead_id);
                     if (target) {
-                      setSelectedLead(target);
-                      setCurrentView("overview");
+                      // Open the lead inside the lead workspace (pipeline view),
+                      // not the dashboard, which has no lead details panel.
+                      handleSelectLead(target);
+                      setCurrentView("pipeline");
                     }
                   }}
                   showLeadLink
@@ -8125,8 +8155,6 @@ export default function App() {
           />
         </Suspense>
       ) : null}
-
-      {currentView === "purchase_costing" ? null : null}
 
       {currentView === "expenses" ? (
         <section className="stack workspace-stack">

@@ -487,6 +487,7 @@ export default function LeadWorkspaceSection(props) {
     filteredLeads,
     selectedLead,
     setSelectedLead,
+    onSelectLead = () => {},
     setCurrentView,
     isAdmin,
     user,
@@ -495,6 +496,13 @@ export default function LeadWorkspaceSection(props) {
     normalizeUserRoles,
     editingLead,
     setEditingLead,
+    createLeadMode = false,
+    leadForm,
+    setLeadForm,
+    leadFormErrors = {},
+    setLeadFormErrors = () => {},
+    handleCreateLead,
+    closeNewLeadFlow = () => {},
     users,
     followupForm,
     setFollowupForm,
@@ -547,6 +555,10 @@ export default function LeadWorkspaceSection(props) {
     buildVisitReminderMessage,
     buildQuotationWhatsAppMessage,
     getQuotationPdfUrl,
+    customerTypes = [],
+    requirementCategories = [],
+    timelines = [],
+    leadSources = [],
     followupTypes,
     paymentTypes,
     plumbingWorkTypes,
@@ -591,7 +603,7 @@ export default function LeadWorkspaceSection(props) {
                 key={lead.id}
                 lead={lead}
                 selected={selectedLead?.id === lead.id}
-                onSelect={() => setSelectedLead(lead)}
+                onSelect={() => onSelectLead(lead)}
                 canDelete={isAdmin(user)}
                 formatDateTime={formatDateTime}
                 onDelete={() =>
@@ -682,7 +694,7 @@ export default function LeadWorkspaceSection(props) {
                     </div>
                     <div className="stack">
                       {column.leads.map((lead) => (
-                        <article key={lead.id} className={`lead-card compact-card ${selectedLead?.id === lead.id ? "active" : ""}`} onClick={() => setSelectedLead(lead)}>
+                        <article key={lead.id} className={`lead-card compact-card ${selectedLead?.id === lead.id ? "active" : ""}`} onClick={() => onSelectLead(lead)}>
                           <strong>{lead.name}</strong>
                           <small className="muted lead-card-line">{lead.phone} | {lead.location || "No area"}</small>
                           <small className="muted lead-card-line">
@@ -704,56 +716,207 @@ export default function LeadWorkspaceSection(props) {
           )}
         </section>
 
-        <LeadDetailsPanel
-          className="lead-details-panel-pipeline"
-          selectedLead={selectedLead}
-          userRoles={normalizeUserRoles(user)}
-          editingLead={editingLead}
-          setEditingLead={setEditingLead}
-          users={users}
-          followupForm={followupForm}
-          setFollowupForm={setFollowupForm}
-          paymentForm={paymentForm}
-          setPaymentForm={setPaymentForm}
-          quotationForm={quotationForm}
-          setQuotationForm={setQuotationForm}
-          followups={followups}
-          payments={payments}
-          quotations={quotations}
-          operationsTasks={operationsTasks}
-          plumbingJobs={leadPlumbingJobs}
-          plumbers={plumbers}
-          plumbingJobForm={plumbingJobForm}
-          setPlumbingJobForm={setPlumbingJobForm}
-          plumbingMaterialDrafts={plumbingMaterialDrafts}
-          updatePlumbingMaterialDraft={updatePlumbingMaterialDraft}
-          products={products}
-          handleUpdateLead={handleUpdateLead}
-          handleCreateFollowup={handleCreateFollowup}
-          handleCreatePayment={handleCreatePayment}
-          handleCreateOperationsTask={handleCreateOperationsTask}
-          handleCreateQuotation={handleCreateQuotation}
-          handleCreatePlumbingJob={handleCreatePlumbingJob}
-          handleUpdatePlumbingJobStatus={requestPlumbingJobComplete}
-          handleAddPlumbingMaterial={handleAddPlumbingMaterial}
-          operationsTaskForm={operationsTaskForm}
-          setOperationsTaskForm={setOperationsTaskForm}
-          updateQuotationItem={updateQuotationItem}
-          addQuotationItem={addQuotationItem}
-          addInventoryProductToQuote={addInventoryProductToQuote}
-          busyAction={busyAction}
-          followupTypes={followupTypes}
-          paymentTypes={paymentTypes}
-          plumbingWorkTypes={plumbingWorkTypes}
-          plumbingJobStatuses={plumbingJobStatuses}
-          labelize={labelize}
-          formatDateTime={formatDateTime}
-          shareOnWhatsApp={shareOnWhatsApp}
-          buildFollowupWhatsAppMessage={buildFollowupWhatsAppMessage}
-          buildVisitReminderMessage={buildVisitReminderMessage}
-          buildQuotationWhatsAppMessage={buildQuotationWhatsAppMessage}
-          getQuotationPdfUrl={getQuotationPdfUrl}
-        />
+        {createLeadMode ? (
+          <section className="panel lead-create-panel">
+            <div className="section-head">
+              <h2>Create New Lead</h2>
+              <span>Use the existing lead flow without selecting any current customer.</span>
+            </div>
+            <form
+              className="form-grid"
+              onSubmit={handleCreateLead}
+              onInputCapture={(event) => clearFieldErrorFromEvent(event, setLeadFormErrors)}
+              onChangeCapture={(event) => clearFieldErrorFromEvent(event, setLeadFormErrors)}
+            >
+              <div className="form-field">
+                <input
+                  data-field="name"
+                  className={getFieldErrorClass(leadFormErrors, "name")}
+                  placeholder="Customer name"
+                  value={leadForm.name}
+                  onChange={(event) => setLeadForm({ ...leadForm, name: event.target.value })}
+                />
+                {leadFormErrors.name ? <span className="field-error-message">{leadFormErrors.name}</span> : null}
+              </div>
+              <div className="form-field">
+                <input
+                  data-field="phone"
+                  className={getFieldErrorClass(leadFormErrors, "phone")}
+                  placeholder="Phone"
+                  value={leadForm.phone}
+                  onChange={(event) => setLeadForm({ ...leadForm, phone: event.target.value })}
+                />
+                {leadFormErrors.phone ? <span className="field-error-message">{leadFormErrors.phone}</span> : null}
+              </div>
+              <input
+                placeholder="Location"
+                value={leadForm.location}
+                onChange={(event) => setLeadForm({ ...leadForm, location: event.target.value })}
+              />
+              <select
+                value={leadForm.department}
+                onChange={(event) => setLeadForm({ ...leadForm, department: event.target.value })}
+              >
+                <option value="sales">Sales</option>
+                <option value="operations">Operations</option>
+              </select>
+              <select
+                value={leadForm.business_unit}
+                onChange={(event) => setLeadForm({ ...leadForm, business_unit: event.target.value })}
+              >
+                <option value="tiles">Tiles</option>
+                <option value="plumbing">Plumbing</option>
+                <option value="both">Tiles + Plumbing</option>
+              </select>
+              <select
+                value={leadForm.customer_type}
+                onChange={(event) => setLeadForm({ ...leadForm, customer_type: event.target.value })}
+              >
+                {customerTypes.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={leadForm.requirement_category}
+                onChange={(event) => setLeadForm({ ...leadForm, requirement_category: event.target.value })}
+              >
+                {requirementCategories.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+              <div className="form-field">
+                <input
+                  data-field="budget"
+                  className={getFieldErrorClass(leadFormErrors, "budget")}
+                  type="number"
+                  placeholder="Budget"
+                  value={leadForm.budget}
+                  onChange={(event) => setLeadForm({ ...leadForm, budget: event.target.value })}
+                />
+                {leadFormErrors.budget ? <span className="field-error-message">{leadFormErrors.budget}</span> : null}
+              </div>
+              <select
+                value={leadForm.timeline}
+                onChange={(event) => setLeadForm({ ...leadForm, timeline: event.target.value })}
+              >
+                {timelines.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={leadForm.lead_source}
+                onChange={(event) => setLeadForm({ ...leadForm, lead_source: event.target.value })}
+              >
+                {leadSources.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={leadForm.status}
+                onChange={(event) => setLeadForm({ ...leadForm, status: event.target.value })}
+              >
+                {leadStatuses.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={leadForm.assigned_to}
+                onChange={(event) => setLeadForm({ ...leadForm, assigned_to: event.target.value })}
+              >
+                <option value="">Unassigned</option>
+                {users.map((teamMember) => (
+                  <option key={teamMember.id} value={teamMember.id}>
+                    {teamMember.name}
+                  </option>
+                ))}
+              </select>
+              <div className="form-field full-span">
+                <textarea
+                  data-field="requirement"
+                  className={getFieldErrorClass(leadFormErrors, "requirement")}
+                  placeholder="Requirement details"
+                  value={leadForm.requirement}
+                  onChange={(event) => setLeadForm({ ...leadForm, requirement: event.target.value })}
+                />
+                {leadFormErrors.requirement ? <span className="field-error-message">{leadFormErrors.requirement}</span> : null}
+              </div>
+              <div className="lead-actions full-span">
+                <button className="accent" type="submit" disabled={busyAction === "save-lead"}>
+                  {busyAction === "save-lead" ? "Saving Lead..." : "Save Lead"}
+                </button>
+                <button type="button" className="secondary" onClick={closeNewLeadFlow}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </section>
+        ) : selectedLead ? (
+          <LeadDetailsPanel
+            className="lead-details-panel-pipeline"
+            selectedLead={selectedLead}
+            userRoles={normalizeUserRoles(user)}
+            editingLead={editingLead}
+            setEditingLead={setEditingLead}
+            users={users}
+            followupForm={followupForm}
+            setFollowupForm={setFollowupForm}
+            paymentForm={paymentForm}
+            setPaymentForm={setPaymentForm}
+            quotationForm={quotationForm}
+            setQuotationForm={setQuotationForm}
+            followups={followups}
+            payments={payments}
+            quotations={quotations}
+            operationsTasks={operationsTasks}
+            plumbingJobs={leadPlumbingJobs}
+            plumbers={plumbers}
+            plumbingJobForm={plumbingJobForm}
+            setPlumbingJobForm={setPlumbingJobForm}
+            plumbingMaterialDrafts={plumbingMaterialDrafts}
+            updatePlumbingMaterialDraft={updatePlumbingMaterialDraft}
+            products={products}
+            handleUpdateLead={handleUpdateLead}
+            handleCreateFollowup={handleCreateFollowup}
+            handleCreatePayment={handleCreatePayment}
+            handleCreateOperationsTask={handleCreateOperationsTask}
+            handleCreateQuotation={handleCreateQuotation}
+            handleCreatePlumbingJob={handleCreatePlumbingJob}
+            handleUpdatePlumbingJobStatus={requestPlumbingJobComplete}
+            handleAddPlumbingMaterial={handleAddPlumbingMaterial}
+            operationsTaskForm={operationsTaskForm}
+            setOperationsTaskForm={setOperationsTaskForm}
+            updateQuotationItem={updateQuotationItem}
+            addQuotationItem={addQuotationItem}
+            addInventoryProductToQuote={addInventoryProductToQuote}
+            busyAction={busyAction}
+            followupTypes={followupTypes}
+            paymentTypes={paymentTypes}
+            plumbingWorkTypes={plumbingWorkTypes}
+            plumbingJobStatuses={plumbingJobStatuses}
+            labelize={labelize}
+            formatDateTime={formatDateTime}
+            shareOnWhatsApp={shareOnWhatsApp}
+            buildFollowupWhatsAppMessage={buildFollowupWhatsAppMessage}
+            buildVisitReminderMessage={buildVisitReminderMessage}
+            buildQuotationWhatsAppMessage={buildQuotationWhatsAppMessage}
+            getQuotationPdfUrl={getQuotationPdfUrl}
+          />
+        ) : (
+          <section className="panel lead-details-panel lead-details-panel-pipeline">
+            <h2>Lead workspace</h2>
+            <p className="muted">Select a lead to view details, or click + New Lead to create one.</p>
+          </section>
+        )}
       </section>
     );
   }
@@ -792,8 +955,7 @@ export default function LeadWorkspaceSection(props) {
                     onClick={() => {
                       const target = leads.find((lead) => lead.id === item.lead_id);
                       if (target) {
-                        setSelectedLead(target);
-                        setCurrentView("overview");
+                        onSelectLead(target);
                       }
                     }}
                   >
@@ -810,6 +972,66 @@ export default function LeadWorkspaceSection(props) {
             {focusedFollowupBoard.length === 0 ? <EmptyState title="No follow-ups pending" message="Your calls, WhatsApp nudges, and reminders will appear here automatically." /> : null}
           </div>
         </section>
+
+        {selectedLead ? (
+          <LeadDetailsPanel
+            className="lead-details-panel-pipeline"
+            selectedLead={selectedLead}
+            userRoles={normalizeUserRoles(user)}
+            editingLead={editingLead}
+            setEditingLead={setEditingLead}
+            users={users}
+            followupForm={followupForm}
+            setFollowupForm={setFollowupForm}
+            paymentForm={paymentForm}
+            setPaymentForm={setPaymentForm}
+            quotationForm={quotationForm}
+            setQuotationForm={setQuotationForm}
+            followups={followups}
+            payments={payments}
+            quotations={quotations}
+            operationsTasks={operationsTasks}
+            plumbingJobs={leadPlumbingJobs}
+            plumbers={plumbers}
+            plumbingJobForm={plumbingJobForm}
+            setPlumbingJobForm={setPlumbingJobForm}
+            plumbingMaterialDrafts={plumbingMaterialDrafts}
+            updatePlumbingMaterialDraft={updatePlumbingMaterialDraft}
+            products={products}
+            handleUpdateLead={handleUpdateLead}
+            handleCreateFollowup={handleCreateFollowup}
+            handleCreatePayment={handleCreatePayment}
+            handleCreateOperationsTask={handleCreateOperationsTask}
+            handleCreateQuotation={handleCreateQuotation}
+            handleCreatePlumbingJob={handleCreatePlumbingJob}
+            handleUpdatePlumbingJobStatus={requestPlumbingJobComplete}
+            handleAddPlumbingMaterial={handleAddPlumbingMaterial}
+            operationsTaskForm={operationsTaskForm}
+            setOperationsTaskForm={setOperationsTaskForm}
+            updateQuotationItem={updateQuotationItem}
+            addQuotationItem={addQuotationItem}
+            addInventoryProductToQuote={addInventoryProductToQuote}
+            busyAction={busyAction}
+            followupTypes={followupTypes}
+            paymentTypes={paymentTypes}
+            plumbingWorkTypes={plumbingWorkTypes}
+            plumbingJobStatuses={plumbingJobStatuses}
+            labelize={labelize}
+            formatDateTime={formatDateTime}
+            shareOnWhatsApp={shareOnWhatsApp}
+            buildFollowupWhatsAppMessage={buildFollowupWhatsAppMessage}
+            buildVisitReminderMessage={buildVisitReminderMessage}
+            buildQuotationWhatsAppMessage={buildQuotationWhatsAppMessage}
+            getQuotationPdfUrl={getQuotationPdfUrl}
+            clearFieldErrorFromEvent={clearFieldErrorFromEvent}
+            getFieldErrorClass={getFieldErrorClass}
+          />
+        ) : (
+          <section className="panel lead-details-panel lead-details-panel-pipeline">
+            <h2>Lead workspace</h2>
+            <p className="muted">Select a lead to view details.</p>
+          </section>
+        )}
       </section>
     );
   }
@@ -850,8 +1072,8 @@ export default function LeadWorkspaceSection(props) {
                     onClick={() => {
                       const target = leads.find((lead) => lead.id === task.lead_id);
                       if (target) {
-                        setSelectedLead(target);
-                        setCurrentView("overview");
+                        onSelectLead(target);
+                        setCurrentView("pipeline");
                       }
                     }}
                   >
