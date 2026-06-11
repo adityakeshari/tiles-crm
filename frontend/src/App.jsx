@@ -7677,7 +7677,7 @@ export default function App() {
         </>
       ) : null}
 
-      {["overview", "pipeline", "followups"].includes(currentView) ? (
+      {["pipeline", "followups"].includes(currentView) ? (
         <Suspense fallback={<LazySectionFallback label="lead workspace" />}>
           <LeadWorkspaceSection
             currentView={currentView}
