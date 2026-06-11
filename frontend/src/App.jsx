@@ -428,12 +428,6 @@ const emptyLead = {
   assigned_to: "",
 };
 
-const emptyAdmin = {
-  name: "",
-  phone: "",
-  password: "",
-};
-
 const emptyFollowup = {
   note: "",
   followup_date: "",
@@ -944,22 +938,6 @@ function validateLoginForm(form) {
 
   if (!normalizeText(form.password)) {
     return "Password is required.";
-  }
-
-  return "";
-}
-
-function validateAdminForm(form) {
-  if (!normalizeText(form.name)) {
-    return "Admin name is required.";
-  }
-
-  if (!isPhoneLike(form.phone)) {
-    return "Admin phone must be 7 to 15 characters.";
-  }
-
-  if (String(form.password || "").length < 6) {
-    return "Admin password must be at least 6 characters.";
   }
 
   return "";
@@ -1851,8 +1829,6 @@ export default function App() {
   const [unitFilter, setUnitFilter] = useState("all");
   const [loginForm, setLoginForm] = useState({ phone: "", password: "" });
   const [rememberMe, setRememberMe] = useState(false);
-  const [showBootstrapSetup, setShowBootstrapSetup] = useState(false);
-  const [adminForm, setAdminForm] = useState(emptyAdmin);
   const [leadForm, setLeadForm] = useState(emptyLead);
   const [leadFormErrors, setLeadFormErrors] = useState({});
   const [leadSearch, setLeadSearch] = useState("");
@@ -3854,20 +3830,6 @@ export default function App() {
         setUser(normalizedUser);
         pushToast(`Welcome back, ${normalizedUser.name}.`);
       });
-  }
-
-  async function handleSeedAdmin(event) {
-    event.preventDefault();
-    const validationError = validateAdminForm(adminForm);
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-
-    await runBusyAction("seed-admin", async () => {
-      await api.seedAdmin(adminForm);
-      setAdminForm(emptyAdmin);
-    }, "Bootstrap admin created.");
   }
 
   async function handleCreateLead(event) {
@@ -6722,6 +6684,15 @@ export default function App() {
                   A complete CRM system to manage leads, projects, inventory, billing and your
                   entire showroom operations in one place.
                 </p>
+                <p className="auth-hero-owner-line">
+                  Manage Sales.
+                  <br />
+                  Track Collections.
+                  <br />
+                  Control Inventory.
+                  <br />
+                  Grow Profit.
+                </p>
               </div>
 
               <div className="auth-feature-list" aria-label="CRM features">
@@ -6749,13 +6720,20 @@ export default function App() {
                 <article className="auth-feature-item">
                   <div className="auth-feature-icon" aria-hidden="true">✓</div>
                   <div>
+                    <strong>Mason &amp; Project Tracking</strong>
+                    <p>Monitor execution, tokens, dispatch flow and on-site coordination.</p>
+                  </div>
+                </article>
+                <article className="auth-feature-item">
+                  <div className="auth-feature-icon" aria-hidden="true">✓</div>
+                  <div>
                     <strong>Insights &amp; Reports</strong>
                     <p>Use live dashboards to run a disciplined monthly showroom business.</p>
                   </div>
                 </article>
               </div>
 
-              <div className="auth-hero-footer">Secure - Reliable - Built for Showrooms</div>
+              <div className="auth-hero-footer">Trusted by showroom teams. Secure - Fast - Reliable</div>
             </div>
           </aside>
 
@@ -6810,9 +6788,6 @@ export default function App() {
                     />
                     <span>Remember Me</span>
                   </label>
-                  <button type="button" className="auth-inline-link secondary">
-                    Forgot Password
-                  </button>
                 </div>
 
                 <button type="submit" className="auth-login-button" disabled={busyAction === "login"}>
@@ -6822,50 +6797,6 @@ export default function App() {
                   {busyAction === "login" ? "Signing In..." : "Sign In"}
                 </button>
               </form>
-
-              <section className="auth-setup-panel">
-                <button
-                  type="button"
-                  className="auth-setup-toggle secondary"
-                  aria-expanded={showBootstrapSetup}
-                  onClick={() => setShowBootstrapSetup((current) => !current)}
-                >
-                  <span>Initial Setup / Create First Admin</span>
-                  <span aria-hidden="true">{showBootstrapSetup ? "−" : "+"}</span>
-                </button>
-
-                {showBootstrapSetup ? (
-                  <div className="auth-setup-body">
-                    <p className="muted">
-                      Use this only once to create the first admin, then sign in normally.
-                    </p>
-                    <form className="auth-bootstrap-form" onSubmit={handleSeedAdmin}>
-                      <input
-                        placeholder="Full name"
-                        autoComplete="name"
-                        value={adminForm.name}
-                        onChange={(event) => setAdminForm({ ...adminForm, name: event.target.value })}
-                      />
-                      <input
-                        placeholder="Phone"
-                        autoComplete="tel"
-                        value={adminForm.phone}
-                        onChange={(event) => setAdminForm({ ...adminForm, phone: event.target.value })}
-                      />
-                      <input
-                        type="password"
-                        placeholder="Password"
-                        autoComplete="new-password"
-                        value={adminForm.password}
-                        onChange={(event) => setAdminForm({ ...adminForm, password: event.target.value })}
-                      />
-                      <button type="submit" className="secondary" disabled={busyAction === "seed-admin"}>
-                        {busyAction === "seed-admin" ? "Creating Admin..." : "Create Admin"}
-                      </button>
-                    </form>
-                  </div>
-                ) : null}
-              </section>
 
               <p className="auth-trust-note">Your data is secure and your showroom workflow stays private.</p>
             </div>
