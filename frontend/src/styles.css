@@ -4795,7 +4795,7 @@ button.sidebar-item-active .sidebar-dot {
   .topbar-profile-menu-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 40;
+    z-index: 58;
     background: transparent;
   }
 
@@ -4803,7 +4803,7 @@ button.sidebar-item-active .sidebar-dot {
     position: absolute;
     top: calc(100% + 0.5rem);
     right: 0;
-    z-index: 41;
+    z-index: 60;
     min-width: 180px;
     display: flex;
     flex-direction: column;

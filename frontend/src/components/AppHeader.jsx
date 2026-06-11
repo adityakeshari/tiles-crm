@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 function getInitials(name) {
   const trimmed = String(name || "").trim();
@@ -18,6 +18,7 @@ export default function AppHeader({
   onLogout,
 }) {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef(null);
   const initials = getInitials(userName);
   const badgeText = unreadCount > 9 ? "9+" : String(unreadCount || 0);
 
@@ -25,6 +26,32 @@ export default function AppHeader({
     setIsProfileMenuOpen(false);
     if (typeof action === "function") action();
   }
+
+  useEffect(() => {
+    if (!isProfileMenuOpen) {
+      return undefined;
+    }
+
+    function handlePointerDown(event) {
+      if (!profileMenuRef.current?.contains(event.target)) {
+        setIsProfileMenuOpen(false);
+      }
+    }
+
+    function handleEscape(event) {
+      if (event.key === "Escape") {
+        setIsProfileMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isProfileMenuOpen]);
 
   return (
     <header className="topbar topbar-compact panel">
@@ -68,7 +95,7 @@ export default function AppHeader({
             {unreadCount ? <span className="topbar-mobile-bell-badge">{badgeText}</span> : null}
           </button>
 
-          <div className="topbar-profile-menu">
+          <div className="topbar-profile-menu" ref={profileMenuRef}>
             <button
               type="button"
               className="topbar-profile-avatar"
