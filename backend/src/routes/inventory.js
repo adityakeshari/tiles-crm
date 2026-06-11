@@ -94,6 +94,33 @@ function buildLegacyColumnExpression(alias, columnName, enabled) {
   return enabled ? `NULLIF(${alias}.${columnName}, '')` : "NULL";
 }
 
+// Detects schema pieces the inventory list depends on that arrived in recent
+// migrations (035 purchase_item_batches, 041 low_stock_threshold). If a
+// deployment's database is behind on migrations, the list degrades gracefully
+// instead of returning 500 for the whole inventory module.
+async function getInventorySchemaFlags() {
+  const [thresholdResult, batchesResult] = await Promise.all([
+    query(
+      `SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'products'
+         AND column_name = 'low_stock_threshold'`
+    ),
+    query(
+      `SELECT 1
+       FROM information_schema.tables
+       WHERE table_schema = 'public'
+         AND table_name = 'purchase_item_batches'`
+    ),
+  ]);
+
+  return {
+    hasLowStockThresholdColumn: thresholdResult.rows.length > 0,
+    hasPurchaseItemBatchesTable: batchesResult.rows.length > 0,
+  };
+}
+
 function buildStockBoxesExpression(alias) {
   return `CASE
     WHEN COALESCE(${alias}.sqft_per_box, 0) > 0
@@ -102,11 +129,14 @@ function buildStockBoxesExpression(alias) {
   END`;
 }
 
-function buildLowStockExpression(alias) {
+function buildLowStockExpression(alias, hasLowStockThresholdColumn = true) {
   const stockBoxesExpression = buildStockBoxesExpression(alias);
+  const thresholdExpression = hasLowStockThresholdColumn
+    ? `GREATEST(COALESCE(${alias}.low_stock_threshold, 10), 0)`
+    : "10";
   return `CASE
     WHEN COALESCE(${alias}.stock_sqft, 0) <= 0 THEN TRUE
-    WHEN (${stockBoxesExpression}) <= GREATEST(COALESCE(${alias}.low_stock_threshold, 10), 0) THEN TRUE
+    WHEN (${stockBoxesExpression}) <= ${thresholdExpression} THEN TRUE
     ELSE FALSE
   END`;
 }
@@ -168,6 +198,7 @@ router.get("/options", async (_req, res) => {
       finishes: finishesResult.rows.map((row) => row.option_value).filter(Boolean),
     });
   } catch (error) {
+    console.error("[inventory] GET /options failed:", error);
     return res.status(500).json({ message: "Unable to fetch inventory options", error: error.message });
   }
 });
@@ -177,17 +208,20 @@ router.get("/", async (req, res) => {
   const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
 
   try {
-    const {
-      hasCompanyColumn,
-      hasBrandColumn,
-      hasManufacturerColumn,
-      hasCodeColumn,
-      hasDesignColumn,
-      hasItemCodeColumn,
-      hasSizeColumn,
-      hasSurfaceColumn,
-      hasTypeColumn,
-    } = await getLegacyProductColumnFlags();
+    const [
+      {
+        hasCompanyColumn,
+        hasBrandColumn,
+        hasManufacturerColumn,
+        hasCodeColumn,
+        hasDesignColumn,
+        hasItemCodeColumn,
+        hasSizeColumn,
+        hasSurfaceColumn,
+        hasTypeColumn,
+      },
+      { hasLowStockThresholdColumn, hasPurchaseItemBatchesTable },
+    ] = await Promise.all([getLegacyProductColumnFlags(), getInventorySchemaFlags()]);
     const legacyCompanyExpression = buildLegacyColumnExpression("p", "company", hasCompanyColumn);
     const legacyBrandExpression = buildLegacyColumnExpression("p", "brand", hasBrandColumn);
     const legacyManufacturerExpression = buildLegacyColumnExpression("p", "manufacturer", hasManufacturerColumn);
@@ -198,7 +232,22 @@ router.get("/", async (req, res) => {
     const legacySurfaceExpression = buildLegacyColumnExpression("p", "surface", hasSurfaceColumn);
     const legacyTypeExpression = buildLegacyColumnExpression("p", "type", hasTypeColumn);
     const stockBoxesExpression = buildStockBoxesExpression("p");
-    const lowStockExpression = buildLowStockExpression("p");
+    const lowStockExpression = buildLowStockExpression("p", hasLowStockThresholdColumn);
+    const lowStockThresholdSelect = hasLowStockThresholdColumn
+      ? "COALESCE(p.low_stock_threshold, 10)::int"
+      : "10::int";
+    const latestBatchJoin = hasPurchaseItemBatchesTable
+      ? `LEFT JOIN LATERAL (
+             SELECT pb.batch_no
+             FROM purchases purchase_rows
+             JOIN purchase_item_batches pb ON pb.purchase_id = purchase_rows.id
+             WHERE purchase_rows.product_id = p.id
+               AND COALESCE(pb.batch_no, '') <> ''
+             ORDER BY COALESCE(purchase_rows.delivery_date, purchase_rows.purchase_date) DESC, purchase_rows.id DESC
+             LIMIT 1
+           ) latest_purchase ON TRUE`
+      : "";
+    const latestBatchSelect = hasPurchaseItemBatchesTable ? "latest_purchase.batch_no" : "NULL";
     const summaryLegacyCompanyExpression = hasCompanyColumn ? "NULLIF(company, '')" : "NULL";
     const summaryLegacyBrandExpression = hasBrandColumn ? "NULLIF(brand, '')" : "NULL";
     const summaryLegacyManufacturerExpression = hasManufacturerColumn ? "NULLIF(manufacturer, '')" : "NULL";
@@ -216,6 +265,8 @@ router.get("/", async (req, res) => {
     const productsParams = search ? [limit, `%${search}%`] : [limit];
 
     const [productsResult, summaryResult] = await Promise.all([
+      // Product list is the critical payload; the summary references newer
+      // pricing/packaging columns, so its failure is logged but non-fatal.
       query(
         `SELECT *
          FROM (
@@ -228,20 +279,12 @@ router.get("/", async (req, res) => {
              COALESCE(NULLIF(p.design_code, ''), ${legacyCodeExpression}, ${legacyDesignExpression}, ${legacyItemCodeExpression}, '') AS design_code,
              ${legacyCodeExpression} AS legacy_code,
              COALESCE(NULLIF(p.finish, ''), ${legacySurfaceExpression}, ${legacyTypeExpression}, '') AS finish,
-             COALESCE(p.low_stock_threshold, 10)::int AS low_stock_threshold,
+             ${lowStockThresholdSelect} AS low_stock_threshold,
              ${stockBoxesExpression} AS stock_boxes,
              ${lowStockExpression} AS is_low_stock,
-             latest_purchase.batch_no AS latest_batch_no
+             ${latestBatchSelect} AS latest_batch_no
            FROM products p
-           LEFT JOIN LATERAL (
-             SELECT pb.batch_no
-             FROM purchases purchase_rows
-             JOIN purchase_item_batches pb ON pb.purchase_id = purchase_rows.id
-             WHERE purchase_rows.product_id = p.id
-               AND COALESCE(pb.batch_no, '') <> ''
-             ORDER BY COALESCE(purchase_rows.delivery_date, purchase_rows.purchase_date) DESC, purchase_rows.id DESC
-             LIMIT 1
-           ) latest_purchase ON TRUE
+           ${latestBatchJoin}
          ) inventory_products
          ${searchClause}
          ORDER BY
@@ -271,14 +314,20 @@ router.get("/", async (req, res) => {
                OR COALESCE(sqft_per_box, 0) <= 0
            )::int AS missing_packaging_count
          FROM products`
-      ),
+      ).catch((summaryError) => {
+        console.error("[inventory] summary query failed (non-fatal):", summaryError);
+        return { rows: [null] };
+      }),
     ]);
 
     return res.json({
       products: productsResult.rows,
-      summary: summaryResult.rows[0],
+      summary: summaryResult.rows[0] || null,
     });
   } catch (error) {
+    // Logged so process managers (pm2) capture the real failure; previously the
+    // error only existed in the HTTP response body and the server log stayed empty.
+    console.error("[inventory] GET / failed:", error);
     return res.status(500).json({ message: "Unable to fetch inventory", error: error.message });
   }
 });
@@ -385,6 +434,7 @@ router.post("/", requireRole("admin", "manager", "accounts", "operations", "oper
 
     return res.status(201).json(result.rows[0]);
   } catch (error) {
+    console.error("[inventory] POST / failed:", error);
     return res.status(500).json({ message: "Unable to create product", error: error.message });
   }
 });
@@ -496,6 +546,7 @@ router.put("/:id", requireRole("admin", "manager"), async (req, res) => {
 
     return res.json(result.rows[0]);
   } catch (error) {
+    console.error("[inventory] PUT /:id failed:", error);
     return res.status(500).json({ message: "Unable to update product", error: error.message });
   }
 });
@@ -516,6 +567,7 @@ router.delete("/:id", requireRole("admin"), async (req, res) => {
 
     return res.status(204).send();
   } catch (error) {
+    console.error("[inventory] DELETE /:id failed:", error);
     return res.status(500).json({ message: "Unable to delete product", error: error.message });
   }
 });

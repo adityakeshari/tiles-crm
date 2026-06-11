@@ -33,6 +33,14 @@ Stock (`products.stock_sqft`) is mutated from four different modules (billing, p
 - Frontend stock helpers (`getProductStockBoxes`, `getProductLowStockThreshold`, `isProductLowStock`) already guard NaN/null.
 - Duplicate-product detection (`findSimilarProduct`) is NULL-safe via `COALESCE`/`NULLIF`.
 
+### Live production incident (from pm2 logs, 2026-06-11): `GET /api/inventory -> 500`
+Diagnosis: every inventory list request 500s while `/api/inventory/options` works. The list query is the only one that depends on `products.low_stock_threshold` (migration 041) and the `purchase_item_batches` table (migration 035) — the production database is behind on migrations. Two compounding defects fixed:
+
+- **No server-side logging.** The route returned the DB error only in the HTTP response body; the pm2 error log stayed empty. All inventory route catches now `console.error` with the full error.
+- **Schema drift was fatal.** The list now detects (via `information_schema`) whether `low_stock_threshold` and `purchase_item_batches` exist and degrades gracefully (default threshold 10, no batch number) instead of 500ing. The summary query failure is now non-fatal — products still render.
+
+Permanent remedy on the server: run `scripts\run-migrations.cmd` (applies `backend/migrations/*.sql` in order — it must include 035 and 041), then `pm2 restart tiles-crm-backend`.
+
 ## Priority 2 — Leads Workflow
 
 1. **"Open Lead" from Plumbing jobs redirected to the dashboard.** It set the selected lead then navigated to `overview`, which has no lead details panel — the user landed on the dashboard with nothing opened.
