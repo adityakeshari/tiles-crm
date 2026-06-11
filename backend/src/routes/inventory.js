@@ -83,6 +83,23 @@ function buildLegacyColumnExpression(alias, columnName, enabled) {
   return enabled ? `NULLIF(${alias}.${columnName}, '')` : "NULL";
 }
 
+function buildStockBoxesExpression(alias) {
+  return `CASE
+    WHEN COALESCE(${alias}.sqft_per_box, 0) > 0
+      THEN ROUND((COALESCE(${alias}.stock_sqft, 0)::numeric / NULLIF(${alias}.sqft_per_box, 0)), 2)
+    ELSE COALESCE(${alias}.stock_sqft, 0)::numeric
+  END`;
+}
+
+function buildLowStockExpression(alias) {
+  const stockBoxesExpression = buildStockBoxesExpression(alias);
+  return `CASE
+    WHEN COALESCE(${alias}.stock_sqft, 0) <= 0 THEN TRUE
+    WHEN (${stockBoxesExpression}) <= GREATEST(COALESCE(${alias}.low_stock_threshold, 10), 0) THEN TRUE
+    ELSE FALSE
+  END`;
+}
+
 router.get("/options", async (_req, res) => {
   try {
     const {
@@ -169,6 +186,8 @@ router.get("/", async (req, res) => {
     const legacySizeExpression = buildLegacyColumnExpression("p", "size", hasSizeColumn);
     const legacySurfaceExpression = buildLegacyColumnExpression("p", "surface", hasSurfaceColumn);
     const legacyTypeExpression = buildLegacyColumnExpression("p", "type", hasTypeColumn);
+    const stockBoxesExpression = buildStockBoxesExpression("p");
+    const lowStockExpression = buildLowStockExpression("p");
     const summaryLegacyCompanyExpression = hasCompanyColumn ? "NULLIF(company, '')" : "NULL";
     const summaryLegacyBrandExpression = hasBrandColumn ? "NULLIF(brand, '')" : "NULL";
     const summaryLegacyManufacturerExpression = hasManufacturerColumn ? "NULLIF(manufacturer, '')" : "NULL";
@@ -198,6 +217,9 @@ router.get("/", async (req, res) => {
              COALESCE(NULLIF(p.design_code, ''), ${legacyCodeExpression}, ${legacyDesignExpression}, ${legacyItemCodeExpression}, '') AS design_code,
              ${legacyCodeExpression} AS legacy_code,
              COALESCE(NULLIF(p.finish, ''), ${legacySurfaceExpression}, ${legacyTypeExpression}, '') AS finish,
+             COALESCE(p.low_stock_threshold, 10)::int AS low_stock_threshold,
+             ${stockBoxesExpression} AS stock_boxes,
+             ${lowStockExpression} AS is_low_stock,
              latest_purchase.batch_no AS latest_batch_no
            FROM products p
            LEFT JOIN LATERAL (
@@ -222,6 +244,7 @@ router.get("/", async (req, res) => {
            COUNT(*)::int AS total_products,
            COUNT(*) FILTER (WHERE status = 'fast_moving')::int AS fast_moving_count,
            COUNT(*) FILTER (WHERE status = 'dead_stock')::int AS dead_stock_count,
+           COUNT(*) FILTER (WHERE ${lowStockExpression})::int AS low_stock_count,
            COALESCE(SUM(stock_sqft), 0)::int AS total_stock_sqft,
            COUNT(*) FILTER (WHERE COALESCE(NULLIF(company_name, ''), ${summaryLegacyCompanyExpression}, ${summaryLegacyBrandExpression}, ${summaryLegacyManufacturerExpression}) IS NULL)::int AS missing_company_count,
            COUNT(*) FILTER (WHERE COALESCE(NULLIF(product_size, ''), NULLIF(tile_size, ''), ${hasSizeColumn ? "NULLIF(size, '')" : "NULL"}) IS NULL)::int AS missing_size_count,
@@ -304,13 +327,13 @@ router.post("/", requireRole("admin", "manager", "accounts", "operations", "oper
     const result = await query(
       `INSERT INTO products (
          name, company_name, design_code, business_unit, category, unit, tile_size, product_size, finish,
-         pieces_per_box, sqft_per_box, weight_per_box, weight_per_unit, stock_sqft,
+         pieces_per_box, sqft_per_box, weight_per_box, weight_per_unit, stock_sqft, low_stock_threshold,
          purchase_rate, price_per_sqft, predefined_rate, today_selling_rate, daily_up_limit_percent, daily_down_limit_percent,
          last_purchase_rate, landed_cost_per_unit, minimum_allowed_rate, suggested_selling_rate,
          operator_discount_cap, manager_discount_cap, owner_discount_cap,
          safety_margin_percent, growth_margin_percent, quotation_validity_days, pricing_lock, status
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33)
        RETURNING *`,
       [
         product.name,
@@ -327,6 +350,7 @@ router.post("/", requireRole("admin", "manager", "accounts", "operations", "oper
         product.weight_per_box,
         product.weight_per_unit,
         product.stock_sqft,
+        product.low_stock_threshold,
         product.purchase_rate,
         product.price_per_sqft,
         product.predefined_rate,
@@ -391,25 +415,26 @@ router.put("/:id", requireRole("admin", "manager"), async (req, res) => {
         weight_per_box = $12,
         weight_per_unit = $13,
         stock_sqft = $14,
-        purchase_rate = $15,
-        price_per_sqft = $16,
-        predefined_rate = $17,
-        today_selling_rate = $18,
-        daily_up_limit_percent = $19,
-        daily_down_limit_percent = $20,
-        last_purchase_rate = $21,
-        landed_cost_per_unit = $22,
-        minimum_allowed_rate = $23,
-        suggested_selling_rate = $24,
-        operator_discount_cap = $25,
-        manager_discount_cap = $26,
-        owner_discount_cap = $27,
-        safety_margin_percent = $28,
-        growth_margin_percent = $29,
-        quotation_validity_days = $30,
-        pricing_lock = $31,
-        status = $32
-       WHERE id = $33
+        low_stock_threshold = $15,
+        purchase_rate = $16,
+        price_per_sqft = $17,
+        predefined_rate = $18,
+        today_selling_rate = $19,
+        daily_up_limit_percent = $20,
+        daily_down_limit_percent = $21,
+        last_purchase_rate = $22,
+        landed_cost_per_unit = $23,
+        minimum_allowed_rate = $24,
+        suggested_selling_rate = $25,
+        operator_discount_cap = $26,
+        manager_discount_cap = $27,
+        owner_discount_cap = $28,
+        safety_margin_percent = $29,
+        growth_margin_percent = $30,
+        quotation_validity_days = $31,
+        pricing_lock = $32,
+        status = $33
+       WHERE id = $34
        RETURNING *`,
       [
         product.name,
@@ -426,6 +451,7 @@ router.put("/:id", requireRole("admin", "manager"), async (req, res) => {
         product.weight_per_box,
         product.weight_per_unit,
         product.stock_sqft,
+        product.low_stock_threshold,
         product.purchase_rate,
         product.price_per_sqft,
         product.predefined_rate,

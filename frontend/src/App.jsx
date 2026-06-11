@@ -517,6 +517,7 @@ const emptyProduct = {
   weight_per_box: "",
   weight_per_unit: "",
   stock_sqft: "",
+  low_stock_threshold: "10",
   purchase_rate: "",
   price_per_sqft: "",
   predefined_rate: "",
@@ -2312,8 +2313,7 @@ export default function App() {
 
     return [...filteredProducts]
       .filter((product) => {
-        const stockValue = Number(product.stock_sqft || 0);
-        const stockState = stockValue <= 0 ? "out" : stockValue <= 5 ? "low" : "in";
+        const stockState = getProductStockState(product);
         const matchesSearch =
           !normalizedSearch ||
           [
@@ -2343,12 +2343,19 @@ export default function App() {
         return matchesSearch && matchesCategory && matchesStatus && matchesStock;
       })
       .sort((left, right) => {
+        const leftStateRank = { out: 0, low: 1, in: 2 }[getProductStockState(left)] ?? 3;
+        const rightStateRank = { out: 0, low: 1, in: 2 }[getProductStockState(right)] ?? 3;
+
         if (inventoryLedgerSort === "stock_low_high") {
-          return Number(left.stock_sqft || 0) - Number(right.stock_sqft || 0);
+          return getProductStockBoxes(left) - getProductStockBoxes(right);
         }
 
         if (inventoryLedgerSort === "stock_high_low") {
-          return Number(right.stock_sqft || 0) - Number(left.stock_sqft || 0);
+          return getProductStockBoxes(right) - getProductStockBoxes(left);
+        }
+
+        if (leftStateRank !== rightStateRank) {
+          return leftStateRank - rightStateRank;
         }
 
         return String(left.name || "").localeCompare(String(right.name || ""), "en", { sensitivity: "base" });
@@ -3224,7 +3231,11 @@ export default function App() {
         value: dashboardSummary.token_pending?.count ?? 0,
         tone: "danger",
       },
-      { label: "Stock Alert", value: focusStats.fastMovingSkuCount },
+      dashboardSummary && {
+        label: "Stock Alert",
+        value: dashboardSummary.low_stock_items?.count ?? 0,
+        tone: "danger",
+      },
     ].filter(Boolean);
 
     return [
@@ -6426,6 +6437,12 @@ export default function App() {
         product.stock_sqft === null || product.stock_sqft === undefined || product.stock_sqft === ""
           ? ""
           : String(product.stock_sqft),
+      low_stock_threshold:
+        product.low_stock_threshold === null ||
+        product.low_stock_threshold === undefined ||
+        product.low_stock_threshold === ""
+          ? "10"
+          : String(product.low_stock_threshold),
       purchase_rate: product.purchase_rate || "",
       price_per_sqft: product.price_per_sqft || "",
       predefined_rate: product.predefined_rate || "",
@@ -6465,6 +6482,15 @@ export default function App() {
       );
     }
     setCurrentView("inventory");
+  }
+
+  function openLowStockInventoryView() {
+    setCurrentView("inventory");
+    setInventoryWorkspaceTab("ledger");
+    setInventoryLedgerView("list");
+    setInventoryLedgerSearch("");
+    setInventoryLedgerStockFilter("low");
+    setInventoryLedgerSort("stock_low_high");
   }
 
   function startEditingComplaint(complaint) {
@@ -7268,6 +7294,19 @@ export default function App() {
                       <div className="chip-row">
                         <span className="legend-chip">Urgent {Number(ownerOverviewData.complaints?.urgent_complaints || 0).toLocaleString("en-IN")}</span>
                         <span className="legend-chip">Closed {Number(ownerOverviewData.complaints?.closed_complaints || 0).toLocaleString("en-IN")}</span>
+                      </div>
+                    </article>
+                    <article className="detail-card">
+                      <span className="audience-tag">Row 1</span>
+                      <h3>Low Stock Items</h3>
+                      <p>{Number(dashboardSummary?.low_stock_items?.count || 0).toLocaleString("en-IN")}</p>
+                      <div className="chip-row">
+                        <span className="legend-chip">Threshold-driven alert</span>
+                      </div>
+                      <div className="lead-actions">
+                        <button type="button" className="secondary" onClick={openLowStockInventoryView}>
+                          View low stock
+                        </button>
                       </div>
                     </article>
                   </div>
@@ -10075,6 +10114,18 @@ export default function App() {
                       </select>
                     </div>
                     <div className="form-field">
+                      <label>Low Stock Threshold (Boxes)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        placeholder="10"
+                        disabled={!(isAdmin(user) || hasRole(user, "owner") || hasRole(user, "manager"))}
+                        value={productForm.low_stock_threshold}
+                        onChange={(event) => setProductForm({ ...productForm, low_stock_threshold: event.target.value })}
+                      />
+                    </div>
+                    <div className="form-field">
                       <label>Pricing Lock</label>
                       <label className="checkbox-row">
                         <input
@@ -10216,79 +10267,82 @@ export default function App() {
             />
             {inventoryLedgerView === "grid" ? (
             <div className="list stock-ledger-grid">
-              {filteredInventoryLedgerProducts.map((product) => (
-                <article key={product.id} className="lead-card product-master-card">
-                  <div className="section-head">
-                    <div>
-                      <h3>{product.name}</h3>
-                      <p className="muted">
-                        {[getProductCompany(product) || "Company missing", getProductDesignCode(product) || product.category, getProductFinish(product) || "", product.latest_batch_no ? `Batch ${product.latest_batch_no}` : ""]
-                          .filter(Boolean)
-                          .join(" | ")}
-                      </p>
+              {filteredInventoryLedgerProducts.map((product) => {
+                const stockState = getProductStockState(product);
+                const stockBoxes = getProductStockBoxes(product);
+                const stockSqft = getProductStockSqft(product);
+                const stockLabel =
+                  stockState === "out" ? "Out of Stock" : stockState === "low" ? "Low Stock" : "In Stock";
+                const stockSummary = `${stockBoxes.toLocaleString("en-IN", { maximumFractionDigits: 2 })} boxes | ${stockSqft.toLocaleString("en-IN", { maximumFractionDigits: 2 })} sqft`;
+                const stockCardClass =
+                  stockState === "out" ? "stock-card-out" : stockState === "low" ? "stock-card-low" : "";
+                const productGaps = getProductDataGaps(product);
+
+                return (
+                  <article key={product.id} className={`lead-card product-master-card ${stockCardClass}`.trim()}>
+                    <div className="section-head">
+                      <div>
+                        <h3>{product.name}</h3>
+                        <p className="muted">
+                          {[getProductCompany(product) || "Company missing", getProductDesignCode(product) || product.category, getProductFinish(product) || "", product.latest_batch_no ? `Batch ${product.latest_batch_no}` : ""]
+                            .filter(Boolean)
+                            .join(" | ")}
+                        </p>
+                      </div>
+                      <span className={`status-chip status-${product.status}`}>{labelize(product.status)}</span>
                     </div>
-                    <span className={`status-chip status-${product.status}`}>{labelize(product.status)}</span>
-                  </div>
-                  <div className="product-meta-grid">
-                    <span>Company {getProductCompany(product) || "Missing"}</span>
-                    <span>Category {product.category || "Missing"}</span>
-                    <span>Size {getProductSize(product) || "Missing"}</span>
-                    <span>Unit {product.unit || "Missing"}</span>
-                    <span>Selling Rs {Number(product.price_per_sqft || 0).toLocaleString("en-IN")}</span>
-                    <span>Min Rs {Number(product.minimum_allowed_rate || 0).toLocaleString("en-IN")}</span>
-                  </div>
-                  <div className="chip-row">
-                    <span
-                      className={`stock-badge ${
-                        Number(product.stock_sqft || 0) <= 0
-                          ? "stock-out"
-                          : Number(product.stock_sqft || 0) <= 5
-                            ? "stock-low"
-                            : "stock-in"
-                      }`}
-                    >
-                      {Number(product.stock_sqft || 0) <= 0
-                        ? "Out of Stock"
-                        : Number(product.stock_sqft || 0) <= 5
-                          ? `Low Stock - ${product.stock_sqft || 0}`
-                          : `In Stock - ${product.stock_sqft || 0}`}
-                    </span>
-                    <span className="legend-chip product-completeness-chip">
-                      Product Completeness: {getProductCompletenessPercent(product)}%
-                    </span>
-                    {Boolean(product.pricing_lock) ? <span className="status-chip status-approved">Pricing locked</span> : null}
-                  </div>
-                  {getProductDataGaps(product).length ? (
-                    <p className="muted product-gap-text">
-                      Missing: {getProductDataGaps(product).map(formatProductDataGapLabel).join(", ")}
-                    </p>
-                  ) : (
-                    <p className="muted product-gap-text">Product master ready for costing and approval workflows.</p>
-                  )}
-                  <div className="lead-actions">
-                    <button type="button" className="secondary" onClick={() => startEditingProduct(product)}>
-                      Edit
-                    </button>
-                    {isAdmin(user) ? (
-                      <button
-                        type="button"
-                        className="danger"
-                        onClick={() =>
-                          setPendingDelete({
-                            type: "product",
-                            id: product.id,
-                            entityLabel: "Product",
-                            message: `This will permanently remove ${product.name} from inventory.`,
-                            subtext: getProductDesignCode(product) || product.category,
-                          })
-                        }
-                      >
-                        Delete
+                    <div className="product-meta-grid">
+                      <span>Company {getProductCompany(product) || "Missing"}</span>
+                      <span>Category {product.category || "Missing"}</span>
+                      <span>Size {getProductSize(product) || "Missing"}</span>
+                      <span>Unit {product.unit || "Missing"}</span>
+                      <span>Stock {stockSummary}</span>
+                      <span>Selling Rs {Number(product.price_per_sqft || 0).toLocaleString("en-IN")}</span>
+                      <span>Min Rs {Number(product.minimum_allowed_rate || 0).toLocaleString("en-IN")}</span>
+                      <span>Threshold {getProductLowStockThreshold(product)} boxes</span>
+                    </div>
+                    <div className="chip-row">
+                      <span className={`stock-badge ${stockState === "out" ? "stock-out" : stockState === "low" ? "stock-low" : "stock-in"}`}>
+                        {stockLabel}
+                      </span>
+                      <span className="legend-chip">{stockSummary}</span>
+                      <span className="legend-chip product-completeness-chip">
+                        Product Completeness: {getProductCompletenessPercent(product)}%
+                      </span>
+                      {Boolean(product.pricing_lock) ? <span className="status-chip status-approved">Pricing locked</span> : null}
+                    </div>
+                    {productGaps.length ? (
+                      <p className="muted product-gap-text">
+                        Missing: {productGaps.map(formatProductDataGapLabel).join(", ")}
+                      </p>
+                    ) : (
+                      <p className="muted product-gap-text">Product master ready for costing and approval workflows.</p>
+                    )}
+                    <div className="lead-actions">
+                      <button type="button" className="secondary" onClick={() => startEditingProduct(product)}>
+                        Edit
                       </button>
-                    ) : null}
-                  </div>
-                </article>
-              ))}
+                      {isAdmin(user) ? (
+                        <button
+                          type="button"
+                          className="danger"
+                          onClick={() =>
+                            setPendingDelete({
+                              type: "product",
+                              id: product.id,
+                              entityLabel: "Product",
+                              message: `This will permanently remove ${product.name} from inventory.`,
+                              subtext: getProductDesignCode(product) || product.category,
+                            })
+                          }
+                        >
+                          Delete
+                        </button>
+                      ) : null}
+                    </div>
+                  </article>
+                );
+              })}
               {filteredInventoryLedgerProducts.length === 0 ? (
                 <EmptyState title="No products available" message="Save stock items here to power quotation and inventory visibility." />
               ) : null}
@@ -10324,8 +10378,10 @@ export default function App() {
                 </thead>
                 <tbody>
                   {filteredInventoryLedgerProducts.map((product) => {
-                    const stockValue = Number(product.stock_sqft || 0);
-                    const stockClass = stockValue <= 0 ? "stock-out" : stockValue <= 5 ? "stock-low" : "stock-in";
+                    const stockValue = getProductStockSqft(product);
+                    const stockBoxes = getProductStockBoxes(product);
+                    const stockState = getProductStockState(product);
+                    const stockClass = stockState === "out" ? "stock-out" : stockState === "low" ? "stock-low" : "stock-in";
                     const productGaps = getProductDataGaps(product);
                     const productMetaLine = [getProductDesignCode(product) || "", getProductFinish(product) || "", product.latest_batch_no ? `Batch ${product.latest_batch_no}` : ""]
                       .filter(Boolean)
@@ -10337,7 +10393,16 @@ export default function App() {
                           ? `(${productGaps.map(formatProductDataGapLabel).join(", ").toLowerCase()} missing)`
                           : `(${formatProductDataGapLabel(productGaps[0]).toLowerCase()} +${productGaps.length - 1} more)`;
                     return (
-                      <tr key={`inventory-row-${product.id}`}>
+                      <tr
+                        key={`inventory-row-${product.id}`}
+                        className={
+                          stockState === "out"
+                            ? "stock-ledger-row-out"
+                            : stockState === "low"
+                              ? "stock-ledger-row-low"
+                              : undefined
+                        }
+                      >
                         <td className="col-product">
                           <strong className="stock-product-name">{product.name}</strong>
                           {productMetaLine ? <div className="muted stock-warning-inline">{productMetaLine}</div> : null}
@@ -10351,7 +10416,12 @@ export default function App() {
                         <td className="col-category">{product.category || "Missing"}</td>
                         <td className="col-size">{getProductSize(product) || "Missing"}</td>
                         <td className="col-stock">
-                          <span className={`stock-badge ${stockClass}`}>{stockValue}</span>
+                          <span className={`stock-badge ${stockClass}`}>
+                            {stockState === "out" ? "Out" : stockState === "low" ? "Low" : "In"}
+                          </span>
+                          <div className="muted stock-warning-inline">
+                            {stockBoxes.toLocaleString("en-IN", { maximumFractionDigits: 2 })} box | {stockValue.toLocaleString("en-IN", { maximumFractionDigits: 2 })} sqft
+                          </div>
                         </td>
                         <td className="col-unit">{product.unit || "Missing"}</td>
                         <td className="col-selling">Rs {Number(product.price_per_sqft || 0).toLocaleString("en-IN")}</td>
@@ -10915,6 +10985,11 @@ export default function App() {
                 <StatCard
                   label="Active Projects"
                   value={dashboardSummary.active_projects?.count ?? 0}
+                />
+                <StatCard
+                  label="Low Stock Items"
+                  value={dashboardSummary.low_stock_items?.count ?? 0}
+                  tone="danger"
                 />
               </div>
             </section>
@@ -12277,6 +12352,55 @@ function getProductFinish(product) {
   );
 }
 
+function getProductStockSqft(product) {
+  const stockSqft = Number(product?.stock_sqft ?? 0);
+  return Number.isFinite(stockSqft) ? stockSqft : 0;
+}
+
+function getProductStockBoxes(product) {
+  const rawStockBoxes = Number(product?.stock_boxes);
+  if (Number.isFinite(rawStockBoxes)) {
+    return rawStockBoxes;
+  }
+
+  const sqftPerBox = Number(product?.sqft_per_box ?? 0);
+  const stockSqft = getProductStockSqft(product);
+
+  if (sqftPerBox > 0) {
+    return Number((stockSqft / sqftPerBox).toFixed(2));
+  }
+
+  return stockSqft;
+}
+
+function getProductLowStockThreshold(product) {
+  const threshold = Number(product?.low_stock_threshold ?? 10);
+  return Number.isFinite(threshold) && threshold >= 0 ? threshold : 10;
+}
+
+function isProductLowStock(product) {
+  if (typeof product?.is_low_stock === "boolean") {
+    return product.is_low_stock;
+  }
+
+  return getProductStockBoxes(product) <= getProductLowStockThreshold(product);
+}
+
+function getProductStockState(product) {
+  const stockSqft = getProductStockSqft(product);
+  const stockBoxes = getProductStockBoxes(product);
+
+  if (stockSqft <= 0 || stockBoxes <= 0) {
+    return "out";
+  }
+
+  if (isProductLowStock(product)) {
+    return "low";
+  }
+
+  return "in";
+}
+
 function normalizeProductPayload(product) {
   const normalizedCompanyName = getProductCompany(product);
   const normalizedProductSize = getProductSize(product);
@@ -12293,6 +12417,10 @@ function normalizeProductPayload(product) {
     design_code: normalizedDesignCode,
     finish: normalizedFinish,
     stock_sqft: Number(product.stock_sqft || 0),
+    low_stock_threshold:
+      product.low_stock_threshold === "" || product.low_stock_threshold == null
+        ? 10
+        : Number(product.low_stock_threshold),
     pieces_per_box: Number(product.pieces_per_box || 0),
     sqft_per_box: Number(product.sqft_per_box || 0),
     weight_per_box: Number(product.weight_per_box || 0),

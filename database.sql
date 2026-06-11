@@ -216,6 +216,7 @@ CREATE TABLE products (
   weight_per_box NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (weight_per_box >= 0),
   weight_per_unit NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (weight_per_unit >= 0),
   stock_sqft INT NOT NULL DEFAULT 0 CHECK (stock_sqft >= 0),
+  low_stock_threshold INT NOT NULL DEFAULT 10 CHECK (low_stock_threshold >= 0),
   purchase_rate NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (purchase_rate >= 0),
   price_per_sqft INT NOT NULL DEFAULT 0 CHECK (price_per_sqft >= 0),
   predefined_rate NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (predefined_rate >= 0),

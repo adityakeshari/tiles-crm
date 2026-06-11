@@ -1442,6 +1442,7 @@ export function validateProductPayload(payload) {
   const unit = normalizeOptionalString(payload.unit || "pcs");
   const finish = normalizeOptionalString(payload.finish);
   const stock_sqft = toInteger(payload.stock_sqft, 0);
+  const low_stock_threshold = toInteger(payload.low_stock_threshold, 10);
   const price_per_sqft = toInteger(payload.price_per_sqft, 0);
   const purchase_rate = Number(payload.purchase_rate ?? 0);
   const predefined_rate = Number(payload.predefined_rate ?? 0);
@@ -1471,6 +1472,7 @@ export function validateProductPayload(payload) {
 
   if (
     !Number.isFinite(stock_sqft) ||
+    !Number.isFinite(low_stock_threshold) ||
     !Number.isFinite(price_per_sqft) ||
     !Number.isFinite(purchase_rate) ||
     !Number.isFinite(predefined_rate) ||
@@ -1492,6 +1494,7 @@ export function validateProductPayload(payload) {
     !Number.isFinite(growth_margin_percent) ||
     !Number.isFinite(quotation_validity_days) ||
     stock_sqft < 0 ||
+    low_stock_threshold < 0 ||
     price_per_sqft < 0 ||
     purchase_rate < 0 ||
     predefined_rate < 0 ||
@@ -1541,6 +1544,7 @@ export function validateProductPayload(payload) {
       weight_per_box,
       weight_per_unit,
       stock_sqft,
+      low_stock_threshold,
       purchase_rate,
       price_per_sqft,
       predefined_rate,

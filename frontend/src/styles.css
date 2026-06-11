@@ -4007,6 +4007,29 @@ button.sidebar-item-active .sidebar-dot {
   color: #0e6b34;
 }
 
+.product-master-card.stock-card-low {
+  border-color: rgba(212, 164, 55, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(212, 164, 55, 0.16);
+}
+
+.product-master-card.stock-card-out {
+  border-color: rgba(199, 44, 65, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(199, 44, 65, 0.16);
+}
+
+.stock-ledger-row-low td {
+  background: #fff7e9 !important;
+}
+
+.stock-ledger-row-out td {
+  background: #fff0f0 !important;
+}
+
+.stock-ledger-row-low:hover td,
+.stock-ledger-row-out:hover td {
+  background: #eaf2ff !important;
+}
+
 /* Action buttons in one row, compact */
 .app-main .stock-ledger-table .data-table .lead-actions,
 .app-main .stock-ledger-list .data-table .lead-actions,

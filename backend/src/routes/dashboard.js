@@ -4,11 +4,11 @@ import { getOrSetCache } from "../utils/ttlCache.js";
 
 const router = express.Router();
 
-const SUMMARY_TTL_MS = 30 * 1000; // 30 seconds — small enough for "live" feel, large enough to absorb burst loads.
+const SUMMARY_TTL_MS = 30 * 1000; // 30 seconds - small enough for "live" feel, large enough to absorb burst loads.
 
 router.get("/summary", async (_req, res) => {
   try {
-    const summary = await getOrSetCache("dashboard:summary:v1", SUMMARY_TTL_MS, async () => {
+    const summary = await getOrSetCache("dashboard:summary:v2", SUMMARY_TTL_MS, async () => {
       const sql = `
         WITH today AS (
           SELECT CURRENT_DATE AS d
@@ -99,6 +99,21 @@ router.get("/summary", async (_req, res) => {
           SELECT COUNT(*)::int AS count
             FROM followups
            WHERE status IN ('pending', 'overdue')
+        ),
+        low_stock_items AS (
+          SELECT COUNT(*)::int AS count
+            FROM products p
+           WHERE CASE
+             WHEN COALESCE(p.stock_sqft, 0) <= 0 THEN TRUE
+             WHEN (
+               CASE
+                 WHEN COALESCE(p.sqft_per_box, 0) > 0
+                   THEN ROUND((COALESCE(p.stock_sqft, 0)::numeric / NULLIF(p.sqft_per_box, 0)), 2)
+                 ELSE COALESCE(p.stock_sqft, 0)::numeric
+               END
+             ) <= GREATEST(COALESCE(p.low_stock_threshold, 10), 0) THEN TRUE
+             ELSE FALSE
+           END
         )
         SELECT
           (SELECT row_to_json(t) FROM (SELECT * FROM sales_today) t)         AS sales_today,
@@ -115,6 +130,7 @@ router.get("/summary", async (_req, res) => {
           (SELECT row_to_json(t) FROM (SELECT * FROM purchases_today) t)     AS purchases_today,
           (SELECT row_to_json(t) FROM (SELECT * FROM purchases_month) t)     AS purchases_month,
           (SELECT row_to_json(t) FROM (SELECT * FROM followups_pending) t)   AS followups_pending,
+          (SELECT row_to_json(t) FROM (SELECT * FROM low_stock_items) t)     AS low_stock_items,
           CURRENT_DATE AS as_of_date
       `;
       const result = await query(sql);
