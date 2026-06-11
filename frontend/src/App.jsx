@@ -3259,8 +3259,8 @@ export default function App() {
   const isOverview = currentView === "overview";
   const pageAction = useMemo(() => {
     const actionMap = {
-      overview: { id: "pipeline", label: "+ New Lead" },
-      pipeline: { id: "pipeline", label: "+ New Lead" },
+      overview: { id: "new_lead", label: "+ New Lead" },
+      pipeline: { id: "new_lead", label: "+ New Lead" },
       projects: { id: "projects", label: "+ New Project" },
       purchases: { id: "purchases", label: "+ New Bill" },
       billing: { id: "billing", label: "+ New Invoice" },
@@ -3270,7 +3270,7 @@ export default function App() {
 
     const action = actionMap[currentView];
     if (!action) return null;
-    if (!visibleViews.some((view) => view.id === action.id)) return null;
+    if (action.id !== "new_lead" && !visibleViews.some((view) => view.id === action.id)) return null;
     return action;
   }, [currentView, visibleViews]);
   const headerRoleLabel = useMemo(() => {
@@ -3283,11 +3283,6 @@ export default function App() {
   }, [user]);
   const headerWorkspaceLabel =
     workspaceFilter === "all" ? "All Work" : labelize(workspaceFilter);
-  const showQuickLeadEntry =
-    isOverview &&
-    hasAnyRole(user, ["admin", "manager", "sales"]) &&
-    workspaceFilter !== "operations";
-
   function syncSelectedLeadState(nextLeads) {
     if (!Array.isArray(nextLeads) || nextLeads.length === 0) {
       setSelectedLead(null);
@@ -3296,11 +3291,19 @@ export default function App() {
 
     setSelectedLead((current) => {
       if (current) {
-        return nextLeads.find((lead) => lead.id === current.id) || nextLeads[0];
+        return nextLeads.find((lead) => lead.id === current.id) || null;
       }
 
-      return nextLeads[0];
+      return null;
     });
+  }
+
+  function openNewLeadFlow() {
+    setSelectedLead(null);
+    setEditingLead(emptyLead);
+    setLeadForm(emptyLead);
+    setLeadFormErrors({});
+    setCurrentView("overview");
   }
 
   function syncSelectedProjectState(nextProjects) {
@@ -3806,8 +3809,8 @@ export default function App() {
       return;
     }
 
-    if (!selectedLead || !filteredLeads.some((lead) => lead.id === selectedLead.id)) {
-      setSelectedLead(filteredLeads[0]);
+    if (selectedLead && !filteredLeads.some((lead) => lead.id === selectedLead.id)) {
+      setSelectedLead(null);
     }
   }, [filteredLeads, selectedLead]);
 
@@ -7230,7 +7233,17 @@ export default function App() {
         autoRefreshStatusText={autoRefreshStatusText}
         audience={activeViewMeta.audience}
         pageAction={pageAction}
-        onPageAction={pageAction ? () => setCurrentView(pageAction.id) : undefined}
+        onPageAction={
+          pageAction
+            ? () => {
+                if (pageAction.id === "new_lead") {
+                  openNewLeadFlow();
+                  return;
+                }
+                setCurrentView(pageAction.id);
+              }
+            : undefined
+        }
         workspaceLabel={workspaceFilter === "all" ? "All Work" : labelize(workspaceFilter)}
         unitLabel={unitFilter === "all" ? "All Units" : labelize(unitFilter)}
         viewLabel={views.find((item) => item.id === currentView)?.label || "Overview"}
@@ -7458,149 +7471,6 @@ export default function App() {
           </section>
 
           <main className="feature-grid">
-            {showQuickLeadEntry ? (
-            <section className="panel span-two">
-              <div className="section-head">
-                <h2>Quick lead entry</h2>
-                <span>{loading ? "Syncing..." : "Under 10 seconds for sales team use"}</span>
-              </div>
-              <form
-                className="form-grid"
-                onSubmit={handleCreateLead}
-                onInputCapture={(event) => clearFieldErrorFromEvent(event, setLeadFormErrors)}
-                onChangeCapture={(event) => clearFieldErrorFromEvent(event, setLeadFormErrors)}
-              >
-                <div className="form-field">
-                  <input
-                    data-field="name"
-                    className={getFieldErrorClass(leadFormErrors, "name")}
-                    placeholder="Customer name"
-                    value={leadForm.name}
-                    onChange={(event) => setLeadForm({ ...leadForm, name: event.target.value })}
-                  />
-                  {leadFormErrors.name ? <span className="field-error-message">{leadFormErrors.name}</span> : null}
-                </div>
-                <div className="form-field">
-                  <input
-                    data-field="phone"
-                    className={getFieldErrorClass(leadFormErrors, "phone")}
-                    placeholder="Phone"
-                    value={leadForm.phone}
-                    onChange={(event) => setLeadForm({ ...leadForm, phone: event.target.value })}
-                  />
-                  {leadFormErrors.phone ? <span className="field-error-message">{leadFormErrors.phone}</span> : null}
-                </div>
-                <input
-                  placeholder="Location"
-                  value={leadForm.location}
-                  onChange={(event) => setLeadForm({ ...leadForm, location: event.target.value })}
-                />
-                <select
-                  value={leadForm.department}
-                  onChange={(event) => setLeadForm({ ...leadForm, department: event.target.value })}
-                >
-                  <option value="sales">Sales</option>
-                  <option value="operations">Operations</option>
-                </select>
-                <select
-                  value={leadForm.business_unit}
-                  onChange={(event) => setLeadForm({ ...leadForm, business_unit: event.target.value })}
-                >
-                  <option value="tiles">Tiles</option>
-                  <option value="plumbing">Plumbing</option>
-                  <option value="both">Tiles + Plumbing</option>
-                </select>
-                <select
-                  value={leadForm.customer_type}
-                  onChange={(event) => setLeadForm({ ...leadForm, customer_type: event.target.value })}
-                >
-                  {customerTypes.map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={leadForm.requirement_category}
-                  onChange={(event) =>
-                    setLeadForm({ ...leadForm, requirement_category: event.target.value })
-                  }
-                >
-                  {requirementCategories.map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-                <div className="form-field">
-                  <input
-                    data-field="budget"
-                    className={getFieldErrorClass(leadFormErrors, "budget")}
-                    type="number"
-                    placeholder="Budget"
-                    value={leadForm.budget}
-                    onChange={(event) => setLeadForm({ ...leadForm, budget: event.target.value })}
-                  />
-                  {leadFormErrors.budget ? <span className="field-error-message">{leadFormErrors.budget}</span> : null}
-                </div>
-                <select
-                  value={leadForm.timeline}
-                  onChange={(event) => setLeadForm({ ...leadForm, timeline: event.target.value })}
-                >
-                  {timelines.map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={leadForm.lead_source}
-                  onChange={(event) => setLeadForm({ ...leadForm, lead_source: event.target.value })}
-                >
-                  {leadSources.map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={leadForm.status}
-                  onChange={(event) => setLeadForm({ ...leadForm, status: event.target.value })}
-                >
-                  {leadStatuses.map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={leadForm.assigned_to}
-                  onChange={(event) => setLeadForm({ ...leadForm, assigned_to: event.target.value })}
-                >
-                  <option value="">Unassigned</option>
-                  {users.map((teamMember) => (
-                    <option key={teamMember.id} value={teamMember.id}>
-                      {teamMember.name}
-                    </option>
-                  ))}
-                </select>
-                <div className="form-field full-span">
-                  <textarea
-                    data-field="requirement"
-                    className={getFieldErrorClass(leadFormErrors, "requirement")}
-                    placeholder="Requirement details"
-                    value={leadForm.requirement}
-                    onChange={(event) => setLeadForm({ ...leadForm, requirement: event.target.value })}
-                  />
-                  {leadFormErrors.requirement ? <span className="field-error-message">{leadFormErrors.requirement}</span> : null}
-                </div>
-                <button className="full-span accent" type="submit" disabled={busyAction === "save-lead"}>
-                  {busyAction === "save-lead" ? "Saving Lead..." : "Save Lead"}
-                </button>
-              </form>
-            </section>
-            ) : null}
-
                 <section className="panel adhesive-ledger-panel">
               <div className="section-head">
                 <h2>
