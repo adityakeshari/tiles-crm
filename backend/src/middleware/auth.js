@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import { query } from "../db.js";
 
 function normalizeRoles(user) {
   if (Array.isArray(user?.roles) && user.roles.length > 0) {
@@ -12,7 +13,7 @@ function normalizeRoles(user) {
   return [];
 }
 
-export function requireAuth(req, res, next) {
+export async function requireAuth(req, res, next) {
   const header = req.headers.authorization;
   const queryToken = typeof req.query.token === "string" ? req.query.token : null;
 
@@ -23,8 +24,35 @@ export function requireAuth(req, res, next) {
   const token = header?.startsWith("Bearer ") ? header.replace("Bearer ", "") : queryToken;
 
   try {
-    req.user = jwt.verify(token, process.env.JWT_SECRET);
-    req.user.roles = normalizeRoles(req.user);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const userResult = await query(
+      "SELECT id, name, phone, role, roles, session_version FROM users WHERE id = $1 LIMIT 1",
+      [decoded.id]
+    );
+    const user = userResult.rows[0];
+
+    if (!user) {
+      return res.status(401).json({ message: "Invalid or expired token" });
+    }
+
+    const tokenSessionVersion = Number(decoded.session_version ?? 0);
+    const currentSessionVersion = Number(user.session_version ?? 0);
+
+    if (tokenSessionVersion !== currentSessionVersion) {
+      return res.status(401).json({
+        message: "Session expired because your account was logged in elsewhere.",
+        code: "SESSION_REPLACED",
+      });
+    }
+
+    req.user = {
+      ...decoded,
+      name: user.name,
+      phone: user.phone,
+      role: user.role,
+      roles: normalizeRoles(user),
+      session_version: currentSessionVersion,
+    };
     next();
   } catch (error) {
     return res.status(401).json({ message: "Invalid or expired token" });

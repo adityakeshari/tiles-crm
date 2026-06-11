@@ -29,7 +29,7 @@ router.post("/login", async (req, res) => {
 
   try {
     const result = await query(
-      "SELECT id, name, phone, role, roles, password FROM users WHERE phone = $1 LIMIT 1",
+      "SELECT id, name, phone, role, roles, password, session_version FROM users WHERE phone = $1 LIMIT 1",
       [phone]
     );
 
@@ -45,9 +45,25 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
+    const sessionResult = await query(
+      `UPDATE users
+          SET session_version = COALESCE(session_version, 0) + 1
+        WHERE id = $1
+    RETURNING session_version`,
+      [user.id]
+    );
+    const sessionVersion = Number(sessionResult.rows[0]?.session_version || 0);
+
     const roles = getEffectiveRoles(user);
     const token = jwt.sign(
-      { id: user.id, name: user.name, phone: user.phone, role: user.role, roles },
+      {
+        id: user.id,
+        name: user.name,
+        phone: user.phone,
+        role: user.role,
+        roles,
+        session_version: sessionVersion,
+      },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );

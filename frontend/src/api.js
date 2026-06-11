@@ -1,6 +1,7 @@
 const API_BASE_URL =
   import.meta.env.VITE_API_URL || (import.meta.env.DEV ? "http://localhost:5000/api" : "/api");
 const DEFAULT_TIMEOUT_MS = 15000;
+const AUTH_EXPIRED_STORAGE_KEY = "tiles-crm-auth-expired-message";
 
 function getHeaders(includeAuth = true) {
   const headers = {
@@ -92,6 +93,16 @@ async function request(path, options = {}) {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: "Request failed" }));
+    if (response.status === 401 && typeof window !== "undefined") {
+      const expiredMessage =
+        error?.code === "SESSION_REPLACED"
+          ? "You have been logged out because your account was used on another device."
+          : "Your session has expired. Please sign in again.";
+      localStorage.removeItem("tiles-crm-token");
+      localStorage.removeItem("tiles-crm-user");
+      sessionStorage.setItem(AUTH_EXPIRED_STORAGE_KEY, expiredMessage);
+      window.location.reload();
+    }
     const requestError = new Error(error.message || "Request failed");
     requestError.status = response.status;
     requestError.data = error;
@@ -103,6 +114,17 @@ async function request(path, options = {}) {
   }
 
   return response.json();
+}
+
+export function consumeAuthExpiredMessage() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  const message = sessionStorage.getItem(AUTH_EXPIRED_STORAGE_KEY) || "";
+  if (message) {
+    sessionStorage.removeItem(AUTH_EXPIRED_STORAGE_KEY);
+  }
+  return message;
 }
 
 export function getQuotationPdfUrl(leadId, quotationId) {

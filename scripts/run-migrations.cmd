@@ -78,6 +78,7 @@ call :run "036_backfill_legacy_product_fields.sql"
 call :run "037_purchase_duplicate_merge_relax.sql"
 call :run "038_daily_tasks_module.sql"
 call :run "039_daily_tasks_external_source.sql"
+call :run "040_single_active_session.sql"
 
 if errorlevel 1 exit /b 1
 

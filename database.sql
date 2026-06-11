@@ -3,6 +3,7 @@ CREATE TABLE users (
   name VARCHAR(100) NOT NULL,
   phone VARCHAR(15) NOT NULL UNIQUE,
   role VARCHAR(20) NOT NULL DEFAULT 'sales' CHECK (role IN ('admin', 'manager', 'sales', 'operations', 'accounts')),
+  session_version INTEGER NOT NULL DEFAULT 0,
   password TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

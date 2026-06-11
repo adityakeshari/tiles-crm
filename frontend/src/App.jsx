@@ -1,5 +1,5 @@
 import { Fragment, Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, getBillingPdfUrl, getCsvExportUrl, getProjectInvoicePdfUrl, getQuotationPdfUrl } from "./api.js";
+import { api, consumeAuthExpiredMessage, getBillingPdfUrl, getCsvExportUrl, getProjectInvoicePdfUrl, getQuotationPdfUrl } from "./api.js";
 import AppHeader from "./components/AppHeader.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import PageHeader from "./components/PageHeader.jsx";
@@ -2015,6 +2015,7 @@ export default function App() {
     typeof window === "undefined" ? false : window.innerWidth <= 1080
   );
   const [error, setError] = useState("");
+  const [authNotice, setAuthNotice] = useState("");
   const [loading, setLoading] = useState(false);
   const [isDocumentVisible, setIsDocumentVisible] = useState(
     typeof document === "undefined" ? true : document.visibilityState === "visible"
@@ -2184,6 +2185,18 @@ export default function App() {
     setToasts((current) => [...current, { id, tone: "error", message: error }]);
     setError("");
   }, [error]);
+
+  useEffect(() => {
+    if (token) {
+      return;
+    }
+
+    const expiredMessage = consumeAuthExpiredMessage();
+    if (expiredMessage) {
+      setAuthNotice(expiredMessage);
+      setError(expiredMessage);
+    }
+  }, [token]);
 
   useEffect(() => {
     if (!toasts.length) {
@@ -3826,6 +3839,7 @@ export default function App() {
 
   async function handleLogin(event) {
     event.preventDefault();
+    setAuthNotice("");
     const validationError = validateLoginForm(loginForm);
     if (validationError) {
       setError(validationError);
@@ -6909,9 +6923,9 @@ export default function App() {
                 </div>
               </div>
 
-              {error ? (
+              {error || authNotice ? (
                 <div className="auth-error-banner" role="alert">
-                  {error}
+                  {authNotice || error}
                 </div>
               ) : null}
 
