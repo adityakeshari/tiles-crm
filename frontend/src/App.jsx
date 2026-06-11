@@ -1922,6 +1922,7 @@ export default function App() {
   const [dealerForm, setDealerForm] = useState(emptyDealer);
   const [editingDealerId, setEditingDealerId] = useState(null);
   const [productForm, setProductForm] = useState(emptyProduct);
+  const [productFormErrors, setProductFormErrors] = useState({});
   const [editingProductId, setEditingProductId] = useState(null);
   const [customProductCategories, setCustomProductCategories] = useState([]);
   const [isAddingCustomProductCategory, setIsAddingCustomProductCategory] = useState(false);
@@ -4319,6 +4320,7 @@ export default function App() {
         throw saveError;
       }
       setProductForm(emptyProduct);
+      setProductFormErrors({});
       setEditingProductId(null);
       setIsAddingCustomProductCategory(false);
       setIsAddingCustomCompany(false);
@@ -6411,6 +6413,7 @@ export default function App() {
     setEditingProductId(product.id);
     setInventoryWorkspaceTab("new");
     setProductHighlightedFields(Array.isArray(highlightFields) ? highlightFields : []);
+    setProductFormErrors({});
     setIsAddingCustomProductCategory(false);
     setIsAddingCustomCompany(false);
     setIsAddingCustomProductSize(false);
@@ -6656,6 +6659,7 @@ export default function App() {
     setDealerForm(emptyDealer);
     setEditingDealerId(null);
     setProductForm(emptyProduct);
+    setProductFormErrors({});
     setEditingProductId(null);
     setIsAddingCustomProductCategory(false);
     setIsAddingCustomCompany(false);
@@ -9790,10 +9794,18 @@ export default function App() {
                         placeholder="Enter current stock"
                         className={getFieldErrorClass(productFormErrors, "stock_sqft")}
                         value={productForm.stock_sqft}
-                        onChange={(event) => setProductForm({ ...productForm, stock_sqft: event.target.value })}
+                        onChange={(event) => {
+                          setProductForm({ ...productForm, stock_sqft: event.target.value });
+                          setProductFormErrors((prev) => {
+                            if (!prev?.stock_sqft) return prev || {};
+                            const next = { ...prev };
+                            delete next.stock_sqft;
+                            return next;
+                          });
+                        }}
                       />
-                      {productFormErrors.stock_sqft ? (
-                        <span className="field-error-message">{productFormErrors.stock_sqft}</span>
+                      {productFormErrors?.stock_sqft ? (
+                        <span className="field-error-message">{productFormErrors?.stock_sqft}</span>
                       ) : null}
                     </div>
                     <div className="form-field">
@@ -9839,6 +9851,7 @@ export default function App() {
                     onClick={() => {
                       setEditingProductId(null);
                       setProductForm(emptyProduct);
+                      setProductFormErrors({});
                       setIsAddingCustomProductCategory(false);
                       setIsAddingCustomCompany(false);
                       setIsAddingCustomProductSize(false);
