@@ -222,14 +222,18 @@ function DailyTasksSectionImpl({
     return { done, total, percent };
   }, [tasks]);
   const emptyState = getTaskEmptyState(tab, canManageAllTasks);
-  const shouldShowManagerToolbar = canManageAllTasks || tab === "overdue" || tab === "completed";
+  // Staff previously only got the search/date toolbar on overdue & completed
+  // tabs; now every task tab is searchable (summary tab needs no toolbar).
+  const shouldShowManagerToolbar = tab !== "summary";
   const taskMetrics = useMemo(() => {
     const items = Array.isArray(tasks) ? tasks : [];
     const counts = {
       total: Number(summary?.today_total_tasks ?? items.length ?? 0),
       completed: Number(summary?.today_completed_tasks ?? items.filter((task) => ["completed", "verified"].includes(task?.status)).length ?? 0),
       pending: Number(summary?.today_pending_tasks ?? items.filter((task) => task?.status === "pending").length ?? 0),
-      inProgress: items.filter((task) => task?.status === "in_progress").length,
+      // Prefer the today-scoped summary so the Command Center stays stable
+      // across tabs instead of reflecting whichever tab is currently open.
+      inProgress: Number(summary?.today_in_progress_tasks ?? items.filter((task) => task?.status === "in_progress").length),
       overdue: Number(summary?.overdue_tasks ?? items.filter((task) => task?.is_overdue).length ?? 0),
     };
     const overallPercent = counts.total > 0 ? Math.round((counts.completed / counts.total) * 100) : 0;
@@ -240,9 +244,20 @@ function DailyTasksSectionImpl({
   }, [summary, tasks]);
   const eodMetrics = useMemo(() => {
     const items = Array.isArray(tasks) ? tasks : [];
-    const inProgress = items.filter((task) => task?.status === "in_progress").length;
-    const delayed = items.filter((task) => task?.is_overdue || task?.status === "hold").length;
-    const carryForward = items.filter((task) => ["pending", "in_progress", "hold"].includes(String(task?.status || ""))).length;
+    // Summary-backed numbers (today/all-active scope) so the EOD panel does not
+    // change meaning as the manager switches tabs; current-tab items are only
+    // used as a fallback and for the notes snapshot.
+    const inProgress = Number(
+      summary?.today_in_progress_tasks ?? items.filter((task) => task?.status === "in_progress").length
+    );
+    const delayed = Number(
+      summary?.overdue_tasks != null
+        ? Number(summary.overdue_tasks) + Number(summary.today_hold_tasks || 0)
+        : items.filter((task) => task?.is_overdue || task?.status === "hold").length
+    );
+    const carryForward = Number(
+      summary?.pending_tasks ?? items.filter((task) => ["pending", "in_progress", "hold"].includes(String(task?.status || ""))).length
+    );
     const ownerNotes = items
       .filter((task) => task?.remarks || task?.is_overdue || task?.status === "hold")
       .slice(0, 4)
@@ -259,7 +274,7 @@ function DailyTasksSectionImpl({
       carryForward,
       ownerNotes,
     };
-  }, [taskMetrics, tasks]);
+  }, [taskMetrics, tasks, summary]);
   const mergedStaffSummary = useMemo(() => {
     const summaryMap = new Map(
       (Array.isArray(staffSummary) ? staffSummary : []).map((item) => [String(item?.assigned_to || ""), item])
@@ -494,7 +509,7 @@ function DailyTasksSectionImpl({
       <section className="panel daily-task-board-panel">
         <div className="section-head">
           <h2>{tab === "summary" ? "Staff-wise task summary" : canManageAllTasks ? "Task board" : "Today's Work"}</h2>
-          <span>{tab === "summary" ? `${staffSummary.length} staff summaries` : `${tasks.length} tasks in current view`}</span>
+          <span>{tab === "summary" ? `${mergedStaffSummary.length} staff summaries` : `${tasks.length} tasks in current view`}</span>
         </div>
 
         {shouldShowManagerToolbar ? (
@@ -562,9 +577,6 @@ function DailyTasksSectionImpl({
                     <h3>{item.assigned_to_name}</h3>
                     <span className="status-chip">{getStaffProgressLabel(item)}</span>
                   </div>
-                  <p className="daily-task-summary-progress">
-                    {item.assigned_to_name}: {getStaffProgressLabel(item)}
-                  </p>
                   <div className="chip-row">
                     <span className="legend-chip">Assigned {item.total_tasks}</span>
                     <span className="legend-chip">Completed {Number(item.completed_tasks || 0) + Number(item.verified_tasks || 0)}</span>

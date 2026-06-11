@@ -1881,6 +1881,17 @@ export default function App() {
   const [expenseSummary, setExpenseSummary] = useState(null);
   const [dailyTaskViewTab, setDailyTaskViewTab] = useState("today");
   const [dailyTaskFilters, setDailyTaskFilters] = useState(emptyDailyTaskFilters);
+  // Debounced copy of the daily-task search input. The dashboard load effect
+  // keys on this instead of the raw value, so typing in the search box does not
+  // fire an API request (and a loading banner flash) on every keystroke.
+  const [debouncedDailyTaskSearch, setDebouncedDailyTaskSearch] = useState("");
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedDailyTaskSearch(dailyTaskFilters.search || "");
+    }, 400);
+    return () => window.clearTimeout(timeoutId);
+  }, [dailyTaskFilters.search]);
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [followupForm, setFollowupForm] = useState(emptyFollowup);
@@ -3606,7 +3617,7 @@ export default function App() {
             {
               limit: listLimits.leads,
               view: dailyTaskViewTab === "summary" ? "" : dailyTaskViewTab,
-              search: dailyTaskFilters.search,
+              search: debouncedDailyTaskSearch,
               status: dailyTaskFilters.status === "all" ? "" : dailyTaskFilters.status,
               assigned_to: assignedTaskFilter,
               priority: dailyTaskFilters.priority === "all" ? "" : dailyTaskFilters.priority,
@@ -3826,7 +3837,11 @@ export default function App() {
     billingFromFilter,
     billingToFilter,
     dailyTaskViewTab,
-    dailyTaskFilters,
+    dailyTaskFilters.status,
+    dailyTaskFilters.priority,
+    dailyTaskFilters.assigned_to,
+    dailyTaskFilters.due_date,
+    debouncedDailyTaskSearch,
     dailyReportDate,
     inventoryLedgerSearch,
   ]);

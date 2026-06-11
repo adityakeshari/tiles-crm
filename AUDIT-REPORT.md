@@ -71,6 +71,17 @@ Sales and Operations workspace views kept their role-specific cards; only the sh
 2. **Dead render branch removed:** `{currentView === "purchase_costing" ? null : null}` (the view is redirected to the purchases/costing tab by an effect, which is correct).
 3. **Checked and sound:** every sidebar view has a render branch; all backend routers are mounted behind `requireAuth` (owner-summary intentionally uses an internal API key; external daily-tasks router has its own auth); the API 404 handler precedes the SPA fallback; PDF/CSV URLs pass the token as a query param which `requireAuth` accepts; 401 handling clears the session cleanly.
 
+## Daily Tasks web view audit (follow-up, 2026-06-12)
+
+1. **"Completed Today" tab showed every completed task ever.** Backend view filter had no date condition. Fixed: `COALESCE(completed_at, updated_at)::date = CURRENT_DATE`. File: `backend/src/routes/daily-tasks.js`.
+2. **Command Center / EOD numbers changed when switching tabs.** "In Progress", "Delayed", and "Carry forward" were computed from whichever tab's task list was loaded, while other cards used the today-scoped summary. Fixed: summary now returns `today_in_progress_tasks` and `today_hold_tasks`, and the panels read from the summary (tab list is only a fallback). Files: `daily-tasks.js`, `DailyTasksSection.jsx`.
+3. **Search fired an API request per keystroke** with a loading-banner flash. Fixed with a 400ms debounced search value; dropdown filters still refetch immediately. File: `frontend/src/App.jsx`.
+4. **Staff couldn't search their own tasks** — the toolbar only appeared for managers or on overdue/completed tabs. Now visible on all task tabs (manager-only dropdowns still gated). File: `DailyTasksSection.jsx`.
+5. **Staff-wise summary header count mismatch** — header counted raw `staffSummary` while the grid rendered the merged list. Fixed.
+6. **Duplicate name/progress line in each staff summary card** removed.
+
+All fix logic verified by executable checks (eod metrics, debounce, SQL filter string).
+
 ## Files changed
 - `backend/src/routes/inventory.js` — id validation on PUT/DELETE
 - `backend/src/routes/leads.js` — param validators, FOR UPDATE lock, NULL-safe floor deduction, 409 for stock rejections

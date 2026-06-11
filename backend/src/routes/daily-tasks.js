@@ -352,8 +352,11 @@ function buildTaskFilters(req, params, user) {
     params.push(ACTIVE_TASK_STATUSES);
     conditions.push(`t.status = ANY($${params.length})`);
   } else if (view === "completed") {
+    // The tab is labelled "Completed Today" — without the date condition it
+    // listed every completed task ever, which buried today's review.
     params.push(DONE_TASK_STATUSES);
     conditions.push(`t.status = ANY($${params.length})`);
+    conditions.push(`COALESCE(t.completed_at, t.updated_at)::date = CURRENT_DATE`);
   } else if (view === "overdue") {
     params.push(DONE_TASK_STATUSES);
     conditions.push(`t.due_date < CURRENT_DATE AND NOT (t.status = ANY($${params.length}))`);
@@ -382,6 +385,8 @@ async function getDailyTaskSummary(user) {
        COUNT(*) FILTER (WHERE due_date = CURRENT_DATE)::int AS today_total_tasks,
        COUNT(*) FILTER (WHERE due_date = CURRENT_DATE AND status IN ('completed', 'verified'))::int AS today_completed_tasks,
        COUNT(*) FILTER (WHERE due_date = CURRENT_DATE AND status NOT IN ('completed', 'verified'))::int AS today_pending_tasks,
+       COUNT(*) FILTER (WHERE due_date = CURRENT_DATE AND status = 'in_progress')::int AS today_in_progress_tasks,
+       COUNT(*) FILTER (WHERE due_date = CURRENT_DATE AND status = 'hold')::int AS today_hold_tasks,
        COUNT(*) FILTER (WHERE due_date < CURRENT_DATE AND status NOT IN ('completed', 'verified'))::int AS overdue_tasks,
        COUNT(*) FILTER (WHERE status NOT IN ('completed', 'verified'))::int AS pending_tasks,
        COUNT(*) FILTER (WHERE status IN ('completed', 'verified'))::int AS completed_tasks,
