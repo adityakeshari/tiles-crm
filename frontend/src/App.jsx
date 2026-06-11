@@ -1850,6 +1850,8 @@ export default function App() {
   const [workspaceFilter, setWorkspaceFilter] = useState("all");
   const [unitFilter, setUnitFilter] = useState("all");
   const [loginForm, setLoginForm] = useState({ phone: "", password: "" });
+  const [rememberMe, setRememberMe] = useState(false);
+  const [showBootstrapSetup, setShowBootstrapSetup] = useState(false);
   const [adminForm, setAdminForm] = useState(emptyAdmin);
   const [leadForm, setLeadForm] = useState(emptyLead);
   const [leadFormErrors, setLeadFormErrors] = useState({});
@@ -6692,59 +6694,181 @@ export default function App() {
   if (!token) {
     return (
       <div className="auth-shell">
-        <section className="auth-card">
-          <div>
-            <p className="eyebrow">Tiles CRM System</p>
-            <h1>Track every walk-in, convert more leads, and manage showroom sales with discipline.</h1>
-            <p className="muted">
-              Use the bootstrap form once to create the first admin, then sign in and start
-              running the tiles showroom process from one place.
-            </p>
-          </div>
+        <section className="auth-card auth-premium-shell">
+          <aside className="auth-hero-panel">
+            <div className="auth-hero-overlay" />
+            <div className="auth-hero-content">
+              <div className="auth-brand">
+                <div className="auth-brand-mark" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <div className="auth-brand-copy">
+                  <strong>AIBA</strong>
+                  <span>Tiles CRM</span>
+                </div>
+              </div>
 
-          {error ? <p className="error">{error}</p> : null}
+              <div className="auth-hero-copy-block">
+                <p className="eyebrow">Premium showroom CRM</p>
+                <h1>
+                  Manage your showroom.
+                  <br />
+                  <span>Grow</span> your business.
+                </h1>
+                <p className="auth-hero-copy">
+                  A complete CRM system to manage leads, projects, inventory, billing and your
+                  entire showroom operations in one place.
+                </p>
+              </div>
 
-          <div className="auth-grid">
-            <form className="panel" onSubmit={handleSeedAdmin}>
-              <h2>Bootstrap admin</h2>
-              <input
-                placeholder="Full name"
-                value={adminForm.name}
-                onChange={(event) => setAdminForm({ ...adminForm, name: event.target.value })}
-              />
-              <input
-                placeholder="Phone"
-                value={adminForm.phone}
-                onChange={(event) => setAdminForm({ ...adminForm, phone: event.target.value })}
-              />
-              <input
-                type="password"
-                placeholder="Password"
-                value={adminForm.password}
-                onChange={(event) => setAdminForm({ ...adminForm, password: event.target.value })}
-              />
-              <button type="submit" disabled={busyAction === "seed-admin"}>
-                {busyAction === "seed-admin" ? "Creating Admin..." : "Create Admin"}
-              </button>
-            </form>
+              <div className="auth-feature-list" aria-label="CRM features">
+                <article className="auth-feature-item">
+                  <div className="auth-feature-icon" aria-hidden="true">✓</div>
+                  <div>
+                    <strong>Lead Management</strong>
+                    <p>Track every walk-in and convert more leads.</p>
+                  </div>
+                </article>
+                <article className="auth-feature-item">
+                  <div className="auth-feature-icon" aria-hidden="true">✓</div>
+                  <div>
+                    <strong>Inventory Control</strong>
+                    <p>Monitor stock, batches, pricing and showroom movement.</p>
+                  </div>
+                </article>
+                <article className="auth-feature-item">
+                  <div className="auth-feature-icon" aria-hidden="true">✓</div>
+                  <div>
+                    <strong>Billing &amp; Invoicing</strong>
+                    <p>Create customer bills quickly with approval-safe pricing.</p>
+                  </div>
+                </article>
+                <article className="auth-feature-item">
+                  <div className="auth-feature-icon" aria-hidden="true">✓</div>
+                  <div>
+                    <strong>Insights &amp; Reports</strong>
+                    <p>Use live dashboards to run a disciplined monthly showroom business.</p>
+                  </div>
+                </article>
+              </div>
 
-            <form className="panel" onSubmit={handleLogin}>
-              <h2>Login</h2>
-              <input
-                placeholder="Phone"
-                value={loginForm.phone}
-                onChange={(event) => setLoginForm({ ...loginForm, phone: event.target.value })}
-              />
-              <input
-                type="password"
-                placeholder="Password"
-                value={loginForm.password}
-                onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })}
-              />
-              <button type="submit" disabled={busyAction === "login"}>
-                {busyAction === "login" ? "Signing In..." : "Sign In"}
-              </button>
-            </form>
+              <div className="auth-hero-footer">Secure - Reliable - Built for Showrooms</div>
+            </div>
+          </aside>
+
+          <div className="auth-form-panel">
+            <div className="auth-glass-card panel">
+              <div className="auth-logo-stack">
+                <div className="auth-logo-badge" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <div>
+                  <h2>Welcome Back!</h2>
+                  <p>Sign in to continue to AIBA Tiles CRM</p>
+                </div>
+              </div>
+
+              {error ? (
+                <div className="auth-error-banner" role="alert">
+                  {error}
+                </div>
+              ) : null}
+
+              <form className="auth-login-form" onSubmit={handleLogin}>
+                <label className="auth-input-group">
+                  <span className="auth-input-icon" aria-hidden="true">☎</span>
+                  <input
+                    placeholder="Phone"
+                    autoComplete="tel"
+                    value={loginForm.phone}
+                    onChange={(event) => setLoginForm({ ...loginForm, phone: event.target.value })}
+                  />
+                </label>
+                <label className="auth-input-group">
+                  <span className="auth-input-icon" aria-hidden="true">◍</span>
+                  <input
+                    type="password"
+                    placeholder="Password"
+                    autoComplete="current-password"
+                    value={loginForm.password}
+                    onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })}
+                  />
+                </label>
+
+                <div className="auth-login-meta">
+                  <label className="checkbox-row auth-checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(event) => setRememberMe(event.target.checked)}
+                    />
+                    <span>Remember Me</span>
+                  </label>
+                  <button type="button" className="auth-inline-link secondary">
+                    Forgot Password
+                  </button>
+                </div>
+
+                <button type="submit" className="auth-login-button" disabled={busyAction === "login"}>
+                  <span className="auth-login-button-icon" aria-hidden="true">
+                    {busyAction === "login" ? "◌" : "→"}
+                  </span>
+                  {busyAction === "login" ? "Signing In..." : "Sign In"}
+                </button>
+              </form>
+
+              <section className="auth-setup-panel">
+                <button
+                  type="button"
+                  className="auth-setup-toggle secondary"
+                  aria-expanded={showBootstrapSetup}
+                  onClick={() => setShowBootstrapSetup((current) => !current)}
+                >
+                  <span>Initial Setup / Create First Admin</span>
+                  <span aria-hidden="true">{showBootstrapSetup ? "−" : "+"}</span>
+                </button>
+
+                {showBootstrapSetup ? (
+                  <div className="auth-setup-body">
+                    <p className="muted">
+                      Use this only once to create the first admin, then sign in normally.
+                    </p>
+                    <form className="auth-bootstrap-form" onSubmit={handleSeedAdmin}>
+                      <input
+                        placeholder="Full name"
+                        autoComplete="name"
+                        value={adminForm.name}
+                        onChange={(event) => setAdminForm({ ...adminForm, name: event.target.value })}
+                      />
+                      <input
+                        placeholder="Phone"
+                        autoComplete="tel"
+                        value={adminForm.phone}
+                        onChange={(event) => setAdminForm({ ...adminForm, phone: event.target.value })}
+                      />
+                      <input
+                        type="password"
+                        placeholder="Password"
+                        autoComplete="new-password"
+                        value={adminForm.password}
+                        onChange={(event) => setAdminForm({ ...adminForm, password: event.target.value })}
+                      />
+                      <button type="submit" className="secondary" disabled={busyAction === "seed-admin"}>
+                        {busyAction === "seed-admin" ? "Creating Admin..." : "Create Admin"}
+                      </button>
+                    </form>
+                  </div>
+                ) : null}
+              </section>
+
+              <p className="auth-trust-note">Your data is secure and your showroom workflow stays private.</p>
+            </div>
           </div>
         </section>
       </div>
