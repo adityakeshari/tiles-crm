@@ -95,9 +95,6 @@ export default function AppHeader({
                   <button type="button" role="menuitem" onClick={() => closeMenuAnd(onOpenDashboard)}>
                     Dashboard
                   </button>
-                  <button type="button" role="menuitem" onClick={() => closeMenuAnd(onOpenDashboard)}>
-                    Profile
-                  </button>
                   <button
                     type="button"
                     role="menuitem"

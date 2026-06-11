@@ -4695,6 +4695,8 @@ button.sidebar-item-active .sidebar-dot {
 
   .topbar.topbar-compact {
     padding: 0.55rem 0.75rem;
+    overflow: visible;
+    z-index: 45;
   }
 
   /* Single-line compact greeting bar */
@@ -4771,6 +4773,7 @@ button.sidebar-item-active .sidebar-dot {
   /* Avatar + dropdown profile menu */
   .topbar-profile-menu {
     position: relative;
+    z-index: 46;
   }
 
   .topbar-profile-avatar {
