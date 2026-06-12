@@ -173,6 +173,18 @@ function getTaskProgressPercent(task) {
   return TASK_PROGRESS_MAP[normalizedStatus] ?? 0;
 }
 
+function isTaskAssignedToCurrentUser(task, user) {
+  return Number(task?.assigned_to || 0) === Number(user?.id || 0);
+}
+
+function canSelfActionTask(task, user) {
+  return isTaskAssignedToCurrentUser(task, user);
+}
+
+function canReviewTask(task, user, canManageAllTasks) {
+  return canManageAllTasks && !isTaskAssignedToCurrentUser(task, user);
+}
+
 function DailyTasksSectionImpl({
   user,
   users,
@@ -241,8 +253,8 @@ function DailyTasksSectionImpl({
     return baseTabs;
   }, [canManageAllTasks, summary]);
 
-  const canUpdateTask = (task) =>
-    canManageAllTasks || Number(task?.assigned_to || 0) === Number(user?.id || 0);
+  const canUpdateTask = (task) => canSelfActionTask(task, user);
+  const canReviewTaskItem = (task) => canReviewTask(task, user, canManageAllTasks);
   const [detailTask, setDetailTask] = useState(null);
   const [isCreateFormExpanded, setIsCreateFormExpanded] = useState(false);
   const activeDetailTask = detailTask
@@ -831,6 +843,8 @@ function DailyTasksSectionImpl({
                       {section.items.map((task) => {
                         const isDone = ["completed", "verified"].includes(String(task.status || ""));
                         const isVerified = String(task.status || "") === "verified";
+                        const isOwnTask = canUpdateTask(task);
+                        const canReviewOnly = canReviewTaskItem(task);
                         return (
                           <li
                             key={task.id}
@@ -889,7 +903,7 @@ function DailyTasksSectionImpl({
 
                             {canManageAllTasks ? (
                               <span className="daily-task-row-actions">
-                                {canUpdateTask(task) && task.status === "pending" ? (
+                                {isOwnTask && task.status === "pending" ? (
                                   <button
                                     type="button"
                                     className="secondary daily-task-row-action"
@@ -897,6 +911,15 @@ function DailyTasksSectionImpl({
                                     disabled={busyAction === `daily-task-status-${task.id}`}
                                   >
                                     Start
+                                  </button>
+                                ) : null}
+                                {canReviewOnly && !isVerified ? (
+                                  <button
+                                    type="button"
+                                    className="secondary daily-task-row-action"
+                                    onClick={() => setDetailTask(task)}
+                                  >
+                                    Review
                                   </button>
                                 ) : null}
                                 {canVerifyDailyTasks && task.status === "completed" ? (
@@ -991,12 +1014,15 @@ function DailyTasksSectionImpl({
             </div>
 
             <div className="daily-task-detail-body">
-              <div className="daily-task-card-meta">
-                <span className="legend-chip">Task ID #{activeDetailTask.id}</span>
-                <span className="legend-chip">Date {formatDate(activeDetailTask.created_at)}</span>
-                <span
-                  className={`legend-chip daily-task-source-chip daily-task-source-${String(activeDetailTask.source || "manual").toLowerCase()}`}
-                >
+            <div className="daily-task-card-meta">
+              <span className="legend-chip">Task ID #{activeDetailTask.id}</span>
+              <span className="legend-chip">Date {formatDate(activeDetailTask.created_at)}</span>
+              <span className="legend-chip">Assigned {activeDetailTask.assigned_to_name || "Unassigned"}</span>
+              <span className="legend-chip">Status {labelize(activeDetailTask.status)}</span>
+              <span className="legend-chip">Due {getTaskDueLabel(activeDetailTask, formatDate)}</span>
+              <span
+                className={`legend-chip daily-task-source-chip daily-task-source-${String(activeDetailTask.source || "manual").toLowerCase()}`}
+              >
                   {getTaskSourceLabel(activeDetailTask.source)}
                 </span>
                 {activeDetailTask.verified_by_name ? (
@@ -1005,7 +1031,7 @@ function DailyTasksSectionImpl({
               </div>
 
               <p className="muted daily-task-card-timestamps">
-                Created {formatDateTime(activeDetailTask.created_at)} | Updated {formatDateTime(activeDetailTask.updated_at)}
+                Created {formatDateTime(activeDetailTask.created_at)} | Last updated {formatDateTime(activeDetailTask.updated_at)}
                 {activeDetailTask.completed_at ? ` | Completed ${formatDateTime(activeDetailTask.completed_at)}` : ""}
               </p>
 
@@ -1062,6 +1088,18 @@ function DailyTasksSectionImpl({
                       Hold
                     </button>
                   ) : null}
+                  {canReviewTaskItem(activeDetailTask) ? (
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => {
+                        startEditingTask(activeDetailTask);
+                        setDetailTask(null);
+                      }}
+                    >
+                      Review
+                    </button>
+                  ) : null}
                   {canVerifyDailyTasks && activeDetailTask.status === "completed" ? (
                     <button
                       type="button"
@@ -1081,7 +1119,7 @@ function DailyTasksSectionImpl({
                       setDetailTask(null);
                     }}
                   >
-                    {canManageAllTasks ? "Edit" : "Remark"}
+                    {canReviewTaskItem(activeDetailTask) ? "Edit" : canManageAllTasks ? "Edit" : "Remark"}
                   </button>
                   {canDeleteDailyTasks ? (
                     <button
