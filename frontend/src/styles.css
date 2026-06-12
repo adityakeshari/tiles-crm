@@ -5120,6 +5120,25 @@ button.sidebar-item-active .sidebar-dot {
   min-height: 0;
 }
 
+.daily-task-staff-card.severity-critical {
+  border-color: rgba(190, 24, 93, 0.22);
+  background: linear-gradient(180deg, rgba(255, 241, 242, 0.98), rgba(255, 255, 255, 0.98));
+}
+
+.daily-task-staff-card.severity-attention {
+  border-color: rgba(217, 119, 6, 0.24);
+  background: linear-gradient(180deg, rgba(255, 251, 235, 0.98), rgba(255, 255, 255, 0.98));
+}
+
+.daily-task-staff-card.severity-healthy {
+  border-color: rgba(14, 107, 52, 0.2);
+  background: linear-gradient(180deg, rgba(240, 253, 244, 0.98), rgba(255, 255, 255, 0.98));
+}
+
+.daily-task-staff-card.is-empty {
+  cursor: default;
+}
+
 .daily-task-staff-card:hover {
   border-color: var(--crm-navy-400, #4a6491);
   transform: none;
@@ -5161,6 +5180,14 @@ button.sidebar-item-active .sidebar-dot {
   transition: width 0.25s ease;
 }
 
+.daily-task-staff-card.severity-critical .daily-task-staff-progress-fill {
+  background: #be185d;
+}
+
+.daily-task-staff-card.severity-attention .daily-task-staff-progress-fill {
+  background: #d97706;
+}
+
 .daily-task-staff-card-meta {
   display: flex;
   flex-wrap: wrap;
@@ -5177,6 +5204,11 @@ button.sidebar-item-active .sidebar-dot {
 .daily-task-staff-card-meta .tone-accent {
   color: #0e6b34;
   font-weight: 700;
+}
+
+.daily-task-staff-card-scope {
+  font-size: 0.73rem;
+  color: var(--crm-muted, #5b6b82);
 }
 
 /* Staff phones: the placeholder form panel adds no value on a small screen —

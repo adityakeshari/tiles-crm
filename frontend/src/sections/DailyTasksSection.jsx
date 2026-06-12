@@ -173,6 +173,24 @@ function getTaskProgressPercent(task) {
   return TASK_PROGRESS_MAP[normalizedStatus] ?? 0;
 }
 
+function getProgressSeverity({ assigned, completed, pending, overdue }) {
+  const completionPercent = assigned > 0 ? Math.round((completed / assigned) * 100) : 0;
+
+  if (assigned > 0 && completionPercent >= 100 && overdue === 0 && pending === 0) {
+    return "healthy";
+  }
+
+  if (overdue > 0 && completionPercent < 50) {
+    return "critical";
+  }
+
+  if (pending > 0 || overdue > 0) {
+    return "attention";
+  }
+
+  return "neutral";
+}
+
 function isTaskAssignedToCurrentUser(task, user) {
   return Number(task?.assigned_to || 0) === Number(user?.id || 0);
 }
@@ -384,6 +402,88 @@ function DailyTasksSectionImpl({
     return merged.length ? merged : (Array.isArray(staffSummary) ? staffSummary : []);
   }, [staffSummary, users]);
 
+  const progressScopeLabel = useMemo(() => {
+    if (tab === "today") return "Today progress";
+    if (tab === "my") return "My task progress";
+    if (tab === "pending") return "Current view progress";
+    if (tab === "overdue") return "Overdue progress";
+    if (tab === "completed") return "Completed today progress";
+    if (tab === "summary") return "Current view progress";
+    return "Current view progress";
+  }, [tab]);
+
+  const performanceCards = useMemo(() => {
+    const items = Array.isArray(tasks) ? tasks : [];
+
+    if (!canManageAllTasks) {
+      const assigned = items.length;
+      const completed = items.filter((task) => ["completed", "verified"].includes(String(task?.status || ""))).length;
+      const pending = items.filter((task) => !["completed", "verified"].includes(String(task?.status || ""))).length;
+      const overdue = items.filter((task) => task?.is_overdue).length;
+      const completionPercent = assigned > 0 ? Math.round((completed / assigned) * 100) : 0;
+      return [
+        {
+          key: `my-progress-${user?.id || "current"}`,
+          label: "My Progress",
+          assigned,
+          completed,
+          pending,
+          overdue,
+          completionPercent,
+          severity: getProgressSeverity({ assigned, completed, pending, overdue }),
+          isSelected: false,
+          isEmpty: assigned === 0,
+        },
+      ];
+    }
+
+    const grouped = new Map();
+    items.forEach((task) => {
+      const key = String(task?.assigned_to || "");
+      if (!key) return;
+      const current = grouped.get(key) || {
+        key,
+        assigned_to: task.assigned_to,
+        label: task.assigned_to_name || `User ${task.assigned_to}`,
+        assigned: 0,
+        completed: 0,
+        pending: 0,
+        overdue: 0,
+      };
+      current.assigned += 1;
+      if (["completed", "verified"].includes(String(task?.status || ""))) {
+        current.completed += 1;
+      } else {
+        current.pending += 1;
+      }
+      if (task?.is_overdue) {
+        current.overdue += 1;
+      }
+      grouped.set(key, current);
+    });
+
+    return Array.from(grouped.values())
+      .map((item) => {
+        const completionPercent = item.assigned > 0 ? Math.round((item.completed / item.assigned) * 100) : 0;
+        return {
+          ...item,
+          completionPercent,
+          severity: getProgressSeverity(item),
+          isSelected: String(filters.assigned_to || "all") === String(item.assigned_to || ""),
+          isEmpty: item.assigned === 0,
+        };
+      })
+      .sort((left, right) => {
+        const severityRank = { critical: 0, attention: 1, healthy: 2, neutral: 3 };
+        const leftRank = severityRank[left.severity] ?? 4;
+        const rightRank = severityRank[right.severity] ?? 4;
+        if (leftRank !== rightRank) return leftRank - rightRank;
+        if (right.overdue !== left.overdue) return right.overdue - left.overdue;
+        if (right.pending !== left.pending) return right.pending - left.pending;
+        return left.label.localeCompare(right.label);
+      });
+  }, [tasks, canManageAllTasks, user?.id, filters.assigned_to]);
+
   const urgentOpenCount = Number(summary?.urgent_open_tasks || 0);
   const awaitingVerificationCount = Number(summary?.awaiting_verification_tasks || 0);
   const holdCount = Number(summary?.today_hold_tasks || 0);
@@ -467,42 +567,59 @@ function DailyTasksSectionImpl({
         </div>
       ) : null}
 
-      {canManageAllTasks && tab === "today" && mergedStaffSummary.length ? (
+      {performanceCards.length ? (
         <section className="panel daily-task-staff-board-panel">
           <div className="section-head">
-            <h2>Staff work board</h2>
-            <span>Tap a staff card to filter the task board to that person.</span>
+            <h2>{canManageAllTasks ? "Staff Performance Board" : "My Progress"}</h2>
+            <span>
+              {canManageAllTasks
+                ? "Tap a staff card to filter the current task view."
+                : progressScopeLabel}
+            </span>
           </div>
           <div className="daily-task-staff-board">
-            {mergedStaffSummary.map((item) => {
-              const completed = Number(item.completed_tasks || 0) + Number(item.verified_tasks || 0);
-              const assigned = Number(item.total_tasks || 0);
-              const percent = assigned > 0 ? Math.round((completed / assigned) * 100) : 0;
-              const active = isStaffFilterActive(item.assigned_to);
+            {performanceCards.map((item) => {
+              const active = Boolean(item.isSelected);
+              const assigned = Number(item.assigned || 0);
+              const completed = Number(item.completed || 0);
+              const pending = Number(item.pending || 0);
+              const overdue = Number(item.overdue || 0);
+              const percent = Number(item.completionPercent || 0);
               return (
                 <button
-                  key={`staff-board-${item.assigned_to}`}
+                  key={`staff-board-${item.key}`}
                   type="button"
-                  className={`daily-task-staff-card ${active ? "is-active" : ""}`}
-                  onClick={() => toggleStaffFilter(item.assigned_to)}
-                  aria-pressed={active}
-                  title={active ? "Clear staff filter" : `Show only ${item.assigned_to_name}'s tasks`}
+                  className={`daily-task-staff-card severity-${item.severity} ${active ? "is-active" : ""} ${item.isEmpty ? "is-empty" : ""}`}
+                  onClick={() => {
+                    if (canManageAllTasks && item.assigned_to) {
+                      toggleStaffFilter(item.assigned_to);
+                    }
+                  }}
+                  aria-pressed={canManageAllTasks ? active : undefined}
+                  title={
+                    canManageAllTasks && item.assigned_to
+                      ? active
+                        ? "Clear staff filter"
+                        : `Show only ${item.label}'s tasks`
+                      : progressScopeLabel
+                  }
+                  disabled={!canManageAllTasks}
                 >
                   <span className="daily-task-staff-card-head">
-                    <strong>{item.assigned_to_name}</strong>
-                    <span className="daily-task-staff-card-score">{percent}%</span>
+                    <strong>{item.label}</strong>
+                    <span className="daily-task-staff-card-score">
+                      {item.isEmpty ? "No tasks" : `${percent}%`}
+                    </span>
                   </span>
                   <span className="daily-task-staff-progress-track" aria-hidden="true">
                     <span className="daily-task-staff-progress-fill" style={{ width: `${percent}%` }} />
                   </span>
                   <span className="daily-task-staff-card-meta">
-                    <span>{assigned} assigned</span>
-                    <span className="tone-accent">{completed} done</span>
-                    <span>{Number(item.pending_tasks || 0)} pending</span>
-                    <span className={Number(item.overdue_tasks || 0) > 0 ? "tone-danger" : ""}>
-                      {Number(item.overdue_tasks || 0)} overdue
-                    </span>
+                    <span>{completed}/{assigned} completed</span>
+                    <span>{pending} pending</span>
+                    <span className={overdue > 0 ? "tone-danger" : ""}>{overdue} overdue</span>
                   </span>
+                  <span className="daily-task-staff-card-scope">{progressScopeLabel}</span>
                 </button>
               );
             })}
