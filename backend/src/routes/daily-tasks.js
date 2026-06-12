@@ -9,6 +9,114 @@ const DEFAULT_LIST_LIMIT = 100;
 const MAX_LIST_LIMIT = 300;
 const ACTIVE_TASK_STATUSES = ["pending", "in_progress", "hold"];
 const DONE_TASK_STATUSES = ["completed", "verified"];
+const TEST_TASK_KEYWORDS = ["test", "trial", "demo", "sample", "dummy", "smoke"];
+const TEST_TASK_SOURCE_HINTS = ["chatgpt", "claude", "test", "external"];
+const OPERATOR_ROUTINE_TEMPLATE_KEY = "operator_routine_v1";
+const OPERATOR_ROUTINE_MARKER = `[${OPERATOR_ROUTINE_TEMPLATE_KEY}]`;
+const OPERATOR_ROUTINE_TIMEZONE = "Asia/Kolkata";
+const OPERATOR_ROUTINE_BLOCKS = [
+  {
+    due_time: "11:00",
+    priority: "medium",
+    block: "Opening Checklist",
+    tasks: [
+      "CRM Login",
+      "WhatsApp Web Open",
+      "Internet / Printer Check",
+      "Yesterday Pending Work Review",
+      "Today Due Payments Review",
+    ],
+  },
+  {
+    due_time: "12:00",
+    priority: "urgent",
+    block: "Collection Priority Block",
+    tasks: [
+      "Due Payment List Generate",
+      "Collection Follow-up Calls",
+      "WhatsApp Payment Reminders",
+      "Outstanding Customers Update",
+      "Collection Status CRM Update",
+      "Critical Dues Report to Owner",
+    ],
+  },
+  {
+    due_time: "13:30",
+    priority: "medium",
+    block: "Lead & Customer Updates",
+    tasks: [
+      "New Leads Entry",
+      "Lead Details Update",
+      "Customer Records Verification",
+      "Follow-up Status Update",
+    ],
+  },
+  {
+    due_time: "14:30",
+    priority: "medium",
+    block: "Quotation Work",
+    tasks: [
+      "Pending Quotations Prepare",
+      "Quotation PDF Share",
+      "Customer Requirement Notes Update",
+    ],
+  },
+  {
+    due_time: "15:30",
+    priority: "medium",
+    block: "Inventory & Product Updates",
+    tasks: [
+      "New Stock Entry",
+      "Inventory Corrections",
+      "Product Master Updates",
+      "Low Stock Alerts Review",
+    ],
+  },
+  {
+    due_time: "16:30",
+    priority: "medium",
+    block: "Mason / Token / Project Updates",
+    tasks: [
+      "Mason Registrations",
+      "Adhesive Token Updates",
+      "Project Updates",
+      "Dispatch Record Updates",
+    ],
+  },
+  {
+    due_time: "17:30",
+    priority: "medium",
+    block: "Accounts Support",
+    tasks: [
+      "Expense Entries",
+      "Cash Entries",
+      "Online Payment Entries",
+      "Supplier Payment Updates",
+    ],
+  },
+  {
+    due_time: "18:30",
+    priority: "medium",
+    block: "Daily Verification",
+    tasks: [
+      "Pending Task Review",
+      "Missing CRM Entries Check",
+      "Open Follow-ups Verification",
+      "Inventory Update Verification",
+    ],
+  },
+  {
+    due_time: "19:30",
+    priority: "high",
+    block: "Closing Routine",
+    tasks: [
+      "Send Daily Report to Owner",
+      "Tomorrow Collection List Prepare",
+      "Day Closing Checklist",
+      "CRM Logout",
+    ],
+  },
+];
 const OVERDUE_SQL_CONDITION = `(
   (
     t.due_date < CURRENT_DATE
@@ -72,6 +180,10 @@ function canDeleteTasks(user) {
   return hasAnyRole(user, ["admin", "owner"]);
 }
 
+function canCleanupTasks(user) {
+  return hasAnyRole(user, ["admin", "owner"]);
+}
+
 function parseListLimit(value, fallback = DEFAULT_LIST_LIMIT) {
   const parsed = Number.parseInt(value, 10);
 
@@ -97,6 +209,108 @@ async function runDbQuery(executor, text, params = []) {
   }
 
   return executor.query(text, params);
+}
+
+function getBusinessTodayDate() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: OPERATOR_ROUTINE_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function buildRoutineTaskRemarks(block, generatedFor) {
+  return `${OPERATOR_ROUTINE_MARKER} ${block} for ${generatedFor}`;
+}
+
+function buildOperatorRoutineItems({ assigned_to, assigned_by, due_date }) {
+  return OPERATOR_ROUTINE_BLOCKS.flatMap((block) =>
+    block.tasks.map((title) => ({
+      title,
+      description: `${block.block} | Operator routine for ${due_date}`,
+      assigned_to,
+      assigned_by,
+      priority: block.priority,
+      due_date,
+      due_time: block.due_time,
+      status: "pending",
+      remarks: buildRoutineTaskRemarks(block.block, due_date),
+      completed_at: null,
+      verified_by: null,
+      source: "automation",
+    }))
+  );
+}
+
+function buildTestTaskWhereClause(alias = "t", params = []) {
+  const loweredFields = ["title", "description", "remarks"].map(
+    (field) => `LOWER(COALESCE(${alias}.${field}, ''))`
+  );
+  const keywordConditions = TEST_TASK_KEYWORDS.flatMap((keyword) => {
+    params.push(`%${keyword}%`);
+    const paramRef = `$${params.length}`;
+    return loweredFields.map((field) => `${field} LIKE ${paramRef}`);
+  });
+
+  params.push(TEST_TASK_SOURCE_HINTS);
+  const sourceParamRef = `$${params.length}`;
+  params.push("%api%");
+  const apiParamRef = `$${params.length}`;
+  params.push("%external%");
+  const externalParamRef = `$${params.length}`;
+
+  const externalSourceCondition = `(
+    LOWER(COALESCE(${alias}.source, '')) = ANY(${sourceParamRef})
+    AND (
+      ${loweredFields.map((field) => `${field} LIKE ${apiParamRef}`).join(" OR ")}
+      OR ${loweredFields.map((field) => `${field} LIKE ${externalParamRef}`).join(" OR ")}
+    )
+  )`;
+
+  return `(${[...keywordConditions, externalSourceCondition].join(" OR ")})`;
+}
+
+async function getTestTaskAudit(executor) {
+  const params = [];
+  const where = buildTestTaskWhereClause("t", params);
+  const result = await runDbQuery(
+    executor,
+    `WITH candidates AS (
+       SELECT id, title, source, assigned_to, due_date, status, created_at
+       FROM daily_tasks t
+       WHERE ${where}
+     ),
+     sample_rows AS (
+       SELECT *
+       FROM candidates
+       ORDER BY created_at DESC
+       LIMIT 50
+     )
+     SELECT
+       (SELECT COUNT(*)::int FROM candidates) AS candidate_count,
+       COALESCE(
+         (
+           SELECT JSON_AGG(
+             JSON_BUILD_OBJECT(
+               'id', sample_rows.id,
+               'title', sample_rows.title,
+               'source', sample_rows.source,
+               'assigned_to', sample_rows.assigned_to,
+               'due_date', sample_rows.due_date,
+               'status', sample_rows.status,
+               'created_at', sample_rows.created_at
+             )
+             ORDER BY sample_rows.created_at DESC
+           )
+           FROM sample_rows
+         ),
+         '[]'::json
+       ) AS samples`,
+    params
+  );
+
+  return result.rows[0] || { candidate_count: 0, samples: [] };
 }
 
 function getTaskApiKeyConfig() {
@@ -423,6 +637,168 @@ router.get("/summary", async (req, res) => {
     // only in the HTTP response body and the server error log stayed empty.
     console.error("[daily-tasks] GET /summary failed:", error);
     return res.status(500).json({ message: "Unable to fetch daily task summary", error: error.message });
+  }
+});
+
+router.get("/admin/test-audit", async (req, res) => {
+  if (!canCleanupTasks(req.user)) {
+    return res.status(403).json({ message: "Only admin or owner can audit test daily tasks" });
+  }
+
+  try {
+    const audit = await getTestTaskAudit(query);
+    return res.json({
+      candidateCount: Number(audit.candidate_count || 0),
+      cleanupCriteria: [
+        "title/description/remarks contain test keywords: test, trial, demo, sample, dummy, smoke",
+        "external/API trial tasks from ChatGPT/Claude/external sources with API/external hints",
+      ],
+      samples: Array.isArray(audit.samples) ? audit.samples : [],
+    });
+  } catch (error) {
+    console.error("[daily-tasks] GET /admin/test-audit failed:", error);
+    return res.status(500).json({ message: "Unable to audit test daily tasks", error: error.message });
+  }
+});
+
+router.post("/admin/cleanup-test-tasks", async (req, res) => {
+  if (!canCleanupTasks(req.user)) {
+    return res.status(403).json({ message: "Only admin or owner can clean test daily tasks" });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+    const beforeAudit = await getTestTaskAudit(client);
+    const candidateCount = Number(beforeAudit.candidate_count || 0);
+
+    if (!candidateCount) {
+      await client.query("COMMIT");
+      return res.json({
+        deletedCount: 0,
+        cleanupCriteria: [
+          "title/description/remarks contain test keywords: test, trial, demo, sample, dummy, smoke",
+          "external/API trial tasks from ChatGPT/Claude/external sources with API/external hints",
+        ],
+        deletedTaskIds: [],
+      });
+    }
+
+    const deleteParams = [];
+    const where = buildTestTaskWhereClause("t", deleteParams);
+    const deleteResult = await runDbQuery(
+      client,
+      `DELETE FROM daily_tasks t
+       WHERE ${where}
+       RETURNING id`,
+      deleteParams
+    );
+
+    await client.query("COMMIT");
+    return res.json({
+      deletedCount: deleteResult.rowCount || 0,
+      cleanupCriteria: [
+        "title/description/remarks contain test keywords: test, trial, demo, sample, dummy, smoke",
+        "external/API trial tasks from ChatGPT/Claude/external sources with API/external hints",
+      ],
+      deletedTaskIds: deleteResult.rows.map((row) => row.id),
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("[daily-tasks] POST /admin/cleanup-test-tasks failed:", error);
+    return res.status(500).json({ message: "Unable to clean test daily tasks", error: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+router.post("/generate-operator-routine", async (req, res) => {
+  if (!canCreateTasks(req.user)) {
+    return res.status(403).json({ message: "You do not have access to generate operator routine tasks" });
+  }
+
+  const assigned_to = parsePositiveInteger(req.body?.assigned_to);
+  const due_date = typeof req.body?.due_date === "string" && req.body.due_date.trim()
+    ? req.body.due_date.trim().slice(0, 10)
+    : getBusinessTodayDate();
+
+  if (!assigned_to) {
+    return res.status(400).json({ message: "Operator user is required" });
+  }
+
+  if (Number.isNaN(new Date(due_date).getTime())) {
+    return res.status(400).json({ message: "Routine date is invalid" });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const assignedUserCheck = await ensureAssignedUserExists(client, assigned_to);
+    if (!assignedUserCheck.ok) {
+      await client.query("ROLLBACK");
+      return res.status(assignedUserCheck.status).json({ message: assignedUserCheck.message });
+    }
+
+    const existingRoutineResult = await runDbQuery(
+      client,
+      `SELECT COUNT(*)::int AS existing_count
+       FROM daily_tasks
+       WHERE assigned_to = $1
+         AND due_date = $2
+         AND (
+           remarks ILIKE $3
+           OR (
+             source = 'automation'
+             AND title = ANY($4)
+           )
+         )`,
+      [
+        assigned_to,
+        due_date,
+        `%${OPERATOR_ROUTINE_MARKER}%`,
+        OPERATOR_ROUTINE_BLOCKS.flatMap((block) => block.tasks),
+      ]
+    );
+
+    const existingCount = Number(existingRoutineResult.rows?.[0]?.existing_count || 0);
+    if (existingCount > 0) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({
+        message: "Operator routine already exists for this user and date",
+        existingCount,
+      });
+    }
+
+    const routineItems = buildOperatorRoutineItems({
+      assigned_to,
+      assigned_by: req.user.id,
+      due_date,
+    });
+
+    const createdTasks = [];
+    for (const item of routineItems) {
+      const createdTask = await insertDailyTask(client, item);
+      createdTasks.push(createdTask);
+    }
+
+    await client.query("COMMIT");
+    return res.status(201).json({
+      ok: true,
+      template: OPERATOR_ROUTINE_TEMPLATE_KEY,
+      generatedFor: due_date,
+      assignedTo: assigned_to,
+      createdCount: createdTasks.length,
+      tasks: createdTasks,
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("[daily-tasks] POST /generate-operator-routine failed:", error);
+    return res.status(500).json({ message: "Unable to generate operator routine", error: error.message });
+  } finally {
+    client.release();
   }
 });
 

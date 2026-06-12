@@ -180,6 +180,11 @@ export const api = {
       options
     ),
   getDailyTaskSummary: (options = {}) => request("/daily-tasks/summary", options),
+  generateOperatorRoutine: (payload) =>
+    request("/daily-tasks/generate-operator-routine", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   createDailyTask: (payload) =>
     request("/daily-tasks", {
       method: "POST",
@@ -197,6 +202,25 @@ export const api = {
   deleteDailyTask: (id) =>
     request(`/daily-tasks/${id}`, {
       method: "DELETE",
+    }),
+  getDailyTaskTemplates: (options = {}) => request("/daily-tasks/templates", options),
+  createDailyTaskTemplate: (payload) =>
+    request("/daily-tasks/templates", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateDailyTaskTemplate: (id, payload) =>
+    request(`/daily-tasks/templates/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  deleteDailyTaskTemplate: (id) =>
+    request(`/daily-tasks/templates/${id}`, {
+      method: "DELETE",
+    }),
+  generateDailyTasksNow: () =>
+    request("/daily-tasks/templates/generate-now", {
+      method: "POST",
     }),
   getDashboardSummary: (options) => request("/dashboard/summary", options),
   getDailyReport: (params = {}, options) =>

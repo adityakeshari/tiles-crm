@@ -1,5 +1,6 @@
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import WorkspaceTabs from "../components/WorkspaceTabs.jsx";
+import { api } from "../api.js";
 
 const TASK_PROGRESS_MAP = {
   pending: 0,
@@ -203,6 +204,373 @@ function canReviewTask(task, user, canManageAllTasks) {
   return canManageAllTasks && !isTaskAssignedToCurrentUser(task, user);
 }
 
+function getTodayInputDate() {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getUserRoles(userLike) {
+  if (Array.isArray(userLike?.roles) && userLike.roles.length) {
+    return userLike.roles.filter(Boolean);
+  }
+  if (userLike?.role) {
+    return [userLike.role];
+  }
+  return [];
+}
+
+const TEMPLATE_FREQUENCY_LABELS = {
+  daily: "Daily",
+  weekdays: "Mon–Sat",
+  weekly: "Weekly",
+};
+
+const TEMPLATE_WEEKDAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+const EMPTY_TEMPLATE_FORM = {
+  title: "",
+  description: "",
+  assigned_to: "",
+  priority: "medium",
+  due_time: "",
+  frequency: "daily",
+  weekly_day: "1",
+};
+
+// Self-contained "Recurring" tab: manages daily_task_templates, the blueprints
+// the backend turns into real tasks automatically every morning.
+function DailyTaskTemplatesPanel({ users, labelize, EmptyState }) {
+  const [templates, setTemplates] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [busyAction, setBusyAction] = useState("");
+  const [form, setForm] = useState(EMPTY_TEMPLATE_FORM);
+  const [editingId, setEditingId] = useState(null);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+
+  const loadTemplates = useCallback(async () => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const data = await api.getDailyTaskTemplates();
+      setTemplates(Array.isArray(data?.templates) ? data.templates : []);
+    } catch (loadError) {
+      setError(loadError.message || "Unable to load recurring templates");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTemplates();
+  }, [loadTemplates]);
+
+  function resetForm() {
+    setForm(EMPTY_TEMPLATE_FORM);
+    setEditingId(null);
+    setIsFormOpen(false);
+  }
+
+  function startEditing(template) {
+    setForm({
+      title: template.title || "",
+      description: template.description || "",
+      assigned_to: String(template.assigned_to || ""),
+      priority: template.priority || "medium",
+      due_time: template.due_time ? String(template.due_time).slice(0, 5) : "",
+      frequency: template.frequency || "daily",
+      weekly_day: template.weekly_day === null || typeof template.weekly_day === "undefined"
+        ? "1"
+        : String(template.weekly_day),
+    });
+    setEditingId(template.id);
+    setIsFormOpen(true);
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setBusyAction("save-template");
+    setError("");
+    setNotice("");
+
+    const payload = {
+      title: form.title,
+      description: form.description,
+      assigned_to: form.assigned_to,
+      priority: form.priority,
+      due_time: form.due_time,
+      frequency: form.frequency,
+      weekly_day: form.frequency === "weekly" ? Number(form.weekly_day) : null,
+    };
+
+    try {
+      if (editingId) {
+        await api.updateDailyTaskTemplate(editingId, payload);
+        setNotice("Template updated.");
+      } else {
+        await api.createDailyTaskTemplate(payload);
+        setNotice("Template created. Tasks will be generated automatically every morning.");
+      }
+      resetForm();
+      await loadTemplates();
+    } catch (saveError) {
+      setError(saveError.message || "Unable to save template");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function handleToggleActive(template) {
+    setBusyAction(`toggle-${template.id}`);
+    setError("");
+
+    try {
+      await api.updateDailyTaskTemplate(template.id, { is_active: !template.is_active });
+      await loadTemplates();
+    } catch (toggleError) {
+      setError(toggleError.message || "Unable to update template");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function handleDelete(template) {
+    if (!window.confirm(`Delete recurring template "${template.title}"? Already generated tasks stay as they are.`)) {
+      return;
+    }
+
+    setBusyAction(`delete-${template.id}`);
+    setError("");
+
+    try {
+      await api.deleteDailyTaskTemplate(template.id);
+      if (editingId === template.id) {
+        resetForm();
+      }
+      await loadTemplates();
+    } catch (deleteError) {
+      setError(deleteError.message || "Unable to delete template");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function handleGenerateNow() {
+    setBusyAction("generate-now");
+    setError("");
+    setNotice("");
+
+    try {
+      const result = await api.generateDailyTasksNow();
+      setNotice(
+        `Generated for ${result?.date || "today"}: ${Number(result?.created || 0)} new task(s) created, ${Number(
+          result?.skipped || 0
+        )} already existed.`
+      );
+      await loadTemplates();
+    } catch (generateError) {
+      setError(generateError.message || "Unable to generate tasks");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  return (
+    <section className="panel daily-task-templates-panel">
+      <div className="section-head daily-task-create-head">
+        <div>
+          <h2>Recurring task templates</h2>
+          <span>
+            These templates create real tasks automatically every morning. Pause a template to stop it without deleting.
+          </span>
+        </div>
+        <div className="lead-actions daily-task-create-actions">
+          <button
+            type="button"
+            className="secondary"
+            onClick={handleGenerateNow}
+            disabled={busyAction === "generate-now"}
+            title="Create today's tasks from active templates immediately (duplicates are skipped)"
+          >
+            {busyAction === "generate-now" ? "Generating..." : "Generate Now"}
+          </button>
+          {!isFormOpen ? (
+            <button type="button" className="daily-task-create-button" onClick={() => setIsFormOpen(true)}>
+              + New Template
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      {notice ? <p className="loading-banner">{notice}</p> : null}
+      {error ? <p className="field-error-message">{error}</p> : null}
+
+      {isFormOpen ? (
+        <form className="daily-task-form compact-form" onSubmit={handleSubmit}>
+          <div className="form-field">
+            <label>Task title *</label>
+            <input
+              value={form.title}
+              onChange={(event) => setForm({ ...form, title: event.target.value })}
+              placeholder="e.g. Morning showroom walk"
+              required
+            />
+          </div>
+          <div className="form-field">
+            <label>Assigned to *</label>
+            <select
+              value={form.assigned_to}
+              onChange={(event) => setForm({ ...form, assigned_to: event.target.value })}
+              required
+            >
+              <option value="">Select staff</option>
+              {(Array.isArray(users) ? users : []).map((teamMember) => (
+                <option key={teamMember.id} value={teamMember.id}>
+                  {teamMember.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-field">
+            <label>Priority *</label>
+            <select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value })}>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="urgent">Urgent</option>
+            </select>
+          </div>
+          <div className="form-field">
+            <label>Repeats *</label>
+            <select value={form.frequency} onChange={(event) => setForm({ ...form, frequency: event.target.value })}>
+              <option value="daily">Daily (every day)</option>
+              <option value="weekdays">Mon–Sat (Sunday off)</option>
+              <option value="weekly">Weekly (one day)</option>
+            </select>
+          </div>
+          {form.frequency === "weekly" ? (
+            <div className="form-field">
+              <label>Day of week *</label>
+              <select value={form.weekly_day} onChange={(event) => setForm({ ...form, weekly_day: event.target.value })}>
+                {TEMPLATE_WEEKDAY_LABELS.map((dayLabel, dayValue) => (
+                  <option key={dayLabel} value={dayValue}>
+                    {dayLabel}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+          <div className="form-field">
+            <label>Due time</label>
+            <input
+              type="time"
+              value={form.due_time}
+              onChange={(event) => setForm({ ...form, due_time: event.target.value })}
+            />
+          </div>
+          <div className="form-field full-span">
+            <label>Description</label>
+            <textarea
+              value={form.description}
+              onChange={(event) => setForm({ ...form, description: event.target.value })}
+              placeholder="What exactly should be done"
+            />
+          </div>
+          <div className="lead-actions full-span">
+            <button type="submit" disabled={busyAction === "save-template"}>
+              {busyAction === "save-template" ? "Saving..." : editingId ? "Update Template" : "Save Template"}
+            </button>
+            <button type="button" className="secondary" onClick={resetForm} disabled={busyAction === "save-template"}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : null}
+
+      {loading ? <p className="loading-banner">Loading templates...</p> : null}
+
+      {!loading && !templates.length ? (
+        <EmptyState
+          title="No recurring templates yet"
+          message="Create a template (e.g. 'Morning showroom walk — daily 9:00 AM') and the system will assign it automatically every day."
+          compact
+        />
+      ) : null}
+
+      {templates.length ? (
+        <ul className="daily-task-checklist daily-task-template-list">
+          {templates.map((template) => (
+            <li
+              key={template.id}
+              className={`daily-task-row priority-${template.priority} ${template.is_active ? "" : "is-done"}`}
+            >
+              <button
+                type="button"
+                className="daily-task-row-body"
+                onClick={() => startEditing(template)}
+                aria-label={`Edit template ${template.title}`}
+              >
+                <p className="daily-task-row-title">{template.title}</p>
+                <div className="daily-task-row-meta">
+                  <span className="daily-task-row-meta-item daily-task-row-assignee">
+                    {template.assigned_to_name || "Unassigned"}
+                  </span>
+                  <span className="daily-task-row-meta-item">
+                    {TEMPLATE_FREQUENCY_LABELS[template.frequency] || labelize(template.frequency)}
+                    {template.frequency === "weekly" && template.weekly_day !== null
+                      ? ` · ${TEMPLATE_WEEKDAY_LABELS[Number(template.weekly_day)] || ""}`
+                      : ""}
+                  </span>
+                  {template.due_time ? (
+                    <span className="daily-task-row-meta-item daily-task-row-due">
+                      {String(template.due_time).slice(0, 5)}
+                    </span>
+                  ) : null}
+                  <span className="daily-task-row-meta-item daily-task-row-priority">
+                    <span className={`daily-task-row-priority-dot priority-${template.priority}`} aria-hidden="true" />
+                    {labelize(template.priority)}
+                  </span>
+                  {!template.is_active ? (
+                    <span className="daily-task-row-meta-item daily-task-row-flag daily-task-row-flag-hold">Paused</span>
+                  ) : null}
+                  {template.last_generated_date ? (
+                    <span className="daily-task-row-meta-item">
+                      Last run {String(template.last_generated_date).slice(0, 10)}
+                    </span>
+                  ) : null}
+                </div>
+              </button>
+              <span className="daily-task-row-actions">
+                <button
+                  type="button"
+                  className="secondary daily-task-row-action"
+                  onClick={() => handleToggleActive(template)}
+                  disabled={busyAction === `toggle-${template.id}`}
+                >
+                  {template.is_active ? "Pause" : "Resume"}
+                </button>
+                <button
+                  type="button"
+                  className="secondary daily-task-row-action danger-soft"
+                  onClick={() => handleDelete(template)}
+                  disabled={busyAction === `delete-${template.id}`}
+                >
+                  Delete
+                </button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
+
 function DailyTasksSectionImpl({
   user,
   users,
@@ -219,6 +587,7 @@ function DailyTasksSectionImpl({
   formErrors,
   editingTaskId,
   handleSaveTask,
+  handleGenerateOperatorRoutine,
   startEditingTask,
   resetDailyTaskForm,
   requestDeleteDailyTask,
@@ -266,6 +635,7 @@ function DailyTasksSectionImpl({
 
     if (canManageAllTasks) {
       baseTabs.push({ value: "summary", label: "Staff Summary" });
+      baseTabs.push({ value: "templates", label: "Recurring" });
     }
 
     return baseTabs;
@@ -275,6 +645,8 @@ function DailyTasksSectionImpl({
   const canReviewTaskItem = (task) => canReviewTask(task, user, canManageAllTasks);
   const [detailTask, setDetailTask] = useState(null);
   const [isCreateFormExpanded, setIsCreateFormExpanded] = useState(false);
+  const [routineAssignedUserId, setRoutineAssignedUserId] = useState("");
+  const [routineDate, setRoutineDate] = useState(getTodayInputDate);
   const activeDetailTask = detailTask
     ? (Array.isArray(tasks) ? tasks.find((item) => item.id === detailTask.id) : null) || detailTask
     : null;
@@ -401,6 +773,43 @@ function DailyTasksSectionImpl({
 
     return merged.length ? merged : (Array.isArray(staffSummary) ? staffSummary : []);
   }, [staffSummary, users]);
+
+  const routineEligibleUsers = useMemo(() => {
+    const team = Array.isArray(users) ? users : [];
+    const operatorUsers = team.filter((teamMember) => {
+      const roles = getUserRoles(teamMember);
+      return roles.includes("operator") || roles.includes("operations");
+    });
+
+    if (operatorUsers.length) {
+      return operatorUsers;
+    }
+
+    return team.filter((teamMember) => {
+      const roles = getUserRoles(teamMember);
+      return !roles.some((role) => ["admin", "owner", "manager"].includes(role));
+    });
+  }, [users]);
+
+  useEffect(() => {
+    if (!canManageAllTasks) {
+      setRoutineAssignedUserId("");
+      return;
+    }
+
+    if (!routineEligibleUsers.length) {
+      setRoutineAssignedUserId("");
+      return;
+    }
+
+    const exists = routineEligibleUsers.some(
+      (teamMember) => String(teamMember.id) === String(routineAssignedUserId || "")
+    );
+
+    if (!exists) {
+      setRoutineAssignedUserId(String(routineEligibleUsers[0].id));
+    }
+  }, [canManageAllTasks, routineAssignedUserId, routineEligibleUsers]);
 
   const progressScopeLabel = useMemo(() => {
     if (tab === "today") return "Today progress";
@@ -546,6 +955,11 @@ function DailyTasksSectionImpl({
         ) : null}
       </div>
 
+      {tab === "templates" ? (
+        <DailyTaskTemplatesPanel users={users} labelize={labelize} EmptyState={EmptyState} />
+      ) : (
+      <>
+
       {canManageAllTasks && tab !== "summary" && tab !== "today" && mergedStaffSummary.length ? (
         <div className="daily-task-staff-chiprow" role="toolbar" aria-label="Filter by staff">
           {mergedStaffSummary.map((item) => {
@@ -645,6 +1059,40 @@ function DailyTasksSectionImpl({
                       : "Expand only when you want to assign fresh work."}
                 </span>
               </div>
+              {canManageAllTasks ? (
+                <div className="daily-task-routine-generator">
+                  <label className="daily-task-routine-field">
+                    <span>Operator routine</span>
+                    <select
+                      value={routineAssignedUserId}
+                      onChange={(event) => setRoutineAssignedUserId(event.target.value)}
+                    >
+                      <option value="">Select operator</option>
+                      {routineEligibleUsers.map((teamMember) => (
+                        <option key={`routine-user-${teamMember.id}`} value={teamMember.id}>
+                          {teamMember.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="daily-task-routine-field">
+                    <span>Date</span>
+                    <input
+                      type="date"
+                      value={routineDate}
+                      onChange={(event) => setRoutineDate(event.target.value)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="secondary daily-task-routine-button"
+                    disabled={!routineAssignedUserId || busyAction === "generate-operator-routine"}
+                    onClick={() => handleGenerateOperatorRoutine(routineAssignedUserId, routineDate)}
+                  >
+                    {busyAction === "generate-operator-routine" ? "Generating..." : "Generate Operator Routine"}
+                  </button>
+                </div>
+              ) : null}
               {editingTaskId || isCreateFormExpanded ? (
                 <div className="lead-actions daily-task-create-actions">
                   <button
@@ -1103,6 +1551,9 @@ function DailyTasksSectionImpl({
           </details>
         </section>
       ) : null}
+
+      </>
+      )}
 
       {activeDetailTask ? (
         <div

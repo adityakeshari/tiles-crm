@@ -3712,7 +3712,7 @@ export default function App() {
           api.getDailyTasks(
             {
               limit: listLimits.dailyTasks,
-              view: dailyTaskViewTab === "summary" ? "" : dailyTaskViewTab,
+              view: ["summary", "templates"].includes(dailyTaskViewTab) ? "" : dailyTaskViewTab,
               search: debouncedDailyTaskSearch,
               status: dailyTaskFilters.status === "all" ? "" : dailyTaskFilters.status,
               assigned_to: assignedTaskFilter,
@@ -4356,6 +4356,21 @@ export default function App() {
       resetDailyTaskForm();
       await loadDashboard({ forceView: "operations" });
     }, editingDailyTaskId ? "Daily task updated." : "Daily task created.");
+  }
+
+  async function handleGenerateOperatorRoutine(assignedTo, dueDate = getLocalDateInputValue()) {
+    if (!assignedTo) {
+      setError("Select an operator before generating the routine.");
+      return;
+    }
+
+    await runBusyAction("generate-operator-routine", async () => {
+      await api.generateOperatorRoutine({
+        assigned_to: assignedTo,
+        due_date: dueDate,
+      });
+      await loadDashboard({ forceView: "operations" });
+    }, "Operator routine generated.");
   }
 
   async function handleQuickDailyTaskStatusUpdate(task, status) {
@@ -7995,6 +8010,7 @@ export default function App() {
             formErrors={dailyTaskFormErrors}
             editingTaskId={editingDailyTaskId}
             handleSaveTask={handleSaveDailyTask}
+            handleGenerateOperatorRoutine={handleGenerateOperatorRoutine}
             startEditingTask={startEditingDailyTask}
             resetDailyTaskForm={resetDailyTaskForm}
             requestDeleteDailyTask={requestDeleteDailyTask}

@@ -4905,6 +4905,38 @@ button.sidebar-item-active .sidebar-dot {
   gap: 0.75rem;
 }
 
+.daily-task-routine-generator {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.65rem;
+  margin-left: auto;
+}
+
+.daily-task-routine-field {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 150px;
+}
+
+.daily-task-routine-field span {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--crm-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.daily-task-routine-field select,
+.daily-task-routine-field input {
+  min-height: 40px;
+}
+
+.daily-task-routine-button {
+  min-height: 40px;
+  white-space: nowrap;
+}
+
 .daily-task-sticky-nav {
   position: sticky;
   top: 0.7rem;
@@ -6317,6 +6349,14 @@ button.sidebar-item-active .sidebar-dot {
     align-items: stretch;
   }
 
+  .daily-task-routine-generator {
+    margin-left: 0;
+  }
+
+  .daily-task-routine-field {
+    min-width: min(100%, 180px);
+  }
+
   .daily-task-sticky-nav {
     top: 0.4rem;
   }
@@ -6335,6 +6375,11 @@ button.sidebar-item-active .sidebar-dot {
   .daily-task-card-grid,
   .daily-task-summary-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .daily-task-routine-generator {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .daily-task-command-panel .section-head span,
