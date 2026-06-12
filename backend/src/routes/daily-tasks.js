@@ -404,6 +404,8 @@ async function getDailyTaskSummary(user) {
        COUNT(*) FILTER (WHERE due_date < CURRENT_DATE AND status NOT IN ('completed', 'verified'))::int AS carry_forward_tasks,
        COUNT(*) FILTER (WHERE status NOT IN ('completed', 'verified'))::int AS pending_tasks,
        COUNT(*) FILTER (WHERE status IN ('completed', 'verified'))::int AS completed_tasks,
+       COUNT(*) FILTER (WHERE priority = 'urgent' AND status NOT IN ('completed', 'verified'))::int AS urgent_open_tasks,
+       COUNT(*) FILTER (WHERE status = 'completed')::int AS awaiting_verification_tasks,
        COUNT(*)::int AS total_tasks
      FROM scoped_tasks t`,
     params

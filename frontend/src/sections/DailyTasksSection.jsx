@@ -53,6 +53,16 @@ function getStaffTimeSectionKey(task) {
   return "evening";
 }
 
+function getDueTimeSortValue(task) {
+  const timeValue = String(task?.due_time || "").slice(0, 5);
+  if (!timeValue) return 24 * 60 + 1; // no fixed time sorts last within its section
+  const [hourPart, minutePart] = timeValue.split(":");
+  const hour = Number(hourPart);
+  const minute = Number(minutePart);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return 24 * 60 + 1;
+  return hour * 60 + minute;
+}
+
 function groupStaffTasksByTimeSection(tasks) {
   const buckets = new Map(STAFF_TIME_SECTIONS.map((section) => [section.key, []]));
   (Array.isArray(tasks) ? tasks : []).forEach((task) => {
@@ -62,7 +72,17 @@ function groupStaffTasksByTimeSection(tasks) {
     }
   });
   return STAFF_TIME_SECTIONS
-    .map((section) => ({ ...section, items: buckets.get(section.key) || [] }))
+    .map((section) => ({
+      ...section,
+      // Time-wise to-do list: within each day part, earliest due time first;
+      // ties broken by due date then priority order from the server response.
+      items: (buckets.get(section.key) || []).slice().sort((a, b) => {
+        const dateA = String(a?.due_date || "");
+        const dateB = String(b?.due_date || "");
+        if (dateA !== dateB) return dateA < dateB ? -1 : 1;
+        return getDueTimeSortValue(a) - getDueTimeSortValue(b);
+      }),
+    }))
     .filter((section) => section.items.length > 0);
 }
 
@@ -190,28 +210,36 @@ function DailyTasksSectionImpl({
   formatDateTime,
 }) {
   const visibleTabs = useMemo(() => {
+    // Count badges on tab labels so each tab is worth visiting (or skipping)
+    // without clicking it. Counts come from the always-loaded summary.
+    const badge = (count) => (Number(count) > 0 ? ` (${Number(count)})` : "");
+    const todayBadge = badge(summary?.today_total_tasks);
+    const pendingBadge = badge(summary?.pending_tasks);
+    const overdueBadge = badge(summary?.overdue_tasks);
+    const completedBadge = badge(summary?.today_completed_tasks);
+
     const baseTabs = canManageAllTasks
       ? [
-          { value: "today", label: "Today's Tasks" },
+          { value: "today", label: `Today${todayBadge}` },
           { value: "my", label: "My Tasks" },
-          { value: "pending", label: "Pending Tasks" },
-          { value: "overdue", label: "Overdue" },
-          { value: "completed", label: "Completed Today" },
+          { value: "pending", label: `Pending${pendingBadge}` },
+          { value: "overdue", label: `Overdue${overdueBadge}` },
+          { value: "completed", label: `Done Today${completedBadge}` },
         ]
       : [
-          { value: "pending", label: "My Pending Tasks" },
-          { value: "today", label: "Today's Tasks" },
+          { value: "pending", label: `My Pending${pendingBadge}` },
+          { value: "today", label: `Today${todayBadge}` },
           { value: "my", label: "My Tasks" },
-          { value: "overdue", label: "Overdue" },
-          { value: "completed", label: "Completed Today" },
+          { value: "overdue", label: `Overdue${overdueBadge}` },
+          { value: "completed", label: `Done Today${completedBadge}` },
         ];
 
     if (canManageAllTasks) {
-      baseTabs.push({ value: "summary", label: "Staff-wise Task Summary" });
+      baseTabs.push({ value: "summary", label: "Staff Summary" });
     }
 
     return baseTabs;
-  }, [canManageAllTasks]);
+  }, [canManageAllTasks, summary]);
 
   const canUpdateTask = (task) =>
     canManageAllTasks || Number(task?.assigned_to || 0) === Number(user?.id || 0);
@@ -220,10 +248,9 @@ function DailyTasksSectionImpl({
   const activeDetailTask = detailTask
     ? (Array.isArray(tasks) ? tasks.find((item) => item.id === detailTask.id) : null) || detailTask
     : null;
-  const staffChecklistSections = useMemo(
-    () => (canManageAllTasks ? [] : groupStaffTasksByTimeSection(tasks)),
-    [tasks, canManageAllTasks]
-  );
+  // V4: the time-wise checklist is now the task layout for every role —
+  // managers get the same list with assignee + action affordances per row.
+  const staffChecklistSections = useMemo(() => groupStaffTasksByTimeSection(tasks), [tasks]);
   const staffChecklistProgress = useMemo(() => {
     const items = Array.isArray(tasks) ? tasks : [];
     const done = countDoneTasks(items);
@@ -345,14 +372,27 @@ function DailyTasksSectionImpl({
     return merged.length ? merged : (Array.isArray(staffSummary) ? staffSummary : []);
   }, [staffSummary, users]);
 
+  const urgentOpenCount = Number(summary?.urgent_open_tasks || 0);
+  const awaitingVerificationCount = Number(summary?.awaiting_verification_tasks || 0);
+  const holdCount = Number(summary?.today_hold_tasks || 0);
   const commandStripItems = [
     { label: "Today Tasks", value: taskMetrics.total, tone: "default" },
     { label: "Completed", value: taskMetrics.completed, tone: "accent" },
     { label: "In Progress", value: taskMetrics.inProgress, tone: "default" },
     { label: "Overdue", value: taskMetrics.overdue, tone: "danger" },
-    { label: "Hold", value: Number(summary?.today_hold_tasks || 0), tone: "warning" },
+    { label: "Urgent", value: urgentOpenCount, tone: "danger" },
+    canVerifyDailyTasks ? { label: "To Verify", value: awaitingVerificationCount, tone: "warning" } : null,
+    holdCount > 0 ? { label: "Hold", value: holdCount, tone: "warning" } : null,
     { label: "Carry Forward", value: eodMetrics.carryForward, tone: "warning" },
-  ];
+  ].filter(Boolean);
+
+  // Verdict bar: turns the numbers into a one-line decision for the owner.
+  const overdueByStaff = mergedStaffSummary
+    .filter((item) => Number(item.overdue_tasks || 0) > 0)
+    .sort((a, b) => Number(b.overdue_tasks || 0) - Number(a.overdue_tasks || 0))
+    .slice(0, 3)
+    .map((item) => `${item.assigned_to_name} ${item.overdue_tasks}`)
+    .join(" · ");
 
   const isStaffFilterActive = (staffId) => String(filters.assigned_to) === String(staffId);
 
@@ -365,6 +405,21 @@ function DailyTasksSectionImpl({
 
   return (
     <section className={`stack workspace-stack daily-tasks-layout ${canManageAllTasks ? "manager-view" : "staff-view"}`}>
+      {canManageAllTasks && taskMetrics.overdue > 0 && tab !== "overdue" ? (
+        <button
+          type="button"
+          className="daily-task-verdict-bar"
+          onClick={() => setTab("overdue")}
+          aria-label={`${taskMetrics.overdue} overdue tasks need attention. Open overdue list.`}
+        >
+          <span className="daily-task-verdict-text">
+            ⚠ {taskMetrics.overdue} overdue need attention
+            {overdueByStaff ? ` — ${overdueByStaff}` : ""}
+          </span>
+          <span className="daily-task-verdict-action">Review →</span>
+        </button>
+      ) : null}
+
       <div className="daily-task-sticky-nav">
         <WorkspaceTabs value={tab} onChange={setTab} tabs={visibleTabs} />
         {canManageAllTasks ? (
@@ -379,7 +434,28 @@ function DailyTasksSectionImpl({
         ) : null}
       </div>
 
-      {canManageAllTasks && tab !== "summary" && mergedStaffSummary.length ? (
+      {canManageAllTasks && tab !== "summary" && tab !== "today" && mergedStaffSummary.length ? (
+        <div className="daily-task-staff-chiprow" role="toolbar" aria-label="Filter by staff">
+          {mergedStaffSummary.map((item) => {
+            const active = isStaffFilterActive(item.assigned_to);
+            const overdueCount = Number(item.overdue_tasks || 0);
+            return (
+              <button
+                key={`staff-chip-${item.assigned_to}`}
+                type="button"
+                className={`daily-task-staff-chip ${active ? "is-active" : ""}`}
+                onClick={() => toggleStaffFilter(item.assigned_to)}
+                aria-pressed={active}
+              >
+                {item.assigned_to_name}
+                {overdueCount > 0 ? <span className="daily-task-staff-chip-flag">{overdueCount}!</span> : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {canManageAllTasks && tab === "today" && mergedStaffSummary.length ? (
         <section className="panel daily-task-staff-board-panel">
           <div className="section-head">
             <h2>Staff work board</h2>
@@ -715,154 +791,28 @@ function DailyTasksSectionImpl({
             />
           )
         ) : tasks.length ? (
-          canManageAllTasks ? (
-          <div className="daily-task-card-grid">
-            {tasks.map((task) => (
-              <article key={task.id} className={`detail-card daily-task-card priority-${task.priority}`}>
-                <div className="section-head">
-                  <div>
-                    <h3>{task.title}</h3>
-                    <p className="muted">{task.assigned_to_name || "Unassigned"}</p>
-                  </div>
-                  <div className="daily-task-card-head-actions">
-                    {canUpdateTask(task) ? (
-                      <button
-                        type="button"
-                        className={`daily-task-complete-toggle ${
-                          ["completed", "verified"].includes(String(task.status || "")) ? "is-complete" : ""
-                        } ${String(task.status || "") === "verified" ? "is-locked" : ""}`}
-                        onClick={() => {
-                          if (String(task.status || "") !== "verified") {
-                            handleQuickDailyTaskStatusUpdate(task, "completed");
-                          }
-                        }}
-                        disabled={
-                          busyAction === `daily-task-status-${task.id}` || String(task.status || "") === "verified"
-                        }
-                        aria-label={
-                          String(task.status || "") === "verified"
-                            ? "Task verified"
-                            : ["completed", "verified"].includes(String(task.status || ""))
-                              ? "Task completed"
-                              : "Mark task completed"
-                        }
-                        title={
-                          String(task.status || "") === "verified"
-                            ? "Verified task"
-                            : ["completed", "verified"].includes(String(task.status || ""))
-                              ? "Completed"
-                              : "Tap to complete"
-                        }
-                      >
-                        <span className="daily-task-complete-icon">
-                          {String(task.status || "") === "verified" ? "✓" : ["completed", "verified"].includes(String(task.status || "")) ? "✓" : ""}
-                        </span>
-                        <span className="daily-task-complete-label">
-                          {String(task.status || "") === "verified"
-                            ? "Verified"
-                            : ["completed", "verified"].includes(String(task.status || ""))
-                              ? "Done"
-                              : "Complete"}
-                        </span>
-                      </button>
-                    ) : null}
-                    <span className={`status-chip status-${task.status}`}>{labelize(task.status)}</span>
-                  </div>
-                </div>
-                <div className="daily-task-card-meta">
-                  <span className={`priority-chip priority-${task.priority}`}>{labelize(task.priority)}</span>
-                  <span className="legend-chip">Deadline {getTaskDueLabel(task, formatDate)}</span>
-                  <span className={`legend-chip ${task.is_overdue ? "legend-urgent" : ""}`}>
-                    {task.is_overdue ? "Overdue" : "On Track"}
-                  </span>
-                </div>
-                {/* V3 compact card: description, remarks, and audit chips live in one
-                    collapsed block on every screen size (was duplicated desktop+mobile). */}
-                <details className="daily-task-mobile-details">
-                  <summary>Details</summary>
-                  <div className="daily-task-mobile-details-body">
-                    <div className="daily-task-card-meta">
-                      <span className="legend-chip">Task ID #{task.id}</span>
-                      <span className="legend-chip">Date {formatDate(task.created_at)}</span>
-                      <span className="legend-chip">Done {getTaskProgressPercent(task)}%</span>
-                      <span className="legend-chip">By {task.assigned_by_name || "System"}</span>
-                      <span className={`legend-chip daily-task-source-chip daily-task-source-${String(task.source || "manual").toLowerCase()}`}>
-                        {getTaskSourceLabel(task.source)}
-                      </span>
-                      {task.verified_by_name ? <span className="legend-chip">Verified by {task.verified_by_name}</span> : null}
-                    </div>
-                    {task.description ? <p>{task.description}</p> : <p className="muted">No description added yet.</p>}
-                    <p className="muted daily-task-card-timestamps">
-                      Created {formatDateTime(task.created_at)} | Updated {formatDateTime(task.updated_at)}
-                      {task.completed_at ? ` | Completed ${formatDateTime(task.completed_at)}` : ""}
-                    </p>
-                    <p className="muted daily-task-remarks"><strong>Remarks:</strong> {task.remarks || "No remarks yet."}</p>
-                  </div>
-                </details>
-                <div className="lead-actions daily-task-actions">
-                  {(canManageAllTasks || canUpdateTask(task)) ? (
-                    <button type="button" className="secondary" onClick={() => startEditingTask(task)}>
-                      {canManageAllTasks ? "Edit" : "Add Remark"}
-                    </button>
-                  ) : null}
-                  {canUpdateTask(task) && task.status === "pending" ? (
-                    <button
-                      type="button"
-                      onClick={() => handleQuickDailyTaskStatusUpdate(task, "in_progress")}
-                      disabled={busyAction === `daily-task-status-${task.id}`}
-                    >
-                      Start
-                    </button>
-                  ) : null}
-                  {canUpdateTask(task) && !["completed", "verified"].includes(task.status) ? (
-                    <button
-                      type="button"
-                      className="daily-task-inline-complete"
-                      onClick={() => handleQuickDailyTaskStatusUpdate(task, "completed")}
-                      disabled={busyAction === `daily-task-status-${task.id}`}
-                    >
-                      Complete
-                    </button>
-                  ) : null}
-                  {canUpdateTask(task) && task.status !== "hold" && !["completed", "verified"].includes(task.status) ? (
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => handleQuickDailyTaskStatusUpdate(task, "hold")}
-                      disabled={busyAction === `daily-task-status-${task.id}`}
-                    >
-                      Hold
-                    </button>
-                  ) : null}
-                  {canVerifyDailyTasks && task.status === "completed" ? (
-                    <button type="button" onClick={() => requestVerifyDailyTask(task)}>
-                      Verify
-                    </button>
-                  ) : null}
-                  {canDeleteDailyTasks ? (
-                    <button type="button" className="secondary danger-soft" onClick={() => requestDeleteDailyTask(task)}>
-                      Delete
-                    </button>
-                  ) : null}
-                </div>
-              </article>
-              ))}
-            </div>
-          ) : (
             <div className="daily-task-schedule">
-              <div
-                className="daily-task-progress"
-                role="img"
-                aria-label={`${staffChecklistProgress.done} of ${staffChecklistProgress.total} tasks done, ${staffChecklistProgress.percent} percent complete`}
-              >
-                <div className="daily-task-progress-track">
-                  <div className="daily-task-progress-fill" style={{ width: `${staffChecklistProgress.percent}%` }} />
-                </div>
-                <span className="daily-task-progress-label">
-                  {staffChecklistProgress.done} of {staffChecklistProgress.total} tasks done · {staffChecklistProgress.percent}%
-                </span>
-              </div>
-              <p className="daily-task-checklist-hint">Tap circle to complete task</p>
+              {!canManageAllTasks ? (
+                <>
+                  <div
+                    className="daily-task-progress"
+                    role="img"
+                    aria-label={`${staffChecklistProgress.done} of ${staffChecklistProgress.total} tasks done, ${staffChecklistProgress.percent} percent complete`}
+                  >
+                    <div className="daily-task-progress-track">
+                      <div className="daily-task-progress-fill" style={{ width: `${staffChecklistProgress.percent}%` }} />
+                    </div>
+                    <span className="daily-task-progress-label">
+                      {staffChecklistProgress.done} of {staffChecklistProgress.total} tasks done · {staffChecklistProgress.percent}%
+                    </span>
+                  </div>
+                  <p className="daily-task-checklist-hint">Tap circle to complete task</p>
+                </>
+              ) : (
+                <p className="daily-task-checklist-hint">
+                  Time-wise list — tap the circle to complete, tap a task for details and actions.
+                </p>
+              )}
 
               {staffChecklistSections.map((section) => {
                 const sectionDone = countDoneTasks(section.items);
@@ -912,6 +862,11 @@ function DailyTasksSectionImpl({
                                 <span className="daily-task-row-meta-item daily-task-row-due">
                                   {getCompactDueLabel(task, formatDate)}
                                 </span>
+                                {canManageAllTasks ? (
+                                  <span className="daily-task-row-meta-item daily-task-row-assignee">
+                                    {task.assigned_to_name || "Unassigned"}
+                                  </span>
+                                ) : null}
                                 <span className="daily-task-row-meta-item daily-task-row-priority">
                                   <span className={`daily-task-row-priority-dot priority-${task.priority}`} aria-hidden="true" />
                                   {labelize(task.priority)}
@@ -924,8 +879,38 @@ function DailyTasksSectionImpl({
                                     On hold
                                   </span>
                                 ) : null}
+                                {task.status === "in_progress" ? (
+                                  <span className="daily-task-row-meta-item daily-task-row-flag daily-task-row-flag-active">
+                                    In progress
+                                  </span>
+                                ) : null}
                               </div>
                             </button>
+
+                            {canManageAllTasks ? (
+                              <span className="daily-task-row-actions">
+                                {canUpdateTask(task) && task.status === "pending" ? (
+                                  <button
+                                    type="button"
+                                    className="secondary daily-task-row-action"
+                                    onClick={() => handleQuickDailyTaskStatusUpdate(task, "in_progress")}
+                                    disabled={busyAction === `daily-task-status-${task.id}`}
+                                  >
+                                    Start
+                                  </button>
+                                ) : null}
+                                {canVerifyDailyTasks && task.status === "completed" ? (
+                                  <button
+                                    type="button"
+                                    className="daily-task-row-action daily-task-row-verify"
+                                    onClick={() => requestVerifyDailyTask(task)}
+                                    disabled={busyAction === `verify-daily-task-${task.id}`}
+                                  >
+                                    Verify
+                                  </button>
+                                ) : null}
+                              </span>
+                            ) : null}
                           </li>
                         );
                       })}
@@ -934,7 +919,6 @@ function DailyTasksSectionImpl({
                 );
               })}
             </div>
-          )
         ) : (
           <EmptyState
             title={emptyState.title}
@@ -949,10 +933,15 @@ function DailyTasksSectionImpl({
 
       {canManageAllTasks ? (
         <section className="panel daily-task-eod-panel">
-          <div className="section-head">
-            <h2>EOD Review</h2>
-            <span>End-of-day carry forward snapshot using current daily task data.</span>
-          </div>
+          {/* Collapsed during the working day (3 of its 5 numbers repeat the
+              command strip); opens automatically in the evening review window. */}
+          <details className="daily-task-eod-details" open={new Date().getHours() >= 17}>
+            <summary>
+              <span className="daily-task-eod-summary-title">EOD Review</span>
+              <span className="daily-task-eod-summary-hint">
+                Carry forward {eodMetrics.carryForward} · Delayed {eodMetrics.delayed}
+              </span>
+            </summary>
           <div className="report-grid daily-task-snapshot-grid">
             <StatCard label="Completed today" value={eodMetrics.completedToday} tone="accent" />
             <StatCard label="Pending" value={eodMetrics.pending} tone="warning" />
@@ -971,10 +960,11 @@ function DailyTasksSectionImpl({
               }
             />
           </div>
+          </details>
         </section>
       ) : null}
 
-      {!canManageAllTasks && activeDetailTask ? (
+      {activeDetailTask ? (
         <div
           className="daily-task-detail-overlay"
           onClick={() => setDetailTask(null)}
@@ -1029,9 +1019,36 @@ function DailyTasksSectionImpl({
                 <strong>Remarks:</strong> {activeDetailTask.remarks || "No remarks yet."}
               </p>
 
-              {canUpdateTask(activeDetailTask) ? (
+              {canUpdateTask(activeDetailTask) || canManageAllTasks ? (
                 <div className="daily-task-detail-actions">
-                  {activeDetailTask.status !== "hold" &&
+                  {canUpdateTask(activeDetailTask) && activeDetailTask.status === "pending" ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleQuickDailyTaskStatusUpdate(activeDetailTask, "in_progress");
+                        setDetailTask(null);
+                      }}
+                      disabled={busyAction === `daily-task-status-${activeDetailTask.id}`}
+                    >
+                      Start
+                    </button>
+                  ) : null}
+                  {canUpdateTask(activeDetailTask) &&
+                  !["completed", "verified"].includes(String(activeDetailTask.status || "")) ? (
+                    <button
+                      type="button"
+                      className="daily-task-inline-complete"
+                      onClick={() => {
+                        handleQuickDailyTaskStatusUpdate(activeDetailTask, "completed");
+                        setDetailTask(null);
+                      }}
+                      disabled={busyAction === `daily-task-status-${activeDetailTask.id}`}
+                    >
+                      Complete
+                    </button>
+                  ) : null}
+                  {canUpdateTask(activeDetailTask) &&
+                  activeDetailTask.status !== "hold" &&
                   !["completed", "verified"].includes(String(activeDetailTask.status || "")) ? (
                     <button
                       type="button"
@@ -1045,6 +1062,17 @@ function DailyTasksSectionImpl({
                       Hold
                     </button>
                   ) : null}
+                  {canVerifyDailyTasks && activeDetailTask.status === "completed" ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        requestVerifyDailyTask(activeDetailTask);
+                        setDetailTask(null);
+                      }}
+                    >
+                      Verify
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="secondary"
@@ -1053,8 +1081,20 @@ function DailyTasksSectionImpl({
                       setDetailTask(null);
                     }}
                   >
-                    Remark
+                    {canManageAllTasks ? "Edit" : "Remark"}
                   </button>
+                  {canDeleteDailyTasks ? (
+                    <button
+                      type="button"
+                      className="secondary danger-soft"
+                      onClick={() => {
+                        requestDeleteDailyTask(activeDetailTask);
+                        setDetailTask(null);
+                      }}
+                    >
+                      Delete
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
             </div>

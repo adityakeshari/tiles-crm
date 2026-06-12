@@ -4919,6 +4919,140 @@ button.sidebar-item-active .sidebar-dot {
   box-shadow: var(--shadow-sm);
 }
 
+/* V4 verdict bar: one-line red decision above everything when work is late. */
+.daily-task-verdict-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.65rem 0.9rem;
+  border-radius: 12px;
+  border: 1px solid rgba(190, 24, 60, 0.35);
+  background: rgba(190, 24, 60, 0.08);
+  color: #9f1239;
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.daily-task-verdict-bar:hover {
+  background: rgba(190, 24, 60, 0.14);
+  transform: none;
+}
+
+.daily-task-verdict-text {
+  font-size: 0.92rem;
+}
+
+.daily-task-verdict-action {
+  flex: 0 0 auto;
+  font-size: 0.82rem;
+  font-weight: 700;
+  white-space: nowrap;
+  text-decoration: underline;
+}
+
+/* V4 staff filter chips (compact variant for non-today tabs). */
+.daily-task-staff-chiprow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.daily-task-staff-chip {
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--crm-border);
+  background: var(--crm-surface);
+  color: var(--crm-navy-700);
+  font-size: 0.8rem;
+  font-weight: 600;
+  box-shadow: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.daily-task-staff-chip.is-active {
+  border-color: var(--crm-navy-700, #0f294d);
+  background: rgba(15, 41, 77, 0.08);
+}
+
+.daily-task-staff-chip-flag {
+  color: #be183c;
+  font-weight: 800;
+  font-size: 0.74rem;
+}
+
+/* V4 manager rows in the time-wise list. */
+.daily-task-row-assignee {
+  font-weight: 700;
+  color: var(--crm-navy-700);
+}
+
+.daily-task-row-flag-active {
+  color: #1d4ed8;
+}
+
+.daily-task-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 0 0 auto;
+}
+
+.daily-task-row-action {
+  min-height: 32px;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.78rem;
+  border-radius: 999px;
+}
+
+.daily-task-row-verify {
+  background: #0e6b34;
+  color: #fff;
+}
+
+/* V4 EOD review collapsed behind a one-line summary until evening. */
+.daily-task-eod-details summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.daily-task-eod-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.daily-task-eod-summary-title {
+  font-size: 1.02rem;
+  font-weight: 800;
+  color: var(--crm-navy-700);
+}
+
+.daily-task-eod-summary-title::after {
+  content: " ▸";
+  font-size: 0.85em;
+}
+
+.daily-task-eod-details[open] .daily-task-eod-summary-title::after {
+  content: " ▾";
+}
+
+.daily-task-eod-summary-hint {
+  font-size: 0.8rem;
+  color: var(--crm-muted, #5b6b82);
+  font-weight: 600;
+}
+
+.daily-task-eod-details[open] summary {
+  margin-bottom: 0.75rem;
+}
+
 /* V3 command strip: the six daily numbers ride inside the sticky block so they
    stay visible while scrolling the board. */
 .daily-task-command-strip {
