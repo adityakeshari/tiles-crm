@@ -5,37 +5,98 @@ import { getOrSetCache } from "../utils/ttlCache.js";
 const router = express.Router();
 
 const SUMMARY_TTL_MS = 30 * 1000; // 30 seconds - small enough for "live" feel, large enough to absorb burst loads.
+const BUSINESS_TIMEZONE = "Asia/Kolkata";
+const EMPTY_DASHBOARD_SUMMARY = {
+  sales_today: { amount: 0, count: 0 },
+  sales_month: { amount: 0, count: 0 },
+  collection_today: { amount: 0, count: 0 },
+  collection_month: { amount: 0, count: 0 },
+  pending_payments: { amount: 0, lead_count: 0 },
+  active_customers: { count: 0 },
+  active_projects: { count: 0 },
+  token_pending: { count: 0, amount: 0 },
+  token_paid_month: { count: 0, amount: 0 },
+  expenses_today: { amount: 0, count: 0 },
+  expenses_month: { amount: 0, count: 0 },
+  purchases_today: { amount: 0, count: 0 },
+  purchases_month: { amount: 0, count: 0 },
+  followups_pending: { count: 0 },
+  low_stock_items: { count: 0 },
+  as_of_date: "",
+};
+
+function normalizeCountedAmount(value, defaults = {}) {
+  const next = { ...defaults };
+
+  if (!value || typeof value !== "object") {
+    return next;
+  }
+
+  for (const key of Object.keys(next)) {
+    const parsed = Number(value[key]);
+    next[key] = Number.isFinite(parsed) ? parsed : next[key];
+  }
+
+  return next;
+}
+
+function normalizeDashboardSummary(summary) {
+  if (!summary || typeof summary !== "object") {
+    return { ...EMPTY_DASHBOARD_SUMMARY };
+  }
+
+  return {
+    sales_today: normalizeCountedAmount(summary.sales_today, EMPTY_DASHBOARD_SUMMARY.sales_today),
+    sales_month: normalizeCountedAmount(summary.sales_month, EMPTY_DASHBOARD_SUMMARY.sales_month),
+    collection_today: normalizeCountedAmount(summary.collection_today, EMPTY_DASHBOARD_SUMMARY.collection_today),
+    collection_month: normalizeCountedAmount(summary.collection_month, EMPTY_DASHBOARD_SUMMARY.collection_month),
+    pending_payments: normalizeCountedAmount(summary.pending_payments, EMPTY_DASHBOARD_SUMMARY.pending_payments),
+    active_customers: normalizeCountedAmount(summary.active_customers, EMPTY_DASHBOARD_SUMMARY.active_customers),
+    active_projects: normalizeCountedAmount(summary.active_projects, EMPTY_DASHBOARD_SUMMARY.active_projects),
+    token_pending: normalizeCountedAmount(summary.token_pending, EMPTY_DASHBOARD_SUMMARY.token_pending),
+    token_paid_month: normalizeCountedAmount(summary.token_paid_month, EMPTY_DASHBOARD_SUMMARY.token_paid_month),
+    expenses_today: normalizeCountedAmount(summary.expenses_today, EMPTY_DASHBOARD_SUMMARY.expenses_today),
+    expenses_month: normalizeCountedAmount(summary.expenses_month, EMPTY_DASHBOARD_SUMMARY.expenses_month),
+    purchases_today: normalizeCountedAmount(summary.purchases_today, EMPTY_DASHBOARD_SUMMARY.purchases_today),
+    purchases_month: normalizeCountedAmount(summary.purchases_month, EMPTY_DASHBOARD_SUMMARY.purchases_month),
+    followups_pending: normalizeCountedAmount(summary.followups_pending, EMPTY_DASHBOARD_SUMMARY.followups_pending),
+    low_stock_items: normalizeCountedAmount(summary.low_stock_items, EMPTY_DASHBOARD_SUMMARY.low_stock_items),
+    as_of_date: typeof summary.as_of_date === "string" ? summary.as_of_date : EMPTY_DASHBOARD_SUMMARY.as_of_date,
+  };
+}
 
 router.get("/summary", async (_req, res) => {
   try {
     const summary = await getOrSetCache("dashboard:summary:v2", SUMMARY_TTL_MS, async () => {
       const sql = `
-        WITH today AS (
-          SELECT CURRENT_DATE AS d
+        WITH business_clock AS (
+          SELECT
+            timezone('${BUSINESS_TIMEZONE}', NOW()) AS local_now,
+            timezone('${BUSINESS_TIMEZONE}', NOW())::date AS local_date
         ),
         sales_today AS (
           SELECT COALESCE(SUM(final_amount), 0)::numeric AS amount,
                  COUNT(*)::int AS count
             FROM quotations
-           WHERE created_at::date = CURRENT_DATE
+           WHERE timezone('${BUSINESS_TIMEZONE}', created_at)::date = (SELECT local_date FROM business_clock)
         ),
         sales_month AS (
           SELECT COALESCE(SUM(final_amount), 0)::numeric AS amount,
                  COUNT(*)::int AS count
             FROM quotations
-           WHERE DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)
+           WHERE DATE_TRUNC('month', timezone('${BUSINESS_TIMEZONE}', created_at)) = DATE_TRUNC('month', (SELECT local_now FROM business_clock))
         ),
         collection_today AS (
           SELECT COALESCE(SUM(amount), 0)::numeric AS amount,
                  COUNT(*)::int AS count
             FROM payments
-           WHERE created_at::date = CURRENT_DATE
+           WHERE timezone('${BUSINESS_TIMEZONE}', created_at)::date = (SELECT local_date FROM business_clock)
         ),
         collection_month AS (
           SELECT COALESCE(SUM(amount), 0)::numeric AS amount,
                  COUNT(*)::int AS count
             FROM payments
-           WHERE DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)
+           WHERE DATE_TRUNC('month', timezone('${BUSINESS_TIMEZONE}', created_at)) = DATE_TRUNC('month', (SELECT local_now FROM business_clock))
         ),
         pending_payments AS (
           -- Canonical outstanding formula:
@@ -69,31 +130,31 @@ router.get("/summary", async (_req, res) => {
                  COALESCE(SUM(total_token_amount), 0)::numeric AS amount
             FROM adhesive_token_claims
            WHERE status = 'paid'
-             AND DATE_TRUNC('month', payment_date) = DATE_TRUNC('month', CURRENT_DATE)
+             AND DATE_TRUNC('month', payment_date) = DATE_TRUNC('month', (SELECT local_now FROM business_clock))
         ),
         expenses_today AS (
           SELECT COALESCE(SUM(amount), 0)::numeric AS amount,
                  COUNT(*)::int AS count
             FROM expenses
-           WHERE expense_date = CURRENT_DATE
+           WHERE expense_date = (SELECT local_date FROM business_clock)
         ),
         expenses_month AS (
           SELECT COALESCE(SUM(amount), 0)::numeric AS amount,
                  COUNT(*)::int AS count
             FROM expenses
-           WHERE DATE_TRUNC('month', expense_date) = DATE_TRUNC('month', CURRENT_DATE)
+           WHERE DATE_TRUNC('month', expense_date) = DATE_TRUNC('month', (SELECT local_now FROM business_clock))
         ),
         purchases_today AS (
           SELECT COALESCE(SUM(total_amount), 0)::numeric AS amount,
                  COUNT(*)::int AS count
             FROM purchases
-           WHERE purchase_date = CURRENT_DATE
+           WHERE purchase_date = (SELECT local_date FROM business_clock)
         ),
         purchases_month AS (
           SELECT COALESCE(SUM(total_amount), 0)::numeric AS amount,
                  COUNT(*)::int AS count
             FROM purchases
-           WHERE DATE_TRUNC('month', purchase_date) = DATE_TRUNC('month', CURRENT_DATE)
+           WHERE DATE_TRUNC('month', purchase_date) = DATE_TRUNC('month', (SELECT local_now FROM business_clock))
         ),
         followups_pending AS (
           SELECT COUNT(*)::int AS count
@@ -131,10 +192,10 @@ router.get("/summary", async (_req, res) => {
           (SELECT row_to_json(t) FROM (SELECT * FROM purchases_month) t)     AS purchases_month,
           (SELECT row_to_json(t) FROM (SELECT * FROM followups_pending) t)   AS followups_pending,
           (SELECT row_to_json(t) FROM (SELECT * FROM low_stock_items) t)     AS low_stock_items,
-          CURRENT_DATE AS as_of_date
+          TO_CHAR((SELECT local_date FROM business_clock), 'YYYY-MM-DD') AS as_of_date
       `;
       const result = await query(sql);
-      return result.rows[0] || {};
+      return normalizeDashboardSummary(result.rows[0] || {});
     });
 
     return res.json(summary);

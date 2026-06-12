@@ -6,6 +6,22 @@ import { validateProductPayload } from "../utils/validation.js";
 const router = express.Router();
 const DEFAULT_LIST_LIMIT = 100;
 const MAX_LIST_LIMIT = 300;
+const DEFAULT_LOW_STOCK_THRESHOLD = 10;
+const EMPTY_INVENTORY_SUMMARY = {
+  total_products: 0,
+  active_products: 0,
+  fast_moving_count: 0,
+  dead_stock_count: 0,
+  low_stock_count: 0,
+  out_of_stock_count: 0,
+  total_stock_sqft: 0,
+  total_stock_boxes: 0,
+  missing_company_count: 0,
+  missing_size_count: 0,
+  missing_weight_count: 0,
+  missing_pricing_count: 0,
+  missing_packaging_count: 0,
+};
 
 // Validates ":id" route params before they reach SQL. Non-numeric ids
 // (e.g. "/inventory/undefined" from a stale frontend state) previously hit
@@ -132,13 +148,73 @@ function buildStockBoxesExpression(alias) {
 function buildLowStockExpression(alias, hasLowStockThresholdColumn = true) {
   const stockBoxesExpression = buildStockBoxesExpression(alias);
   const thresholdExpression = hasLowStockThresholdColumn
-    ? `GREATEST(COALESCE(${alias}.low_stock_threshold, 10), 0)`
-    : "10";
+    ? `GREATEST(COALESCE(${alias}.low_stock_threshold, ${DEFAULT_LOW_STOCK_THRESHOLD}), 0)`
+    : String(DEFAULT_LOW_STOCK_THRESHOLD);
   return `CASE
     WHEN COALESCE(${alias}.stock_sqft, 0) <= 0 THEN TRUE
     WHEN (${stockBoxesExpression}) <= ${thresholdExpression} THEN TRUE
     ELSE FALSE
   END`;
+}
+
+function normalizeFiniteNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeInventorySummary(summary) {
+  const normalized = { ...EMPTY_INVENTORY_SUMMARY };
+
+  if (!summary || typeof summary !== "object") {
+    return normalized;
+  }
+
+  for (const key of Object.keys(normalized)) {
+    normalized[key] = normalizeFiniteNumber(summary[key], normalized[key]);
+  }
+
+  return normalized;
+}
+
+function normalizeInventoryProductRow(product) {
+  try {
+    const stockSqft = normalizeFiniteNumber(product?.stock_sqft, 0);
+    const sqftPerBox = normalizeFiniteNumber(product?.sqft_per_box, 0);
+    const fallbackStockBoxes =
+      sqftPerBox > 0 ? Number((stockSqft / sqftPerBox).toFixed(2)) : stockSqft;
+    const lowStockThreshold = Math.max(
+      normalizeFiniteNumber(product?.low_stock_threshold, DEFAULT_LOW_STOCK_THRESHOLD),
+      0
+    );
+    const stockBoxes = normalizeFiniteNumber(product?.stock_boxes, fallbackStockBoxes);
+    const isLowStock =
+      typeof product?.is_low_stock === "boolean"
+        ? product.is_low_stock
+        : stockSqft <= 0 || stockBoxes <= lowStockThreshold;
+
+    return {
+      ...product,
+      stock_sqft: stockSqft,
+      sqft_per_box: sqftPerBox,
+      stock_boxes: stockBoxes,
+      low_stock_threshold: lowStockThreshold,
+      is_low_stock: Boolean(isLowStock),
+    };
+  } catch (error) {
+    console.error("[inventory] stock calculation normalization failed:", {
+      productId: product?.id ?? null,
+      error: error?.message || error,
+    });
+
+    return {
+      ...product,
+      stock_sqft: normalizeFiniteNumber(product?.stock_sqft, 0),
+      sqft_per_box: normalizeFiniteNumber(product?.sqft_per_box, 0),
+      stock_boxes: normalizeFiniteNumber(product?.stock_sqft, 0),
+      low_stock_threshold: DEFAULT_LOW_STOCK_THRESHOLD,
+      is_low_stock: true,
+    };
+  }
 }
 
 router.get("/options", async (_req, res) => {
@@ -234,8 +310,8 @@ router.get("/", async (req, res) => {
     const stockBoxesExpression = buildStockBoxesExpression("p");
     const lowStockExpression = buildLowStockExpression("p", hasLowStockThresholdColumn);
     const lowStockThresholdSelect = hasLowStockThresholdColumn
-      ? "COALESCE(p.low_stock_threshold, 10)::int"
-      : "10::int";
+      ? `COALESCE(p.low_stock_threshold, ${DEFAULT_LOW_STOCK_THRESHOLD})::int`
+      : `${DEFAULT_LOW_STOCK_THRESHOLD}::int`;
     const latestBatchJoin = hasPurchaseItemBatchesTable
       ? `LEFT JOIN LATERAL (
              SELECT pb.batch_no
@@ -292,14 +368,20 @@ router.get("/", async (req, res) => {
            name ASC
          LIMIT $1`,
         productsParams
-      ),
+      ).catch((listError) => {
+        console.error("[inventory] list query failed:", listError);
+        throw listError;
+      }),
       query(
         `SELECT
            COUNT(*)::int AS total_products,
+           COUNT(*) FILTER (WHERE status IN ('active', 'fast_moving'))::int AS active_products,
            COUNT(*) FILTER (WHERE status = 'fast_moving')::int AS fast_moving_count,
            COUNT(*) FILTER (WHERE status = 'dead_stock')::int AS dead_stock_count,
            COUNT(*) FILTER (WHERE ${lowStockExpression})::int AS low_stock_count,
-           COALESCE(SUM(stock_sqft), 0)::int AS total_stock_sqft,
+           COUNT(*) FILTER (WHERE COALESCE(stock_sqft, 0) <= 0)::int AS out_of_stock_count,
+           COALESCE(SUM(COALESCE(stock_sqft, 0)), 0)::numeric AS total_stock_sqft,
+           COALESCE(SUM(${stockBoxesExpression}), 0)::numeric AS total_stock_boxes,
            COUNT(*) FILTER (WHERE COALESCE(NULLIF(company_name, ''), ${summaryLegacyCompanyExpression}, ${summaryLegacyBrandExpression}, ${summaryLegacyManufacturerExpression}) IS NULL)::int AS missing_company_count,
            COUNT(*) FILTER (WHERE COALESCE(NULLIF(product_size, ''), NULLIF(tile_size, ''), ${hasSizeColumn ? "NULLIF(size, '')" : "NULL"}) IS NULL)::int AS missing_size_count,
            COUNT(*) FILTER (WHERE COALESCE(weight_per_box, 0) <= 0 AND COALESCE(weight_per_unit, 0) <= 0)::int AS missing_weight_count,
@@ -316,13 +398,16 @@ router.get("/", async (req, res) => {
          FROM products`
       ).catch((summaryError) => {
         console.error("[inventory] summary query failed (non-fatal):", summaryError);
-        return { rows: [null] };
+        return { rows: [EMPTY_INVENTORY_SUMMARY] };
       }),
     ]);
 
+    const normalizedProducts = productsResult.rows.map(normalizeInventoryProductRow);
+    const normalizedSummary = normalizeInventorySummary(summaryResult.rows[0]);
+
     return res.json({
-      products: productsResult.rows,
-      summary: summaryResult.rows[0] || null,
+      products: normalizedProducts,
+      summary: normalizedSummary,
     });
   } catch (error) {
     // Logged so process managers (pm2) capture the real failure; previously the
@@ -573,4 +658,3 @@ router.delete("/:id", requireRole("admin"), async (req, res) => {
 });
 
 export default router;
-

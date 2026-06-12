@@ -413,6 +413,22 @@ const emptyOwnerOverviewData = {
   dailyTasks: null,
 };
 
+const emptyInventorySummary = {
+  total_products: 0,
+  active_products: 0,
+  fast_moving_count: 0,
+  dead_stock_count: 0,
+  low_stock_count: 0,
+  out_of_stock_count: 0,
+  total_stock_sqft: 0,
+  total_stock_boxes: 0,
+  missing_company_count: 0,
+  missing_size_count: 0,
+  missing_weight_count: 0,
+  missing_pricing_count: 0,
+  missing_packaging_count: 0,
+};
+
 const dealerCategories = ["A", "B", "C"];
 
 const emptyLead = {
@@ -3522,7 +3538,9 @@ export default function App() {
           api.getLeads({ ...requestOptions, limit: listLimits.leads }),
           api.getDashboardSummary(requestOptions).catch(() => null),
           loadUsersForView(view, signal),
-          api.getInventory({ ...requestOptions, limit: listLimits.products }).catch(() => ({ products: [], summary: null })),
+          api
+            .getInventory({ ...requestOptions, limit: listLimits.products })
+            .catch(() => ({ products: [], summary: emptyInventorySummary })),
           api
             .getBillingDashboard({ ...requestOptions, limit: listLimits.invoices })
             .catch(() => ({ invoices: [], summary: null, reports: {}, references: {} })),
@@ -3532,7 +3550,7 @@ export default function App() {
         setLeads(leadsData);
         setDashboardSummary(summaryData);
         setProducts(inventoryData.products || []);
-        setInventorySummary(inventoryData.summary || null);
+        setInventorySummary(createSafeInventorySummary(inventoryData.summary));
         setInvoices(billingData.invoices || []);
         setBillingSummary(billingData.summary || null);
         setBillingReports(billingData.reports || {});
@@ -3639,7 +3657,7 @@ export default function App() {
         setLeads(leadsData);
         syncSelectedLeadState(leadsData);
         setProducts(inventoryData.products || []);
-        setInventorySummary(inventoryData.summary || null);
+        setInventorySummary(createSafeInventorySummary(inventoryData.summary));
       } else if (view === "schemes") {
         const [schemesData, projectsData] = await Promise.all([
           api.getSchemesDashboard({ ...requestOptions, limit: listLimits.claims, mason_limit: listLimits.masons }),
@@ -3673,7 +3691,7 @@ export default function App() {
           api.getInventoryOptions(requestOptions).catch(() => ({ companies: [], sizes: [], finishes: [] })),
         ]);
         setProducts(inventoryData.products || []);
-        setInventorySummary(inventoryData.summary || null);
+        setInventorySummary(createSafeInventorySummary(inventoryData.summary));
         setInventoryOptions({
           companies: Array.isArray(inventoryOptionsData?.companies) ? inventoryOptionsData.companies : [],
           sizes: Array.isArray(inventoryOptionsData?.sizes) ? inventoryOptionsData.sizes : [],
@@ -10989,7 +11007,7 @@ export default function App() {
               <div className="section-head">
                 <h2>Live business pulse</h2>
                 <span>
-                  Live snapshot - cached 30s - {dashboardSummary.as_of_date}
+                  Live snapshot - cached 30s - {formatBusinessDateLabel(dashboardSummary.as_of_date)}
                 </span>
               </div>
               <div className="tabs-row">
@@ -12956,6 +12974,23 @@ function formatCurrency(value) {
   })}`;
 }
 
+function normalizeSummaryNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function createSafeInventorySummary(summary) {
+  if (!summary || typeof summary !== "object") {
+    return { ...emptyInventorySummary };
+  }
+
+  const normalized = { ...emptyInventorySummary };
+  for (const key of Object.keys(normalized)) {
+    normalized[key] = normalizeSummaryNumber(summary[key], normalized[key]);
+  }
+  return normalized;
+}
+
 function formatDate(value) {
   if (!value) {
     return "No date set";
@@ -12977,6 +13012,33 @@ function formatDateInput(value) {
   }
 
   return String(value).slice(0, 10);
+}
+
+function formatBusinessDateLabel(value) {
+  if (!value) {
+    return "No date";
+  }
+
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split("-").map((part) => Number(part));
+    const safeDate = new Date(year, month - 1, day);
+    return safeDate.toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 function formatDateTimeLocalInput(value) {
