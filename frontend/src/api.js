@@ -185,6 +185,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  generateSalesManagerRoutine: (payload) =>
+    request("/daily-tasks/generate-sales-manager-routine", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   createDailyTask: (payload) =>
     request("/daily-tasks", {
       method: "POST",

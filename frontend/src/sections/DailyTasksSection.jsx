@@ -588,6 +588,7 @@ function DailyTasksSectionImpl({
   editingTaskId,
   handleSaveTask,
   handleGenerateOperatorRoutine,
+  handleGenerateSalesManagerRoutine,
   startEditingTask,
   resetDailyTaskForm,
   requestDeleteDailyTask,
@@ -646,6 +647,7 @@ function DailyTasksSectionImpl({
   const [detailTask, setDetailTask] = useState(null);
   const [isCreateFormExpanded, setIsCreateFormExpanded] = useState(false);
   const [routineAssignedUserId, setRoutineAssignedUserId] = useState("");
+  const [salesManagerAssignedUserId, setSalesManagerAssignedUserId] = useState("");
   const [routineDate, setRoutineDate] = useState(getTodayInputDate);
   const activeDetailTask = detailTask
     ? (Array.isArray(tasks) ? tasks.find((item) => item.id === detailTask.id) : null) || detailTask
@@ -791,25 +793,51 @@ function DailyTasksSectionImpl({
     });
   }, [users]);
 
+  const salesManagerEligibleUsers = useMemo(() => {
+    const team = Array.isArray(users) ? users : [];
+    return team.filter((teamMember) => {
+      const roles = getUserRoles(teamMember);
+      return roles.includes("manager") || roles.includes("sales");
+    });
+  }, [users]);
+
   useEffect(() => {
     if (!canManageAllTasks) {
       setRoutineAssignedUserId("");
+      setSalesManagerAssignedUserId("");
       return;
     }
 
     if (!routineEligibleUsers.length) {
       setRoutineAssignedUserId("");
-      return;
+    } else {
+      const exists = routineEligibleUsers.some(
+        (teamMember) => String(teamMember.id) === String(routineAssignedUserId || "")
+      );
+
+      if (!exists) {
+        setRoutineAssignedUserId(String(routineEligibleUsers[0].id));
+      }
     }
 
-    const exists = routineEligibleUsers.some(
-      (teamMember) => String(teamMember.id) === String(routineAssignedUserId || "")
-    );
+    if (!salesManagerEligibleUsers.length) {
+      setSalesManagerAssignedUserId("");
+    } else {
+      const exists = salesManagerEligibleUsers.some(
+        (teamMember) => String(teamMember.id) === String(salesManagerAssignedUserId || "")
+      );
 
-    if (!exists) {
-      setRoutineAssignedUserId(String(routineEligibleUsers[0].id));
+      if (!exists) {
+        setSalesManagerAssignedUserId(String(salesManagerEligibleUsers[0].id));
+      }
     }
-  }, [canManageAllTasks, routineAssignedUserId, routineEligibleUsers]);
+  }, [
+    canManageAllTasks,
+    routineAssignedUserId,
+    routineEligibleUsers,
+    salesManagerAssignedUserId,
+    salesManagerEligibleUsers,
+  ]);
 
   const progressScopeLabel = useMemo(() => {
     if (tab === "today") return "Today progress";
@@ -1075,14 +1103,6 @@ function DailyTasksSectionImpl({
                       ))}
                     </select>
                   </label>
-                  <label className="daily-task-routine-field">
-                    <span>Date</span>
-                    <input
-                      type="date"
-                      value={routineDate}
-                      onChange={(event) => setRoutineDate(event.target.value)}
-                    />
-                  </label>
                   <button
                     type="button"
                     className="secondary daily-task-routine-button"
@@ -1091,6 +1111,38 @@ function DailyTasksSectionImpl({
                   >
                     {busyAction === "generate-operator-routine" ? "Generating..." : "Generate Operator Routine"}
                   </button>
+                  <label className="daily-task-routine-field">
+                    <span>Sales manager routine</span>
+                    <select
+                      value={salesManagerAssignedUserId}
+                      onChange={(event) => setSalesManagerAssignedUserId(event.target.value)}
+                    >
+                      <option value="">Select sales manager</option>
+                      {salesManagerEligibleUsers.map((teamMember) => (
+                        <option key={`routine-sales-${teamMember.id}`} value={teamMember.id}>
+                          {teamMember.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="secondary daily-task-routine-button"
+                    disabled={!salesManagerAssignedUserId || busyAction === "generate-sales-manager-routine"}
+                    onClick={() => handleGenerateSalesManagerRoutine(salesManagerAssignedUserId, routineDate)}
+                  >
+                    {busyAction === "generate-sales-manager-routine"
+                      ? "Generating..."
+                      : "Generate Sales Manager Routine"}
+                  </button>
+                  <label className="daily-task-routine-field">
+                    <span>Date</span>
+                    <input
+                      type="date"
+                      value={routineDate}
+                      onChange={(event) => setRoutineDate(event.target.value)}
+                    />
+                  </label>
                 </div>
               ) : null}
               {editingTaskId || isCreateFormExpanded ? (

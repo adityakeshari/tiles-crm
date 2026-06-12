@@ -11,87 +11,84 @@ const ACTIVE_TASK_STATUSES = ["pending", "in_progress", "hold"];
 const DONE_TASK_STATUSES = ["completed", "verified"];
 const TEST_TASK_KEYWORDS = ["test", "trial", "demo", "sample", "dummy", "smoke"];
 const TEST_TASK_SOURCE_HINTS = ["chatgpt", "claude", "test", "external"];
-const OPERATOR_ROUTINE_TEMPLATE_KEY = "operator_routine_v1";
-const OPERATOR_ROUTINE_MARKER = `[${OPERATOR_ROUTINE_TEMPLATE_KEY}]`;
-const OPERATOR_ROUTINE_TIMEZONE = "Asia/Kolkata";
+const OPERATOR_ROUTINE_TEMPLATE_KEY = "operator_routine_v2";
+const SALES_MANAGER_ROUTINE_TEMPLATE_KEY = "sales_manager_routine_v1";
+const ROUTINE_TIMEZONE = "Asia/Kolkata";
 const OPERATOR_ROUTINE_BLOCKS = [
   {
     due_time: "11:00",
     priority: "medium",
-    block: "Opening Checklist",
+    block: "Opening",
     tasks: [
       "CRM Login",
       "WhatsApp Web Open",
-      "Internet / Printer Check",
-      "Yesterday Pending Work Review",
+      "Internet/Printer Check",
+      "Yesterday Pending Review",
       "Today Due Payments Review",
+      "Showroom Opening Checklist",
     ],
   },
   {
     due_time: "12:00",
     priority: "urgent",
-    block: "Collection Priority Block",
+    block: "Collection Priority",
     tasks: [
       "Due Payment List Generate",
       "Collection Follow-up Calls",
-      "WhatsApp Payment Reminders",
-      "Outstanding Customers Update",
-      "Collection Status CRM Update",
-      "Critical Dues Report to Owner",
+      "WhatsApp Reminders",
+      "Outstanding Customer Update",
+      "Collection Status Update",
+      "Critical Dues Report",
     ],
   },
   {
-    due_time: "13:30",
+    due_time: "13:00",
     priority: "medium",
     block: "Lead & Customer Updates",
     tasks: [
-      "New Leads Entry",
-      "Lead Details Update",
+      "New Lead Entry",
+      "Lead Status Update",
       "Customer Records Verification",
-      "Follow-up Status Update",
     ],
   },
   {
-    due_time: "14:30",
+    due_time: "14:00",
     priority: "medium",
-    block: "Quotation Work",
+    block: "Quotations",
     tasks: [
-      "Pending Quotations Prepare",
-      "Quotation PDF Share",
-      "Customer Requirement Notes Update",
+      "Pending Quotations",
+      "PDF Sharing",
+      "Follow-up Date Update",
     ],
   },
   {
-    due_time: "15:30",
+    due_time: "15:00",
     priority: "medium",
     block: "Inventory & Product Updates",
     tasks: [
-      "New Stock Entry",
-      "Inventory Corrections",
-      "Product Master Updates",
-      "Low Stock Alerts Review",
+      "Stock Entry",
+      "Product Updates",
+      "Low Stock Review",
     ],
   },
   {
-    due_time: "16:30",
+    due_time: "16:00",
     priority: "medium",
     block: "Mason / Token / Project Updates",
     tasks: [
-      "Mason Registrations",
-      "Adhesive Token Updates",
+      "Mason Registration Updates",
+      "Token Updates",
       "Project Updates",
-      "Dispatch Record Updates",
     ],
   },
   {
-    due_time: "17:30",
+    due_time: "17:00",
     priority: "medium",
     block: "Accounts Support",
     tasks: [
-      "Expense Entries",
-      "Cash Entries",
-      "Online Payment Entries",
-      "Supplier Payment Updates",
+      "Expense Entry",
+      "Cash Entry",
+      "Online Payment Entry",
     ],
   },
   {
@@ -99,24 +96,138 @@ const OPERATOR_ROUTINE_BLOCKS = [
     priority: "medium",
     block: "Daily Verification",
     tasks: [
-      "Pending Task Review",
-      "Missing CRM Entries Check",
-      "Open Follow-ups Verification",
-      "Inventory Update Verification",
+      "Pending Work Review",
+      "Missing Entries Check",
+      "Follow-up Verification",
     ],
   },
   {
     due_time: "19:30",
     priority: "high",
-    block: "Closing Routine",
+    block: "Closing",
     tasks: [
-      "Send Daily Report to Owner",
-      "Tomorrow Collection List Prepare",
-      "Day Closing Checklist",
-      "CRM Logout",
+      "Daily Report to Owner",
+      "Tomorrow Collection List",
+      "Showroom Closing Checklist",
     ],
   },
 ];
+const SALES_MANAGER_ROUTINE_BLOCKS = [
+  {
+    due_time: "10:00",
+    priority: "high",
+    block: "Command Review",
+    tasks: [
+      "Team Attendance Check",
+      "Yesterday Pending Review",
+      "Overdue Tasks Review",
+      "Collection Dashboard Review",
+      "Today's Priorities",
+    ],
+  },
+  {
+    due_time: "10:30",
+    priority: "urgent",
+    block: "Collection Recovery",
+    tasks: [
+      "Due Payment Calls",
+      "Dealer Recovery Follow-up",
+      "Contractor Recovery Follow-up",
+      "Collection Commitments Update",
+    ],
+  },
+  {
+    due_time: "12:00",
+    priority: "high",
+    block: "Sales Follow-up",
+    tasks: [
+      "Hot Leads",
+      "Architect Follow-up",
+      "Dealer Follow-up",
+      "Site Enquiries",
+      "Quotation Follow-up",
+    ],
+  },
+  {
+    due_time: "13:30",
+    priority: "medium",
+    block: "Mason Development",
+    tasks: [
+      "Mason Calls",
+      "New Mason Registration",
+      "Referral Generation",
+      "Relationship Follow-up",
+    ],
+  },
+  {
+    due_time: "15:00",
+    priority: "high",
+    block: "Team Review",
+    tasks: [
+      "Poonam Task Review",
+      "Pending Task Review",
+      "Escalations",
+      "Verification Queue",
+    ],
+  },
+  {
+    due_time: "16:00",
+    priority: "medium",
+    block: "Showroom Inspection",
+    tasks: [
+      "Cleanliness Verified",
+      "Display Verified",
+      "Branding Verified",
+      "Issues Reported",
+    ],
+  },
+  {
+    due_time: "16:15",
+    priority: "high",
+    block: "Sales Conversion",
+    tasks: [
+      "Negotiation Calls",
+      "Quotation Discussions",
+      "Project Discussions",
+      "Closing Opportunities",
+    ],
+  },
+  {
+    due_time: "18:00",
+    priority: "high",
+    block: "Pipeline Review",
+    tasks: [
+      "Leads Updated",
+      "Collections Updated",
+      "Mason Activity Updated",
+      "Team Tasks Reviewed",
+    ],
+  },
+  {
+    due_time: "19:00",
+    priority: "high",
+    block: "EOD Reporting",
+    tasks: [
+      "Collections Summary",
+      "Sales Opportunities",
+      "Mason Activity",
+      "Team Performance",
+      "Tomorrow Commitments",
+    ],
+  },
+];
+const ROUTINE_CONFIGS = {
+  operator: {
+    key: OPERATOR_ROUTINE_TEMPLATE_KEY,
+    label: "Operator routine",
+    blocks: OPERATOR_ROUTINE_BLOCKS,
+  },
+  sales_manager: {
+    key: SALES_MANAGER_ROUTINE_TEMPLATE_KEY,
+    label: "Sales manager routine",
+    blocks: SALES_MANAGER_ROUTINE_BLOCKS,
+  },
+};
 const OVERDUE_SQL_CONDITION = `(
   (
     t.due_date < CURRENT_DATE
@@ -213,29 +324,33 @@ async function runDbQuery(executor, text, params = []) {
 
 function getBusinessTodayDate() {
   return new Intl.DateTimeFormat("en-CA", {
-    timeZone: OPERATOR_ROUTINE_TIMEZONE,
+    timeZone: ROUTINE_TIMEZONE,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
 }
 
-function buildRoutineTaskRemarks(block, generatedFor) {
-  return `${OPERATOR_ROUTINE_MARKER} ${block} for ${generatedFor}`;
+function getRoutineMarker(templateKey) {
+  return `[${templateKey}]`;
 }
 
-function buildOperatorRoutineItems({ assigned_to, assigned_by, due_date }) {
-  return OPERATOR_ROUTINE_BLOCKS.flatMap((block) =>
+function buildRoutineTaskRemarks(templateKey, block, generatedFor) {
+  return `${getRoutineMarker(templateKey)} ${block} for ${generatedFor}`;
+}
+
+function buildRoutineItems({ routineConfig, assigned_to, assigned_by, due_date }) {
+  return routineConfig.blocks.flatMap((block) =>
     block.tasks.map((title) => ({
       title,
-      description: `${block.block} | Operator routine for ${due_date}`,
+      description: `${block.block} | ${routineConfig.label} for ${due_date}`,
       assigned_to,
       assigned_by,
       priority: block.priority,
       due_date,
       due_time: block.due_time,
       status: "pending",
-      remarks: buildRoutineTaskRemarks(block.block, due_date),
+      remarks: buildRoutineTaskRemarks(routineConfig.key, block.block, due_date),
       completed_at: null,
       verified_by: null,
       source: "automation",
@@ -311,6 +426,95 @@ async function getTestTaskAudit(executor) {
   );
 
   return result.rows[0] || { candidate_count: 0, samples: [] };
+}
+
+async function generateRoutineForUser({ routineConfig, assigned_to, assigned_by, due_date }) {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const assignedUserCheck = await ensureAssignedUserExists(client, assigned_to);
+    if (!assignedUserCheck.ok) {
+      await client.query("ROLLBACK");
+      return {
+        ok: false,
+        status: assignedUserCheck.status,
+        body: { message: assignedUserCheck.message },
+      };
+    }
+
+    const existingRoutineResult = await runDbQuery(
+      client,
+      `SELECT COUNT(*)::int AS existing_count
+       FROM daily_tasks
+       WHERE assigned_to = $1
+         AND due_date = $2
+         AND (
+           remarks ILIKE $3
+           OR (
+             source = 'automation'
+             AND title = ANY($4)
+           )
+         )`,
+      [
+        assigned_to,
+        due_date,
+        `%${getRoutineMarker(routineConfig.key)}%`,
+        routineConfig.blocks.flatMap((block) => block.tasks),
+      ]
+    );
+
+    const existingCount = Number(existingRoutineResult.rows?.[0]?.existing_count || 0);
+    if (existingCount > 0) {
+      await client.query("ROLLBACK");
+      return {
+        ok: false,
+        status: 409,
+        body: {
+          message: `${routineConfig.label} already exists for this user and date`,
+          existingCount,
+        },
+      };
+    }
+
+    const routineItems = buildRoutineItems({
+      routineConfig,
+      assigned_to,
+      assigned_by,
+      due_date,
+    });
+
+    const createdTasks = [];
+    for (const item of routineItems) {
+      const createdTask = await insertDailyTask(client, item);
+      createdTasks.push(createdTask);
+    }
+
+    await client.query("COMMIT");
+    return {
+      ok: true,
+      status: 201,
+      body: {
+        ok: true,
+        template: routineConfig.key,
+        generatedFor: due_date,
+        assignedTo: assigned_to,
+        createdCount: createdTasks.length,
+        tasks: createdTasks,
+      },
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error(`[daily-tasks] routine generation failed (${routineConfig.key}):`, error);
+    return {
+      ok: false,
+      status: 500,
+      body: { message: `Unable to generate ${routineConfig.label}`, error: error.message },
+    };
+  } finally {
+    client.release();
+  }
 }
 
 function getTaskApiKeyConfig() {
@@ -731,75 +935,42 @@ router.post("/generate-operator-routine", async (req, res) => {
     return res.status(400).json({ message: "Routine date is invalid" });
   }
 
-  const client = await pool.connect();
+  const result = await generateRoutineForUser({
+    routineConfig: ROUTINE_CONFIGS.operator,
+    assigned_to,
+    assigned_by: req.user.id,
+    due_date,
+  });
 
-  try {
-    await client.query("BEGIN");
+  return res.status(result.status).json(result.body);
+});
 
-    const assignedUserCheck = await ensureAssignedUserExists(client, assigned_to);
-    if (!assignedUserCheck.ok) {
-      await client.query("ROLLBACK");
-      return res.status(assignedUserCheck.status).json({ message: assignedUserCheck.message });
-    }
-
-    const existingRoutineResult = await runDbQuery(
-      client,
-      `SELECT COUNT(*)::int AS existing_count
-       FROM daily_tasks
-       WHERE assigned_to = $1
-         AND due_date = $2
-         AND (
-           remarks ILIKE $3
-           OR (
-             source = 'automation'
-             AND title = ANY($4)
-           )
-         )`,
-      [
-        assigned_to,
-        due_date,
-        `%${OPERATOR_ROUTINE_MARKER}%`,
-        OPERATOR_ROUTINE_BLOCKS.flatMap((block) => block.tasks),
-      ]
-    );
-
-    const existingCount = Number(existingRoutineResult.rows?.[0]?.existing_count || 0);
-    if (existingCount > 0) {
-      await client.query("ROLLBACK");
-      return res.status(409).json({
-        message: "Operator routine already exists for this user and date",
-        existingCount,
-      });
-    }
-
-    const routineItems = buildOperatorRoutineItems({
-      assigned_to,
-      assigned_by: req.user.id,
-      due_date,
-    });
-
-    const createdTasks = [];
-    for (const item of routineItems) {
-      const createdTask = await insertDailyTask(client, item);
-      createdTasks.push(createdTask);
-    }
-
-    await client.query("COMMIT");
-    return res.status(201).json({
-      ok: true,
-      template: OPERATOR_ROUTINE_TEMPLATE_KEY,
-      generatedFor: due_date,
-      assignedTo: assigned_to,
-      createdCount: createdTasks.length,
-      tasks: createdTasks,
-    });
-  } catch (error) {
-    await client.query("ROLLBACK");
-    console.error("[daily-tasks] POST /generate-operator-routine failed:", error);
-    return res.status(500).json({ message: "Unable to generate operator routine", error: error.message });
-  } finally {
-    client.release();
+router.post("/generate-sales-manager-routine", async (req, res) => {
+  if (!canCreateTasks(req.user)) {
+    return res.status(403).json({ message: "You do not have access to generate sales manager routine tasks" });
   }
+
+  const assigned_to = parsePositiveInteger(req.body?.assigned_to);
+  const due_date = typeof req.body?.due_date === "string" && req.body.due_date.trim()
+    ? req.body.due_date.trim().slice(0, 10)
+    : getBusinessTodayDate();
+
+  if (!assigned_to) {
+    return res.status(400).json({ message: "Sales manager user is required" });
+  }
+
+  if (Number.isNaN(new Date(due_date).getTime())) {
+    return res.status(400).json({ message: "Routine date is invalid" });
+  }
+
+  const result = await generateRoutineForUser({
+    routineConfig: ROUTINE_CONFIGS.sales_manager,
+    assigned_to,
+    assigned_by: req.user.id,
+    due_date,
+  });
+
+  return res.status(result.status).json(result.body);
 });
 
 router.get("/", async (req, res) => {

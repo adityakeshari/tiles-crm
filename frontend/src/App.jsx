@@ -4373,6 +4373,21 @@ export default function App() {
     }, "Operator routine generated.");
   }
 
+  async function handleGenerateSalesManagerRoutine(assignedTo, dueDate = getLocalDateInputValue()) {
+    if (!assignedTo) {
+      setError("Select a sales manager before generating the routine.");
+      return;
+    }
+
+    await runBusyAction("generate-sales-manager-routine", async () => {
+      await api.generateSalesManagerRoutine({
+        assigned_to: assignedTo,
+        due_date: dueDate,
+      });
+      await loadDashboard({ forceView: "operations" });
+    }, "Sales manager routine generated.");
+  }
+
   async function handleQuickDailyTaskStatusUpdate(task, status) {
     await runBusyAction(`daily-task-status-${task.id}`, async () => {
       await api.updateDailyTask(task.id, {
@@ -8011,6 +8026,7 @@ export default function App() {
             editingTaskId={editingDailyTaskId}
             handleSaveTask={handleSaveDailyTask}
             handleGenerateOperatorRoutine={handleGenerateOperatorRoutine}
+            handleGenerateSalesManagerRoutine={handleGenerateSalesManagerRoutine}
             startEditingTask={startEditingDailyTask}
             resetDailyTaskForm={resetDailyTaskForm}
             requestDeleteDailyTask={requestDeleteDailyTask}
