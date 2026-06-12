@@ -2366,11 +2366,12 @@ export default function App() {
         const matchesStatus =
           inventoryLedgerStatusFilter === "all" ||
           String(product.status || "") === inventoryLedgerStatusFilter;
-        const matchesStock =
-          inventoryLedgerStockFilter === "all" ||
-          (inventoryLedgerStockFilter === "in" && stockState === "in") ||
-          (inventoryLedgerStockFilter === "low" && (stockState === "low" || stockAlertLevel === "critical")) ||
-          (inventoryLedgerStockFilter === "out" && stockState === "out");
+          const matchesStock =
+            inventoryLedgerStockFilter === "all" ||
+            (inventoryLedgerStockFilter === "in" && stockState === "in") ||
+            (inventoryLedgerStockFilter === "critical" && stockAlertLevel === "critical") ||
+            (inventoryLedgerStockFilter === "low" && (stockState === "low" || stockAlertLevel === "critical")) ||
+            (inventoryLedgerStockFilter === "out" && stockState === "out");
 
         return matchesSearch && matchesCategory && matchesStatus && matchesStock;
       })
@@ -3308,20 +3309,22 @@ export default function App() {
   }, [filteredLeads, focusedFollowupBoard, focusedOperationsBoard, overdueFollowups.length, filteredProducts]);
   const lowStockPreview = useMemo(() => {
     const alertProducts = (filteredProducts || [])
-      .filter((product) => getProductStockAlertLevel(product) !== "in")
-      .map((product) => {
-        const currentBoxes = getProductStockBoxes(product);
-        const threshold = getProductLowStockThreshold(product);
-        const difference = getProductLowStockDifference(product);
-        const alertLevel = getProductStockAlertLevel(product);
-        return {
-          product,
-          currentBoxes,
-          threshold,
-          difference,
-          alertLevel,
-        };
-      })
+        .filter((product) => getProductStockAlertLevel(product) !== "in")
+        .map((product) => {
+          const currentBoxes = getProductStockBoxes(product);
+          const threshold = getProductLowStockThreshold(product);
+          const difference = getProductLowStockDifference(product);
+          const differenceLabel = formatLowStockDifferenceLabel(product);
+          const alertLevel = getProductStockAlertLevel(product);
+          return {
+            product,
+            currentBoxes,
+            threshold,
+            difference,
+            differenceLabel,
+            alertLevel,
+          };
+        })
       .sort((left, right) => {
         const leftRank = { out: 0, critical: 1, low: 2 }[left.alertLevel] ?? 3;
         const rightRank = { out: 0, critical: 1, low: 2 }[right.alertLevel] ?? 3;
@@ -7527,6 +7530,7 @@ export default function App() {
                       <span className="audience-tag">Row 1</span>
                       <h3>Low Stock Items</h3>
                       <p>{Number(dashboardSummary?.low_stock_items?.count || 0).toLocaleString("en-IN")}</p>
+                      <p className="muted">Threshold-based alerts using current stock boxes vs per-product threshold.</p>
                       <div className="chip-row">
                         <span className="legend-chip">Out {Number(lowStockPreview.outOfStockCount || 0).toLocaleString("en-IN")}</span>
                         <span className="legend-chip">Critical {Number(lowStockPreview.criticalCount || 0).toLocaleString("en-IN")}</span>
@@ -7822,21 +7826,37 @@ export default function App() {
                 <span className="legend-chip">Critical {Number(lowStockPreview.criticalCount || 0).toLocaleString("en-IN")}</span>
                 <span className="legend-chip">Low {Number(lowStockPreview.lowCount || 0).toLocaleString("en-IN")}</span>
               </div>
-              <div className="mini-list">
-                {lowStockPreview.items.map((item) => (
-                  <button
-                    key={`low-stock-preview-${item.product.id}`}
-                    type="button"
-                    className={`mini-card low-stock-preview-card tone-${item.alertLevel}`}
-                    onClick={() => startEditingProduct(item.product)}
-                  >
-                    <strong>{item.product.name}</strong>
-                    <span>{getProductCompany(item.product) || "Company missing"}</span>
-                    <small>
-                      Current {item.currentBoxes.toLocaleString("en-IN", { maximumFractionDigits: 2 })} box | Threshold {item.threshold.toLocaleString("en-IN", { maximumFractionDigits: 2 })} box | Diff {item.difference.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
-                    </small>
-                  </button>
-                ))}
+                <div className="mini-list">
+                  {lowStockPreview.items.map((item) => (
+                    <button
+                      key={`low-stock-preview-${item.product.id}`}
+                      type="button"
+                      className={`mini-card low-stock-preview-card tone-${item.alertLevel}`}
+                      onClick={() => startEditingProduct(item.product)}
+                    >
+                      <div className="low-stock-preview-head">
+                        <strong>{item.product.name}</strong>
+                        <span
+                          className={`stock-badge ${
+                            item.alertLevel === "out"
+                              ? "stock-out"
+                              : item.alertLevel === "critical"
+                                ? "stock-critical"
+                                : "stock-low"
+                          }`}
+                        >
+                          {item.alertLevel === "out" ? "Out Of Stock" : item.alertLevel === "critical" ? "Critical Stock" : "Low Stock"}
+                        </span>
+                      </div>
+                      <span>{getProductCompany(item.product) || "Company missing"}</span>
+                      <div className="low-stock-preview-metrics">
+                        <small>Current Stock: {item.currentBoxes.toLocaleString("en-IN", { maximumFractionDigits: 2 })} boxes</small>
+                        <small>Threshold: {item.threshold.toLocaleString("en-IN", { maximumFractionDigits: 2 })} boxes</small>
+                        <small>Difference: {item.difference.toLocaleString("en-IN", { maximumFractionDigits: 2 })} boxes</small>
+                      </div>
+                      <small className="low-stock-preview-difference">{item.differenceLabel}</small>
+                    </button>
+                  ))}
                 {lowStockPreview.items.length === 0 ? (
                   <EmptyState title="No low stock alerts" message="All currently loaded inventory items are above threshold." compact />
                 ) : null}
@@ -10305,6 +10325,7 @@ export default function App() {
                         value={productForm.low_stock_threshold}
                         onChange={(event) => setProductForm({ ...productForm, low_stock_threshold: event.target.value })}
                       />
+                      <span className="field-help-text">Product is flagged low when current boxes are at or below this threshold.</span>
                     </div>
                     <div className="form-field">
                       <label>Pricing Lock</label>
@@ -10423,6 +10444,7 @@ export default function App() {
                 >
                   <option value="all">All</option>
                   <option value="in">In Stock</option>
+                  <option value="critical">Critical Stock</option>
                   <option value="low">Low Stock</option>
                   <option value="out">Out of Stock</option>
                 </select>
@@ -10455,6 +10477,7 @@ export default function App() {
                 const stockSqft = getProductStockSqft(product);
                 const stockThreshold = getProductLowStockThreshold(product);
                 const stockDifference = getProductLowStockDifference(product);
+                const stockDifferenceLabel = formatLowStockDifferenceLabel(product);
                 const stockLabel =
                   stockAlertLevel === "out"
                     ? "Out of Stock"
@@ -10497,6 +10520,7 @@ export default function App() {
                       <span>Min Rs {Number(product.minimum_allowed_rate || 0).toLocaleString("en-IN")}</span>
                       <span>Threshold {stockThreshold.toLocaleString("en-IN", { maximumFractionDigits: 2 })} boxes</span>
                       <span>Difference {stockDifference.toLocaleString("en-IN", { maximumFractionDigits: 2 })} boxes</span>
+                      <span>Threshold Status {stockDifferenceLabel}</span>
                     </div>
                     <div className="chip-row">
                       <span className={`stock-badge ${stockAlertLevel === "out" ? "stock-out" : stockAlertLevel === "critical" ? "stock-critical" : stockAlertLevel === "low" ? "stock-low" : "stock-in"}`}>
@@ -10585,6 +10609,7 @@ export default function App() {
                     const stockAlertLevel = getProductStockAlertLevel(product);
                     const stockThreshold = getProductLowStockThreshold(product);
                     const stockDifference = getProductLowStockDifference(product);
+                    const stockDifferenceLabel = formatLowStockDifferenceLabel(product);
                     const stockClass =
                       stockAlertLevel === "out"
                         ? "stock-out"
@@ -10638,6 +10663,7 @@ export default function App() {
                           <div className="muted stock-warning-inline">
                             Threshold {stockThreshold.toLocaleString("en-IN", { maximumFractionDigits: 2 })} | Diff {stockDifference.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                           </div>
+                          <div className="muted stock-warning-inline">{stockDifferenceLabel}</div>
                         </td>
                         <td className="col-unit">{product.unit || "Missing"}</td>
                         <td className="col-selling">Rs {Number(product.price_per_sqft || 0).toLocaleString("en-IN")}</td>
@@ -12598,6 +12624,21 @@ function getProductLowStockDifference(product) {
   const stockBoxes = getProductStockBoxes(product);
   const threshold = getProductLowStockThreshold(product);
   return Number((stockBoxes - threshold).toFixed(2));
+}
+
+function formatLowStockDifferenceLabel(product) {
+  const difference = getProductLowStockDifference(product);
+  const formatted = Math.abs(difference).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+
+  if (difference < 0) {
+    return `Below by ${formatted} boxes`;
+  }
+
+  if (difference === 0) {
+    return "At threshold";
+  }
+
+  return `Above by ${formatted} boxes`;
 }
 
 function getProductStockAlertLevel(product) {

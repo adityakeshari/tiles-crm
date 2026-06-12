@@ -4350,12 +4350,45 @@ button.sidebar-item-active .sidebar-dot {
   background: #fff0f0 !important;
 }
 
+.field-help-text {
+  display: block;
+  margin-top: 0.4rem;
+  color: #64748b;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
 .low-stock-summary-row {
   margin-bottom: 0.8rem;
 }
 
 .low-stock-preview-card {
   text-align: left;
+}
+
+.low-stock-preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.low-stock-preview-head strong {
+  flex: 1;
+}
+
+.low-stock-preview-metrics {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.low-stock-preview-metrics small,
+.low-stock-preview-difference {
+  color: #475569;
+}
+
+.low-stock-preview-difference {
+  font-weight: 600;
 }
 
 .low-stock-preview-card.tone-out,
