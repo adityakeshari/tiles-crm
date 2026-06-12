@@ -391,6 +391,7 @@ const MOBILE_BACKGROUND_LOGOUT_MS = 60 * 60 * 1000;
 const SESSION_LAST_ACTIVE_STORAGE_KEY = "tiles-crm-last-active-at";
 const DEFAULT_LIST_LIMITS = {
   leads: 40,
+  dailyTasks: 100,
   projects: 40,
   complaints: 40,
   products: 40,
@@ -1868,6 +1869,7 @@ export default function App() {
   const [operationsBoard, setOperationsBoard] = useState([]);
   const [operationsTasks, setOperationsTasks] = useState([]);
   const [dailyTasks, setDailyTasks] = useState([]);
+  const [dailyTaskTotalCount, setDailyTaskTotalCount] = useState(0);
   const [dailyTaskSummary, setDailyTaskSummary] = useState(null);
   const [dailyTaskStaffSummary, setDailyTaskStaffSummary] = useState([]);
   const [quotations, setQuotations] = useState([]);
@@ -3709,7 +3711,7 @@ export default function App() {
         const [dailyTasksData] = await Promise.all([
           api.getDailyTasks(
             {
-              limit: listLimits.leads,
+              limit: listLimits.dailyTasks,
               view: dailyTaskViewTab === "summary" ? "" : dailyTaskViewTab,
               search: debouncedDailyTaskSearch,
               status: dailyTaskFilters.status === "all" ? "" : dailyTaskFilters.status,
@@ -3722,6 +3724,7 @@ export default function App() {
           loadUsersForView(view, signal),
         ]);
         setDailyTasks(dailyTasksData?.tasks || []);
+        setDailyTaskTotalCount(Number(dailyTasksData?.totalCount || 0));
         setDailyTaskSummary(dailyTasksData?.summary || null);
         setDailyTaskStaffSummary(dailyTasksData?.staffSummary || []);
       } else if (view === "quotations") {
@@ -4358,6 +4361,12 @@ export default function App() {
   async function handleQuickDailyTaskStatusUpdate(task, status) {
     await runBusyAction(`daily-task-status-${task.id}`, async () => {
       await api.updateDailyTask(task.id, {
+        title: task.title,
+        description: task.description || "",
+        assigned_to: task.assigned_to,
+        priority: task.priority || "medium",
+        due_date: formatDateInput(task.due_date),
+        due_time: task.due_time ? String(task.due_time).slice(0, 5) : null,
         status,
         remarks: task.remarks || "",
       });
@@ -6870,6 +6879,7 @@ export default function App() {
     setOperationsBoard([]);
     setOperationsTasks([]);
     setDailyTasks([]);
+    setDailyTaskTotalCount(0);
     setDailyTaskSummary(null);
     setDailyTaskStaffSummary([]);
     setQuotations([]);
@@ -7973,6 +7983,7 @@ export default function App() {
             user={user}
             users={users}
             tasks={dailyTasks}
+            totalTaskCount={dailyTaskTotalCount}
             summary={dailyTaskSummary}
             staffSummary={dailyTaskStaffSummary}
             tab={dailyTaskViewTab}
@@ -7997,6 +8008,9 @@ export default function App() {
             canDeleteDailyTasks={canDeleteDailyTasks}
             EmptyState={EmptyState}
             StatCard={StatCard}
+            ListLoadControls={ListLoadControls}
+            listLimit={listLimits.dailyTasks}
+            onLoadMore={() => increaseListLimit("dailyTasks")}
             labelize={labelize}
             formatDate={formatDate}
             formatDateTime={formatDateTime}

@@ -4905,6 +4905,24 @@ button.sidebar-item-active .sidebar-dot {
   gap: 0.75rem;
 }
 
+.daily-task-sticky-nav {
+  position: sticky;
+  top: 0.7rem;
+  z-index: 8;
+}
+
+.daily-task-sticky-nav .workspace-tab-nav,
+.daily-task-sticky-nav .tabs-row {
+  background: var(--crm-surface);
+  border-radius: 14px;
+  padding: 0.35rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.daily-task-create-actions {
+  justify-content: flex-end;
+}
+
 .daily-task-create-button {
   min-width: 148px;
   min-height: 40px;
@@ -4921,6 +4939,17 @@ button.sidebar-item-active .sidebar-dot {
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 0.65rem;
   margin-bottom: 0.8rem;
+}
+
+.daily-task-toolbar-sticky {
+  position: sticky;
+  top: 4.25rem;
+  z-index: 7;
+  background: var(--crm-surface);
+  padding: 0.7rem;
+  border: 1px solid var(--crm-border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-xs);
 }
 
 .daily-task-toolbar.staff-toolbar {
@@ -5961,6 +5990,15 @@ button.sidebar-item-active .sidebar-dot {
 
   .daily-task-create-head {
     align-items: stretch;
+  }
+
+  .daily-task-sticky-nav {
+    top: 0.4rem;
+  }
+
+  .daily-task-toolbar-sticky {
+    top: 3.7rem;
+    padding: 0.6rem;
   }
 
   .daily-task-create-button {

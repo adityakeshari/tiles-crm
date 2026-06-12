@@ -9,6 +9,17 @@ const DEFAULT_LIST_LIMIT = 100;
 const MAX_LIST_LIMIT = 300;
 const ACTIVE_TASK_STATUSES = ["pending", "in_progress", "hold"];
 const DONE_TASK_STATUSES = ["completed", "verified"];
+const OVERDUE_SQL_CONDITION = `(
+  (
+    t.due_date < CURRENT_DATE
+    OR (
+      t.due_date = CURRENT_DATE
+      AND t.due_time IS NOT NULL
+      AND t.due_time::time < CURRENT_TIME
+    )
+  )
+  AND t.status NOT IN ('completed', 'verified')
+)`;
 
 router.use(
   requireRole(
@@ -358,8 +369,7 @@ function buildTaskFilters(req, params, user) {
     conditions.push(`t.status = ANY($${params.length})`);
     conditions.push(`COALESCE(t.completed_at, t.updated_at)::date = CURRENT_DATE`);
   } else if (view === "overdue") {
-    params.push(DONE_TASK_STATUSES);
-    conditions.push(`t.due_date < CURRENT_DATE AND NOT (t.status = ANY($${params.length}))`);
+    conditions.push(OVERDUE_SQL_CONDITION);
   }
 
   if (status) {
@@ -383,11 +393,15 @@ async function getDailyTaskSummary(user) {
      )
      SELECT
        COUNT(*) FILTER (WHERE due_date = CURRENT_DATE)::int AS today_total_tasks,
-       COUNT(*) FILTER (WHERE due_date = CURRENT_DATE AND status IN ('completed', 'verified'))::int AS today_completed_tasks,
+       COUNT(*) FILTER (
+         WHERE status IN ('completed', 'verified')
+           AND COALESCE(completed_at, updated_at)::date = CURRENT_DATE
+       )::int AS today_completed_tasks,
        COUNT(*) FILTER (WHERE due_date = CURRENT_DATE AND status NOT IN ('completed', 'verified'))::int AS today_pending_tasks,
        COUNT(*) FILTER (WHERE due_date = CURRENT_DATE AND status = 'in_progress')::int AS today_in_progress_tasks,
        COUNT(*) FILTER (WHERE due_date = CURRENT_DATE AND status = 'hold')::int AS today_hold_tasks,
-       COUNT(*) FILTER (WHERE due_date < CURRENT_DATE AND status NOT IN ('completed', 'verified'))::int AS overdue_tasks,
+       COUNT(*) FILTER (WHERE ${OVERDUE_SQL_CONDITION})::int AS overdue_tasks,
+       COUNT(*) FILTER (WHERE due_date < CURRENT_DATE AND status NOT IN ('completed', 'verified'))::int AS carry_forward_tasks,
        COUNT(*) FILTER (WHERE status NOT IN ('completed', 'verified'))::int AS pending_tasks,
        COUNT(*) FILTER (WHERE status IN ('completed', 'verified'))::int AS completed_tasks,
        COUNT(*)::int AS total_tasks
@@ -414,6 +428,7 @@ router.get("/", async (req, res) => {
     const taskParams = [];
     const conditions = buildTaskFilters(req, taskParams, req.user);
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+    const countParams = [...taskParams];
     taskParams.push(limit);
 
     const tasksPromise = query(
@@ -422,7 +437,7 @@ router.get("/", async (req, res) => {
          assignee.name AS assigned_to_name,
          assigner.name AS assigned_by_name,
          verifier.name AS verified_by_name,
-         (t.due_date < CURRENT_DATE AND t.status NOT IN ('completed', 'verified')) AS is_overdue
+         ${OVERDUE_SQL_CONDITION} AS is_overdue
        FROM daily_tasks t
        LEFT JOIN users assignee ON assignee.id = t.assigned_to
        LEFT JOIN users assigner ON assigner.id = t.assigned_by
@@ -449,6 +464,14 @@ router.get("/", async (req, res) => {
       taskParams
     );
 
+    const totalCountPromise = query(
+      `SELECT COUNT(*)::int AS total_count
+       FROM daily_tasks t
+       LEFT JOIN users assignee ON assignee.id = t.assigned_to
+       ${where}`,
+      countParams
+    );
+
     const summaryPromise = getDailyTaskSummary(req.user);
     const staffSummaryPromise = canManageAllTasks(req.user)
       ? query(
@@ -459,7 +482,7 @@ router.get("/", async (req, res) => {
              COUNT(*) FILTER (WHERE t.status IN ('pending', 'in_progress', 'hold'))::int AS pending_tasks,
              COUNT(*) FILTER (WHERE t.status = 'completed')::int AS completed_tasks,
              COUNT(*) FILTER (WHERE t.status = 'verified')::int AS verified_tasks,
-             COUNT(*) FILTER (WHERE t.due_date < CURRENT_DATE AND t.status NOT IN ('completed', 'verified'))::int AS overdue_tasks,
+             COUNT(*) FILTER (WHERE ${OVERDUE_SQL_CONDITION})::int AS overdue_tasks,
              COUNT(*) FILTER (WHERE t.priority = 'urgent')::int AS urgent_tasks
            FROM daily_tasks t
            LEFT JOIN users u ON u.id = t.assigned_to
@@ -468,14 +491,16 @@ router.get("/", async (req, res) => {
         )
       : Promise.resolve({ rows: [] });
 
-    const [tasksResult, summary, staffSummaryResult] = await Promise.all([
+    const [tasksResult, totalCountResult, summary, staffSummaryResult] = await Promise.all([
       tasksPromise,
+      totalCountPromise,
       summaryPromise,
       staffSummaryPromise,
     ]);
 
     return res.json({
       tasks: tasksResult.rows,
+      totalCount: totalCountResult.rows?.[0]?.total_count || 0,
       summary: summary || {},
       staffSummary: staffSummaryResult.rows || [],
     });
@@ -534,15 +559,22 @@ router.put("/:id", async (req, res) => {
       return res.status(403).json({ message: "You do not have access to update this daily task" });
     }
 
-    const payloadToValidate = canManage
-      ? req.body
-      : {
-          ...existingTask,
-          status: req.body.status ?? existingTask.status,
-          remarks: req.body.remarks ?? existingTask.remarks,
-          due_date: existingTask.due_date ? String(existingTask.due_date).slice(0, 10) : "",
-          due_time: existingTask.due_time ? String(existingTask.due_time).slice(0, 5) : "",
-        };
+    const payloadToValidate = {
+      ...existingTask,
+      ...req.body,
+      title: req.body.title ?? existingTask.title,
+      description: req.body.description ?? existingTask.description,
+      assigned_to: req.body.assigned_to ?? existingTask.assigned_to,
+      priority: req.body.priority ?? existingTask.priority,
+      due_date:
+        req.body.due_date ??
+        (existingTask.due_date ? String(existingTask.due_date).slice(0, 10) : ""),
+      due_time:
+        req.body.due_time ??
+        (existingTask.due_time ? String(existingTask.due_time).slice(0, 5) : ""),
+      status: req.body.status ?? existingTask.status,
+      remarks: req.body.remarks ?? existingTask.remarks,
+    };
 
     const validation = validateDailyTaskPayload(payloadToValidate);
 

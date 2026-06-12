@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import WorkspaceTabs from "../components/WorkspaceTabs.jsx";
 
 const TASK_PROGRESS_MAP = {
@@ -94,11 +94,15 @@ function getTaskSourceLabel(source) {
   return "Auto";
 }
 
-function getTaskEmptyState(tab, canManageAllTasks) {
+function getTaskEmptyState(tab, canManageAllTasks, summary) {
+  const overdueCount = Number(summary?.overdue_tasks || 0);
   if (tab === "today") {
     return {
       title: "No tasks today",
-      message: "Today's task board is clear right now.",
+      message:
+        overdueCount > 0
+          ? `No tasks scheduled for today, but ${overdueCount} overdue task${overdueCount === 1 ? "" : "s"} need attention.`
+          : "No tasks scheduled for today.",
     };
   }
 
@@ -153,6 +157,7 @@ function DailyTasksSectionImpl({
   user,
   users,
   tasks,
+  totalTaskCount,
   summary,
   staffSummary,
   tab,
@@ -177,6 +182,9 @@ function DailyTasksSectionImpl({
   canDeleteDailyTasks,
   EmptyState,
   StatCard,
+  ListLoadControls,
+  listLimit,
+  onLoadMore,
   labelize,
   formatDate,
   formatDateTime,
@@ -205,8 +213,10 @@ function DailyTasksSectionImpl({
     return baseTabs;
   }, [canManageAllTasks]);
 
-  const canUpdateTask = (task) => Number(task?.assigned_to || 0) === Number(user?.id || 0);
+  const canUpdateTask = (task) =>
+    canManageAllTasks || Number(task?.assigned_to || 0) === Number(user?.id || 0);
   const [detailTask, setDetailTask] = useState(null);
+  const [isCreateFormExpanded, setIsCreateFormExpanded] = useState(false);
   const activeDetailTask = detailTask
     ? (Array.isArray(tasks) ? tasks.find((item) => item.id === detailTask.id) : null) || detailTask
     : null;
@@ -221,7 +231,6 @@ function DailyTasksSectionImpl({
     const percent = total > 0 ? Math.round((done / total) * 100) : 0;
     return { done, total, percent };
   }, [tasks]);
-  const emptyState = getTaskEmptyState(tab, canManageAllTasks);
   // Staff previously only got the search/date toolbar on overdue & completed
   // tabs; now every task tab is searchable (summary tab needs no toolbar).
   const shouldShowManagerToolbar = tab !== "summary";
@@ -256,7 +265,7 @@ function DailyTasksSectionImpl({
         : items.filter((task) => task?.is_overdue || task?.status === "hold").length
     );
     const carryForward = Number(
-      summary?.pending_tasks ?? items.filter((task) => ["pending", "in_progress", "hold"].includes(String(task?.status || ""))).length
+      summary?.carry_forward_tasks ?? items.filter((task) => task?.is_overdue).length
     );
     const ownerNotes = items
       .filter((task) => task?.remarks || task?.is_overdue || task?.status === "hold")
@@ -275,6 +284,23 @@ function DailyTasksSectionImpl({
       ownerNotes,
     };
   }, [taskMetrics, tasks, summary]);
+  const emptyState = getTaskEmptyState(tab, canManageAllTasks, summary);
+  const visibleTaskCount = Array.isArray(tasks) ? tasks.length : 0;
+  const effectiveTotalTaskCount = Number(totalTaskCount || visibleTaskCount);
+  const hasMoreTasks = effectiveTotalTaskCount > visibleTaskCount;
+
+  useEffect(() => {
+    if (editingTaskId) {
+      setIsCreateFormExpanded(true);
+    }
+  }, [editingTaskId]);
+
+  useEffect(() => {
+    if (!canManageAllTasks) {
+      setIsCreateFormExpanded(false);
+    }
+  }, [canManageAllTasks]);
+
   const mergedStaffSummary = useMemo(() => {
     const summaryMap = new Map(
       (Array.isArray(staffSummary) ? staffSummary : []).map((item) => [String(item?.assigned_to || ""), item])
@@ -321,7 +347,9 @@ function DailyTasksSectionImpl({
 
   return (
     <section className={`stack workspace-stack daily-tasks-layout ${canManageAllTasks ? "manager-view" : "staff-view"}`}>
-      <WorkspaceTabs value={tab} onChange={setTab} tabs={visibleTabs} />
+      <div className="daily-task-sticky-nav">
+        <WorkspaceTabs value={tab} onChange={setTab} tabs={visibleTabs} />
+      </div>
 
       {canManageAllTasks ? (
         <section className="panel daily-task-command-panel">
@@ -330,7 +358,7 @@ function DailyTasksSectionImpl({
             <span>Assign, track, and review showroom work from one daily board.</span>
           </div>
           <div className="report-grid daily-task-snapshot-grid">
-            <StatCard label="Total Tasks" value={taskMetrics.total} />
+            <StatCard label="Today Tasks" value={taskMetrics.total} />
             <StatCard label="Completed" value={taskMetrics.completed} tone="accent" />
             <StatCard label="In Progress" value={taskMetrics.inProgress} />
             <StatCard label="Pending" value={taskMetrics.pending} tone="warning" />
@@ -350,21 +378,52 @@ function DailyTasksSectionImpl({
             <div className="section-head daily-task-create-head">
               <div>
                 <h2>{editingTaskId ? "Edit task" : "Create task"}</h2>
-                <span>Compact manager form for today's assignments and review follow-up.</span>
+                <span>
+                  {editingTaskId
+                    ? "Update the selected task."
+                    : isCreateFormExpanded
+                      ? "Compact manager form for today's assignments and review follow-up."
+                      : "Expand only when you want to assign fresh work."}
+                </span>
               </div>
-              <button
-                type="submit"
-                form="daily-task-form"
-                className="daily-task-create-button"
-                disabled={busyAction === "save-daily-task"}
-              >
-                {busyAction === "save-daily-task"
-                  ? "Saving..."
-                  : editingTaskId
-                    ? "Update Task"
-                    : "Create Task"}
-              </button>
+              {editingTaskId || isCreateFormExpanded ? (
+                <div className="lead-actions daily-task-create-actions">
+                  <button
+                    type="submit"
+                    form="daily-task-form"
+                    className="daily-task-create-button"
+                    disabled={busyAction === "save-daily-task"}
+                  >
+                    {busyAction === "save-daily-task"
+                      ? "Saving..."
+                      : editingTaskId
+                        ? "Update Task"
+                        : "Save Task"}
+                  </button>
+                  {!editingTaskId ? (
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => {
+                        setIsCreateFormExpanded(false);
+                        resetDailyTaskForm();
+                      }}
+                    >
+                      Collapse
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="daily-task-create-button"
+                  onClick={() => setIsCreateFormExpanded(true)}
+                >
+                  + Create Task
+                </button>
+              )}
             </div>
+            {editingTaskId || isCreateFormExpanded ? (
             <form className="daily-task-form compact-form" id="daily-task-form" onSubmit={handleSaveTask}>
               <div className="form-field">
                 <label>Task title *</label>
@@ -459,6 +518,7 @@ function DailyTasksSectionImpl({
                 </div>
               ) : null}
             </form>
+            ) : null}
           </>
         ) : editingTaskId ? (
           <>
@@ -509,11 +569,17 @@ function DailyTasksSectionImpl({
       <section className="panel daily-task-board-panel">
         <div className="section-head">
           <h2>{tab === "summary" ? "Staff-wise task summary" : canManageAllTasks ? "Task board" : "Today's Work"}</h2>
-          <span>{tab === "summary" ? `${mergedStaffSummary.length} staff summaries` : `${tasks.length} tasks in current view`}</span>
+          <span>
+            {tab === "summary"
+              ? `${mergedStaffSummary.length} staff summaries`
+              : hasMoreTasks
+                ? `Showing ${visibleTaskCount} of ${effectiveTotalTaskCount} tasks`
+                : `${visibleTaskCount} tasks in current view`}
+          </span>
         </div>
 
         {shouldShowManagerToolbar ? (
-          <div className={`daily-task-toolbar ${canManageAllTasks ? "" : "staff-toolbar"}`}>
+          <div className={`daily-task-toolbar ${canManageAllTasks ? "" : "staff-toolbar"} daily-task-toolbar-sticky`}>
             <input
               value={filters.search}
               onChange={(event) => setFilters({ ...filters, search: event.target.value })}
@@ -736,7 +802,7 @@ function DailyTasksSectionImpl({
                     </button>
                   ) : null}
                   {canDeleteDailyTasks ? (
-                    <button type="button" className="danger" onClick={() => requestDeleteDailyTask(task)}>
+                    <button type="button" className="secondary danger-soft" onClick={() => requestDeleteDailyTask(task)}>
                       Delete
                     </button>
                   ) : null}
@@ -831,13 +897,16 @@ function DailyTasksSectionImpl({
               })}
             </div>
           )
-          ) : (
-            <EmptyState
-              title={emptyState.title}
-              message={emptyState.message}
-              compact
-            />
-          )}
+        ) : (
+          <EmptyState
+            title={emptyState.title}
+            message={emptyState.message}
+            compact
+          />
+        )}
+        {tab !== "summary" && hasMoreTasks ? (
+          <ListLoadControls count={visibleTaskCount} limit={listLimit} onLoadMore={onLoadMore} disabled={loading} />
+        ) : null}
       </section>
 
       {canManageAllTasks ? (
