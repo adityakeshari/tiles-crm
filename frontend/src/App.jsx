@@ -2345,6 +2345,7 @@ export default function App() {
     return [...filteredProducts]
       .filter((product) => {
         const stockState = getProductStockState(product);
+        const stockAlertLevel = getProductStockAlertLevel(product);
         const matchesSearch =
           !normalizedSearch ||
           [
@@ -2368,14 +2369,14 @@ export default function App() {
         const matchesStock =
           inventoryLedgerStockFilter === "all" ||
           (inventoryLedgerStockFilter === "in" && stockState === "in") ||
-          (inventoryLedgerStockFilter === "low" && stockState === "low") ||
+          (inventoryLedgerStockFilter === "low" && (stockState === "low" || stockAlertLevel === "critical")) ||
           (inventoryLedgerStockFilter === "out" && stockState === "out");
 
         return matchesSearch && matchesCategory && matchesStatus && matchesStock;
       })
       .sort((left, right) => {
-        const leftStateRank = { out: 0, low: 1, in: 2 }[getProductStockState(left)] ?? 3;
-        const rightStateRank = { out: 0, low: 1, in: 2 }[getProductStockState(right)] ?? 3;
+        const leftStateRank = { out: 0, critical: 1, low: 2, in: 3 }[getProductStockAlertLevel(left)] ?? 4;
+        const rightStateRank = { out: 0, critical: 1, low: 2, in: 3 }[getProductStockAlertLevel(right)] ?? 4;
 
         if (inventoryLedgerSort === "stock_low_high") {
           return getProductStockBoxes(left) - getProductStockBoxes(right);
@@ -3305,6 +3306,36 @@ export default function App() {
       fastMovingSkuCount,
     };
   }, [filteredLeads, focusedFollowupBoard, focusedOperationsBoard, overdueFollowups.length, filteredProducts]);
+  const lowStockPreview = useMemo(() => {
+    const alertProducts = (filteredProducts || [])
+      .filter((product) => getProductStockAlertLevel(product) !== "in")
+      .map((product) => {
+        const currentBoxes = getProductStockBoxes(product);
+        const threshold = getProductLowStockThreshold(product);
+        const difference = getProductLowStockDifference(product);
+        const alertLevel = getProductStockAlertLevel(product);
+        return {
+          product,
+          currentBoxes,
+          threshold,
+          difference,
+          alertLevel,
+        };
+      })
+      .sort((left, right) => {
+        const leftRank = { out: 0, critical: 1, low: 2 }[left.alertLevel] ?? 3;
+        const rightRank = { out: 0, critical: 1, low: 2 }[right.alertLevel] ?? 3;
+        if (leftRank !== rightRank) return leftRank - rightRank;
+        return left.currentBoxes - right.currentBoxes;
+      });
+
+    return {
+      outOfStockCount: alertProducts.filter((item) => item.alertLevel === "out").length,
+      criticalCount: alertProducts.filter((item) => item.alertLevel === "critical").length,
+      lowCount: alertProducts.filter((item) => item.alertLevel === "low").length,
+      items: alertProducts.slice(0, 5),
+    };
+  }, [filteredProducts]);
   const ownerOverviewHasData = useMemo(
     () =>
       Boolean(
@@ -7497,7 +7528,9 @@ export default function App() {
                       <h3>Low Stock Items</h3>
                       <p>{Number(dashboardSummary?.low_stock_items?.count || 0).toLocaleString("en-IN")}</p>
                       <div className="chip-row">
-                        <span className="legend-chip">Threshold-driven alert</span>
+                        <span className="legend-chip">Out {Number(lowStockPreview.outOfStockCount || 0).toLocaleString("en-IN")}</span>
+                        <span className="legend-chip">Critical {Number(lowStockPreview.criticalCount || 0).toLocaleString("en-IN")}</span>
+                        <span className="legend-chip">Low {Number(lowStockPreview.lowCount || 0).toLocaleString("en-IN")}</span>
                       </div>
                       <div className="lead-actions">
                         <button type="button" className="secondary" onClick={openLowStockInventoryView}>
@@ -7776,6 +7809,36 @@ export default function App() {
                 ) : null}
                 {workspaceFilter !== "operations" && focusedFollowupBoard.length === 0 ? (
                   <EmptyState title="No follow-up focus" message="Today and overdue follow-ups will surface here automatically." compact />
+                ) : null}
+              </div>
+            </section>
+            <section className="panel low-stock-preview-panel">
+              <div className="section-head">
+                <h2>Low stock preview</h2>
+                <span>{Number(lowStockPreview.items.length || 0).toLocaleString("en-IN")} priority items</span>
+              </div>
+              <div className="chip-row low-stock-summary-row">
+                <span className="legend-chip">Out of stock {Number(lowStockPreview.outOfStockCount || 0).toLocaleString("en-IN")}</span>
+                <span className="legend-chip">Critical {Number(lowStockPreview.criticalCount || 0).toLocaleString("en-IN")}</span>
+                <span className="legend-chip">Low {Number(lowStockPreview.lowCount || 0).toLocaleString("en-IN")}</span>
+              </div>
+              <div className="mini-list">
+                {lowStockPreview.items.map((item) => (
+                  <button
+                    key={`low-stock-preview-${item.product.id}`}
+                    type="button"
+                    className={`mini-card low-stock-preview-card tone-${item.alertLevel}`}
+                    onClick={() => startEditingProduct(item.product)}
+                  >
+                    <strong>{item.product.name}</strong>
+                    <span>{getProductCompany(item.product) || "Company missing"}</span>
+                    <small>
+                      Current {item.currentBoxes.toLocaleString("en-IN", { maximumFractionDigits: 2 })} box | Threshold {item.threshold.toLocaleString("en-IN", { maximumFractionDigits: 2 })} box | Diff {item.difference.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                    </small>
+                  </button>
+                ))}
+                {lowStockPreview.items.length === 0 ? (
+                  <EmptyState title="No low stock alerts" message="All currently loaded inventory items are above threshold." compact />
                 ) : null}
               </div>
             </section>
@@ -10387,13 +10450,28 @@ export default function App() {
             <div className="list stock-ledger-grid">
               {filteredInventoryLedgerProducts.map((product) => {
                 const stockState = getProductStockState(product);
+                const stockAlertLevel = getProductStockAlertLevel(product);
                 const stockBoxes = getProductStockBoxes(product);
                 const stockSqft = getProductStockSqft(product);
+                const stockThreshold = getProductLowStockThreshold(product);
+                const stockDifference = getProductLowStockDifference(product);
                 const stockLabel =
-                  stockState === "out" ? "Out of Stock" : stockState === "low" ? "Low Stock" : "In Stock";
+                  stockAlertLevel === "out"
+                    ? "Out of Stock"
+                    : stockAlertLevel === "critical"
+                      ? "Critical Stock"
+                      : stockAlertLevel === "low"
+                        ? "Low Stock"
+                        : "In Stock";
                 const stockSummary = `${stockBoxes.toLocaleString("en-IN", { maximumFractionDigits: 2 })} boxes | ${stockSqft.toLocaleString("en-IN", { maximumFractionDigits: 2 })} sqft`;
                 const stockCardClass =
-                  stockState === "out" ? "stock-card-out" : stockState === "low" ? "stock-card-low" : "";
+                  stockAlertLevel === "out"
+                    ? "stock-card-out"
+                    : stockAlertLevel === "critical"
+                      ? "stock-card-critical"
+                      : stockAlertLevel === "low"
+                        ? "stock-card-low"
+                        : "";
                 const productGaps = getProductDataGaps(product);
 
                 return (
@@ -10414,16 +10492,21 @@ export default function App() {
                       <span>Category {product.category || "Missing"}</span>
                       <span>Size {getProductSize(product) || "Missing"}</span>
                       <span>Unit {product.unit || "Missing"}</span>
-                      <span>Stock {stockSummary}</span>
+                      <span>Current {stockSummary}</span>
                       <span>Selling Rs {Number(product.price_per_sqft || 0).toLocaleString("en-IN")}</span>
                       <span>Min Rs {Number(product.minimum_allowed_rate || 0).toLocaleString("en-IN")}</span>
-                      <span>Threshold {getProductLowStockThreshold(product)} boxes</span>
+                      <span>Threshold {stockThreshold.toLocaleString("en-IN", { maximumFractionDigits: 2 })} boxes</span>
+                      <span>Difference {stockDifference.toLocaleString("en-IN", { maximumFractionDigits: 2 })} boxes</span>
                     </div>
                     <div className="chip-row">
-                      <span className={`stock-badge ${stockState === "out" ? "stock-out" : stockState === "low" ? "stock-low" : "stock-in"}`}>
+                      <span className={`stock-badge ${stockAlertLevel === "out" ? "stock-out" : stockAlertLevel === "critical" ? "stock-critical" : stockAlertLevel === "low" ? "stock-low" : "stock-in"}`}>
                         {stockLabel}
                       </span>
                       <span className="legend-chip">{stockSummary}</span>
+                      <span className="legend-chip">Threshold {stockThreshold.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
+                      <span className={`legend-chip low-stock-difference-chip ${stockDifference < 0 ? "is-negative" : stockDifference === 0 ? "is-neutral" : "is-positive"}`}>
+                        Diff {stockDifference.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                      </span>
                       <span className="legend-chip product-completeness-chip">
                         Product Completeness: {getProductCompletenessPercent(product)}%
                       </span>
@@ -10499,7 +10582,17 @@ export default function App() {
                     const stockValue = getProductStockSqft(product);
                     const stockBoxes = getProductStockBoxes(product);
                     const stockState = getProductStockState(product);
-                    const stockClass = stockState === "out" ? "stock-out" : stockState === "low" ? "stock-low" : "stock-in";
+                    const stockAlertLevel = getProductStockAlertLevel(product);
+                    const stockThreshold = getProductLowStockThreshold(product);
+                    const stockDifference = getProductLowStockDifference(product);
+                    const stockClass =
+                      stockAlertLevel === "out"
+                        ? "stock-out"
+                        : stockAlertLevel === "critical"
+                          ? "stock-critical"
+                          : stockAlertLevel === "low"
+                            ? "stock-low"
+                            : "stock-in";
                     const productGaps = getProductDataGaps(product);
                     const productMetaLine = [getProductDesignCode(product) || "", getProductFinish(product) || "", product.latest_batch_no ? `Batch ${product.latest_batch_no}` : ""]
                       .filter(Boolean)
@@ -10514,9 +10607,11 @@ export default function App() {
                       <tr
                         key={`inventory-row-${product.id}`}
                         className={
-                          stockState === "out"
+                          stockAlertLevel === "out"
                             ? "stock-ledger-row-out"
-                            : stockState === "low"
+                            : stockAlertLevel === "critical"
+                              ? "stock-ledger-row-critical"
+                              : stockState === "low"
                               ? "stock-ledger-row-low"
                               : undefined
                         }
@@ -10535,10 +10630,13 @@ export default function App() {
                         <td className="col-size">{getProductSize(product) || "Missing"}</td>
                         <td className="col-stock">
                           <span className={`stock-badge ${stockClass}`}>
-                            {stockState === "out" ? "Out" : stockState === "low" ? "Low" : "In"}
+                            {stockAlertLevel === "out" ? "Out" : stockAlertLevel === "critical" ? "Critical" : stockAlertLevel === "low" ? "Low" : "In"}
                           </span>
                           <div className="muted stock-warning-inline">
                             {stockBoxes.toLocaleString("en-IN", { maximumFractionDigits: 2 })} box | {stockValue.toLocaleString("en-IN", { maximumFractionDigits: 2 })} sqft
+                          </div>
+                          <div className="muted stock-warning-inline">
+                            Threshold {stockThreshold.toLocaleString("en-IN", { maximumFractionDigits: 2 })} | Diff {stockDifference.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                           </div>
                         </td>
                         <td className="col-unit">{product.unit || "Missing"}</td>
@@ -12496,6 +12594,32 @@ function getProductLowStockThreshold(product) {
   return Number.isFinite(threshold) && threshold >= 0 ? threshold : 10;
 }
 
+function getProductLowStockDifference(product) {
+  const stockBoxes = getProductStockBoxes(product);
+  const threshold = getProductLowStockThreshold(product);
+  return Number((stockBoxes - threshold).toFixed(2));
+}
+
+function getProductStockAlertLevel(product) {
+  const stockSqft = getProductStockSqft(product);
+  const stockBoxes = getProductStockBoxes(product);
+  const threshold = getProductLowStockThreshold(product);
+
+  if (stockSqft <= 0 || stockBoxes <= 0) {
+    return "out";
+  }
+
+  if (threshold > 0 && stockBoxes <= Math.max(1, threshold * 0.5)) {
+    return "critical";
+  }
+
+  if (isProductLowStock(product)) {
+    return "low";
+  }
+
+  return "in";
+}
+
 function isProductLowStock(product) {
   if (typeof product?.is_low_stock === "boolean") {
     return product.is_low_stock;
@@ -12505,17 +12629,13 @@ function isProductLowStock(product) {
 }
 
 function getProductStockState(product) {
-  const stockSqft = getProductStockSqft(product);
-  const stockBoxes = getProductStockBoxes(product);
-
-  if (stockSqft <= 0 || stockBoxes <= 0) {
+  const alertLevel = getProductStockAlertLevel(product);
+  if (alertLevel === "out") {
     return "out";
   }
-
-  if (isProductLowStock(product)) {
+  if (alertLevel === "critical" || alertLevel === "low") {
     return "low";
   }
-
   return "in";
 }
 

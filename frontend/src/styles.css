@@ -3351,6 +3351,12 @@ button.quick-action-btn:not(.secondary):hover {
   border-color: rgba(217, 119, 6, 0.18);
 }
 
+.stock-critical {
+  background: rgba(199, 44, 65, 0.12);
+  color: #9f1239;
+  border-color: rgba(199, 44, 65, 0.24);
+}
+
 .stock-out {
   background: rgba(197, 48, 48, 0.1);
   color: var(--crm-danger);
@@ -4288,6 +4294,11 @@ button.sidebar-item-active .sidebar-dot {
   color: #8a5a05;
 }
 
+.stock-badge.stock-critical {
+  background: rgba(199, 44, 65, 0.14);
+  color: #9f1239;
+}
+
 .stock-badge.stock-in {
   background: var(--crm-success-soft);
   color: #0e6b34;
@@ -4298,17 +4309,64 @@ button.sidebar-item-active .sidebar-dot {
   box-shadow: inset 0 0 0 1px rgba(212, 164, 55, 0.16);
 }
 
+.product-master-card.stock-card-critical {
+  border-color: rgba(199, 44, 65, 0.4);
+  box-shadow: inset 0 0 0 1px rgba(199, 44, 65, 0.18);
+  background: linear-gradient(180deg, rgba(255, 250, 250, 0.98), rgba(255, 244, 246, 0.98));
+}
+
 .product-master-card.stock-card-out {
   border-color: rgba(199, 44, 65, 0.28);
   box-shadow: inset 0 0 0 1px rgba(199, 44, 65, 0.16);
+}
+
+.low-stock-difference-chip.is-negative {
+  border-color: rgba(199, 44, 65, 0.24);
+  background: rgba(255, 241, 242, 0.96);
+  color: #9f1239;
+}
+
+.low-stock-difference-chip.is-neutral {
+  border-color: rgba(217, 119, 6, 0.24);
+  background: rgba(255, 251, 235, 0.96);
+  color: #9a6700;
+}
+
+.low-stock-difference-chip.is-positive {
+  border-color: rgba(22, 163, 74, 0.2);
+  background: rgba(240, 253, 244, 0.96);
+  color: #166534;
 }
 
 .stock-ledger-row-low td {
   background: #fff7e9 !important;
 }
 
+.stock-ledger-row-critical td {
+  background: #fff1f3 !important;
+}
+
 .stock-ledger-row-out td {
   background: #fff0f0 !important;
+}
+
+.low-stock-summary-row {
+  margin-bottom: 0.8rem;
+}
+
+.low-stock-preview-card {
+  text-align: left;
+}
+
+.low-stock-preview-card.tone-out,
+.low-stock-preview-card.tone-critical {
+  border-color: rgba(199, 44, 65, 0.28);
+  background: linear-gradient(180deg, rgba(255, 250, 250, 0.98), rgba(255, 244, 246, 0.98));
+}
+
+.low-stock-preview-card.tone-low {
+  border-color: rgba(212, 164, 55, 0.3);
+  background: linear-gradient(180deg, rgba(255, 252, 245, 0.98), rgba(255, 248, 232, 0.98));
 }
 
 .stock-ledger-row-low:hover td,
