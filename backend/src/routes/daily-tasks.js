@@ -405,7 +405,7 @@ async function getDailyTaskSummary(user) {
        COUNT(*) FILTER (WHERE status NOT IN ('completed', 'verified'))::int AS pending_tasks,
        COUNT(*) FILTER (WHERE status IN ('completed', 'verified'))::int AS completed_tasks,
        COUNT(*)::int AS total_tasks
-     FROM scoped_tasks`,
+     FROM scoped_tasks t`,
     params
   );
 
@@ -417,6 +417,9 @@ router.get("/summary", async (req, res) => {
     const summary = await getDailyTaskSummary(req.user);
     return res.json(summary || {});
   } catch (error) {
+    // Logged so pm2 captures the real failure; previously the error existed
+    // only in the HTTP response body and the server error log stayed empty.
+    console.error("[daily-tasks] GET /summary failed:", error);
     return res.status(500).json({ message: "Unable to fetch daily task summary", error: error.message });
   }
 });
@@ -505,6 +508,7 @@ router.get("/", async (req, res) => {
       staffSummary: staffSummaryResult.rows || [],
     });
   } catch (error) {
+    console.error("[daily-tasks] GET / failed:", error);
     return res.status(500).json({ message: "Unable to fetch daily tasks", error: error.message });
   }
 });
