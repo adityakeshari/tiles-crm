@@ -4919,6 +4919,145 @@ button.sidebar-item-active .sidebar-dot {
   box-shadow: var(--shadow-sm);
 }
 
+/* V3 command strip: the six daily numbers ride inside the sticky block so they
+   stay visible while scrolling the board. */
+.daily-task-command-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.45rem;
+  padding: 0.45rem 0.55rem;
+  background: var(--crm-surface);
+  border: 1px solid var(--crm-border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+}
+
+.daily-task-strip-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: rgba(15, 41, 77, 0.05);
+  color: var(--crm-navy-700);
+  white-space: nowrap;
+}
+
+.daily-task-strip-item strong {
+  font-size: 0.95rem;
+}
+
+.daily-task-strip-item.tone-accent {
+  background: rgba(14, 107, 52, 0.1);
+  color: #0e6b34;
+}
+
+.daily-task-strip-item.tone-danger {
+  background: rgba(190, 24, 60, 0.1);
+  color: #be183c;
+}
+
+.daily-task-strip-item.tone-warning {
+  background: rgba(180, 120, 10, 0.12);
+  color: #92600a;
+}
+
+/* V3 staff work board: clickable per-person cards above the task board. */
+.daily-task-staff-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.55rem;
+}
+
+.daily-task-staff-card {
+  display: grid;
+  gap: 0.4rem;
+  text-align: left;
+  padding: 0.65rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid var(--crm-border);
+  background: var(--crm-surface);
+  box-shadow: none;
+  color: inherit;
+  font-weight: 500;
+  min-height: 0;
+}
+
+.daily-task-staff-card:hover {
+  border-color: var(--crm-navy-400, #4a6491);
+  transform: none;
+}
+
+.daily-task-staff-card.is-active {
+  border-color: var(--crm-navy-700, #0f294d);
+  background: rgba(15, 41, 77, 0.06);
+  box-shadow: var(--shadow-sm);
+}
+
+.daily-task-staff-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.daily-task-staff-card-score {
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: var(--crm-navy-700);
+}
+
+.daily-task-staff-progress-track {
+  display: block;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(15, 41, 77, 0.08);
+  overflow: hidden;
+}
+
+.daily-task-staff-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: #0e6b34;
+  transition: width 0.25s ease;
+}
+
+.daily-task-staff-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.7rem;
+  font-size: 0.74rem;
+  color: var(--crm-muted, #5b6b82);
+}
+
+.daily-task-staff-card-meta .tone-danger {
+  color: #be183c;
+  font-weight: 700;
+}
+
+.daily-task-staff-card-meta .tone-accent {
+  color: #0e6b34;
+  font-weight: 700;
+}
+
+/* Staff phones: the placeholder form panel adds no value on a small screen —
+   the checklist is the whole experience. */
+@media (max-width: 768px) {
+  .daily-tasks-layout.staff-view .daily-task-form-panel.is-mobile-placeholder {
+    display: none;
+  }
+
+  .daily-task-command-strip {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+}
+
 .daily-task-create-actions {
   justify-content: flex-end;
 }
@@ -4950,6 +5089,25 @@ button.sidebar-item-active .sidebar-dot {
   border: 1px solid var(--crm-border);
   border-radius: 14px;
   box-shadow: var(--shadow-xs);
+}
+
+/* Manager sticky block is taller (tabs + command strip), so the toolbar
+   sticks below it instead of sliding underneath. */
+.daily-tasks-layout.manager-view .daily-task-toolbar-sticky {
+  top: 7.6rem;
+}
+
+/* V3 density: slightly narrower card column + tighter padding = more tasks per screen. */
+.daily-task-card-grid {
+  grid-template-columns: repeat(auto-fit, minmax(235px, 1fr));
+}
+
+.daily-task-card {
+  padding: 0.7rem 0.8rem;
+}
+
+.daily-task-card .daily-task-card-meta {
+  margin-bottom: 0.35rem;
 }
 
 .daily-task-toolbar.staff-toolbar {
@@ -5062,11 +5220,12 @@ button.sidebar-item-active .sidebar-dot {
 }
 
 .daily-task-secondary-desktop {
-  display: block;
+  display: none;
 }
 
+/* V3: the collapsed details block is the single source of card depth on all screens. */
 .daily-task-mobile-details {
-  display: none;
+  display: block;
 }
 
 .daily-task-mobile-details summary {

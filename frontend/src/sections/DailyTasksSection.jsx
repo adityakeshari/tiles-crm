@@ -345,25 +345,79 @@ function DailyTasksSectionImpl({
     return merged.length ? merged : (Array.isArray(staffSummary) ? staffSummary : []);
   }, [staffSummary, users]);
 
+  const commandStripItems = [
+    { label: "Today Tasks", value: taskMetrics.total, tone: "default" },
+    { label: "Completed", value: taskMetrics.completed, tone: "accent" },
+    { label: "In Progress", value: taskMetrics.inProgress, tone: "default" },
+    { label: "Overdue", value: taskMetrics.overdue, tone: "danger" },
+    { label: "Hold", value: Number(summary?.today_hold_tasks || 0), tone: "warning" },
+    { label: "Carry Forward", value: eodMetrics.carryForward, tone: "warning" },
+  ];
+
+  const isStaffFilterActive = (staffId) => String(filters.assigned_to) === String(staffId);
+
+  function toggleStaffFilter(staffId) {
+    setFilters({
+      ...filters,
+      assigned_to: isStaffFilterActive(staffId) ? "all" : String(staffId),
+    });
+  }
+
   return (
     <section className={`stack workspace-stack daily-tasks-layout ${canManageAllTasks ? "manager-view" : "staff-view"}`}>
       <div className="daily-task-sticky-nav">
         <WorkspaceTabs value={tab} onChange={setTab} tabs={visibleTabs} />
+        {canManageAllTasks ? (
+          <div className="daily-task-command-strip" role="status" aria-label="Today's task numbers">
+            {commandStripItems.map((item) => (
+              <span key={item.label} className={`daily-task-strip-item tone-${item.tone}`}>
+                <strong>{item.value}</strong>
+                {item.label}
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
 
-      {canManageAllTasks ? (
-        <section className="panel daily-task-command-panel">
+      {canManageAllTasks && tab !== "summary" && mergedStaffSummary.length ? (
+        <section className="panel daily-task-staff-board-panel">
           <div className="section-head">
-            <h2>Daily Command Center</h2>
-            <span>Assign, track, and review showroom work from one daily board.</span>
+            <h2>Staff work board</h2>
+            <span>Tap a staff card to filter the task board to that person.</span>
           </div>
-          <div className="report-grid daily-task-snapshot-grid">
-            <StatCard label="Today Tasks" value={taskMetrics.total} />
-            <StatCard label="Completed" value={taskMetrics.completed} tone="accent" />
-            <StatCard label="In Progress" value={taskMetrics.inProgress} />
-            <StatCard label="Pending" value={taskMetrics.pending} tone="warning" />
-            <StatCard label="Overdue" value={taskMetrics.overdue} tone="danger" />
-            <StatCard label="Overall %" value={`${taskMetrics.overallPercent}%`} />
+          <div className="daily-task-staff-board">
+            {mergedStaffSummary.map((item) => {
+              const completed = Number(item.completed_tasks || 0) + Number(item.verified_tasks || 0);
+              const assigned = Number(item.total_tasks || 0);
+              const percent = assigned > 0 ? Math.round((completed / assigned) * 100) : 0;
+              const active = isStaffFilterActive(item.assigned_to);
+              return (
+                <button
+                  key={`staff-board-${item.assigned_to}`}
+                  type="button"
+                  className={`daily-task-staff-card ${active ? "is-active" : ""}`}
+                  onClick={() => toggleStaffFilter(item.assigned_to)}
+                  aria-pressed={active}
+                  title={active ? "Clear staff filter" : `Show only ${item.assigned_to_name}'s tasks`}
+                >
+                  <span className="daily-task-staff-card-head">
+                    <strong>{item.assigned_to_name}</strong>
+                    <span className="daily-task-staff-card-score">{percent}%</span>
+                  </span>
+                  <span className="daily-task-staff-progress-track" aria-hidden="true">
+                    <span className="daily-task-staff-progress-fill" style={{ width: `${percent}%` }} />
+                  </span>
+                  <span className="daily-task-staff-card-meta">
+                    <span>{assigned} assigned</span>
+                    <span className="tone-accent">{completed} done</span>
+                    <span>{Number(item.pending_tasks || 0)} pending</span>
+                    <span className={Number(item.overdue_tasks || 0) > 0 ? "tone-danger" : ""}>
+                      {Number(item.overdue_tasks || 0)} overdue
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </section>
       ) : null}
@@ -722,26 +776,10 @@ function DailyTasksSectionImpl({
                     {task.is_overdue ? "Overdue" : "On Track"}
                   </span>
                 </div>
-                <div className="daily-task-secondary-desktop">
-                  <div className="daily-task-card-meta">
-                    <span className="legend-chip">Task ID #{task.id}</span>
-                    <span className="legend-chip">Date {formatDate(task.created_at)}</span>
-                    <span className="legend-chip">Done {getTaskProgressPercent(task)}%</span>
-                    <span className="legend-chip">By {task.assigned_by_name || "System"}</span>
-                    <span className={`legend-chip daily-task-source-chip daily-task-source-${String(task.source || "manual").toLowerCase()}`}>
-                      {getTaskSourceLabel(task.source)}
-                    </span>
-                    {task.verified_by_name ? <span className="legend-chip">Verified by {task.verified_by_name}</span> : null}
-                  </div>
-                  {task.description ? <p>{task.description}</p> : <p className="muted">No description added yet.</p>}
-                  <p className="muted daily-task-card-timestamps">
-                    Created {formatDateTime(task.created_at)} | Updated {formatDateTime(task.updated_at)}
-                    {task.completed_at ? ` | Completed ${formatDateTime(task.completed_at)}` : ""}
-                  </p>
-                  <p className="muted daily-task-remarks"><strong>Remarks:</strong> {task.remarks || "No remarks yet."}</p>
-                </div>
+                {/* V3 compact card: description, remarks, and audit chips live in one
+                    collapsed block on every screen size (was duplicated desktop+mobile). */}
                 <details className="daily-task-mobile-details">
-                  <summary>Show details</summary>
+                  <summary>Details</summary>
                   <div className="daily-task-mobile-details-body">
                     <div className="daily-task-card-meta">
                       <span className="legend-chip">Task ID #{task.id}</span>
