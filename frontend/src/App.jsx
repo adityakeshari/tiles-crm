@@ -414,6 +414,7 @@ const emptyOwnerOverviewData = {
 };
 
 const emptyInventorySummary = {
+  summary_ok: false,
   total_products: 0,
   active_products: 0,
   fast_moving_count: 0,
@@ -424,6 +425,8 @@ const emptyInventorySummary = {
   total_stock_boxes: 0,
   missing_company_count: 0,
   missing_size_count: 0,
+  missing_design_count: 0,
+  missing_finish_count: 0,
   missing_weight_count: 0,
   missing_pricing_count: 0,
   missing_packaging_count: 0,
@@ -2402,6 +2405,8 @@ export default function App() {
       averageCompleteness: 0,
       missingCompanyCount: 0,
       missingSizeCount: 0,
+      missingDesignCount: 0,
+      missingFinishCount: 0,
       missingWeightCount: 0,
       missingPricingCount: 0,
       missingPackagingCount: 0,
@@ -2421,6 +2426,8 @@ export default function App() {
 
       if (gaps.includes("company")) summary.missingCompanyCount += 1;
       if (gaps.includes("size")) summary.missingSizeCount += 1;
+      if (gaps.includes("design")) summary.missingDesignCount += 1;
+      if (gaps.includes("finish")) summary.missingFinishCount += 1;
       if (gaps.includes("weight")) summary.missingWeightCount += 1;
       if (gaps.includes("pricing")) summary.missingPricingCount += 1;
       if (gaps.includes("packaging")) summary.missingPackagingCount += 1;
@@ -2451,18 +2458,36 @@ export default function App() {
     () => (leads || []).filter((lead) => !normalizeText(lead.phone)).length,
     [leads]
   );
+  const hasInventorySummaryMetrics = Boolean(inventorySummary) && inventorySummary.summary_ok !== false;
+  const getInventorySummaryMetric = useCallback(
+    (key, fallback = 0) =>
+      hasInventorySummaryMetrics ? normalizeSummaryNumber(inventorySummary?.[key], fallback) : fallback,
+    [hasInventorySummaryMetrics, inventorySummary]
+  );
   const dataQualityMonitor = useMemo(() => {
+    const productMasterCounts = {
+      company: getInventorySummaryMetric("missing_company_count", productHealthSummary.missingCompanyCount),
+      size: getInventorySummaryMetric("missing_size_count", productHealthSummary.missingSizeCount),
+      design: getInventorySummaryMetric("missing_design_count", productHealthSummary.missingDesignCount),
+      finish: getInventorySummaryMetric("missing_finish_count", productHealthSummary.missingFinishCount),
+      weight: getInventorySummaryMetric("missing_weight_count", productHealthSummary.missingWeightCount),
+      packaging: getInventorySummaryMetric("missing_packaging_count", productHealthSummary.missingPackagingCount),
+      pricing: getInventorySummaryMetric("missing_pricing_count", productHealthSummary.missingPricingCount),
+    };
+
     const groups = [
       {
         key: "product_master",
         icon: "📦",
         title: "Product Master",
         issues: [
-          { label: "Missing company", count: inventorySummary?.missing_company_count ?? productHealthSummary.missingCompanyCount },
-          { label: "Missing size", count: inventorySummary?.missing_size_count ?? productHealthSummary.missingSizeCount },
-          { label: "Missing weight", count: inventorySummary?.missing_weight_count ?? productHealthSummary.missingWeightCount },
-          { label: "Missing packaging", count: inventorySummary?.missing_packaging_count ?? productHealthSummary.missingPackagingCount },
-          { label: "Missing pricing", count: inventorySummary?.missing_pricing_count ?? productHealthSummary.missingPricingCount },
+          { label: "Missing company", count: productMasterCounts.company },
+          { label: "Missing size", count: productMasterCounts.size },
+          { label: "Missing design code", count: productMasterCounts.design },
+          { label: "Missing finish", count: productMasterCounts.finish },
+          { label: "Missing weight", count: productMasterCounts.weight },
+          { label: "Missing packaging", count: productMasterCounts.packaging },
+          { label: "Missing pricing", count: productMasterCounts.pricing },
         ],
       },
       {
@@ -2507,7 +2532,19 @@ export default function App() {
       .sort((left, right) => Number(right.count || 0) - Number(left.count || 0));
 
     const totalIssues = groups.reduce((sum, group) => sum + group.issueCount, 0);
-    const score = Math.max(0, 100 - totalIssues);
+    const totalProductsForQuality = Math.max(
+      getInventorySummaryMetric("total_products", 0),
+      Array.isArray(products) ? products.length : 0
+    );
+    const totalLeadRecords = Array.isArray(leads) ? leads.length : 0;
+    const totalInvoiceRecords = Array.isArray(invoices) ? invoices.length : 0;
+    const totalPossibleIssues =
+      totalProductsForQuality * 7 +
+      totalProductsForQuality +
+      totalLeadRecords +
+      totalInvoiceRecords;
+    const score =
+      totalPossibleIssues <= 0 ? 100 : Math.max(0, Math.round((1 - totalIssues / totalPossibleIssues) * 100));
     const scoreTone = score >= 95 ? "healthy" : score >= 80 ? "warning" : "critical";
     const scoreStatusLabel = score >= 95 ? "Excellent" : score >= 80 ? "Needs Attention" : "Critical";
 
@@ -2522,8 +2559,13 @@ export default function App() {
     };
   }, [
     customerMissingMobileCount,
-    inventorySummary,
+    getInventorySummaryMetric,
+    invoices,
+    leads,
+    products,
     pendingInvoiceApprovalCount,
+    productHealthSummary.missingDesignCount,
+    productHealthSummary.missingFinishCount,
     productHealthSummary.lowMarginCount,
     productHealthSummary.missingCompanyCount,
     productHealthSummary.missingPackagingCount,
@@ -3540,7 +3582,7 @@ export default function App() {
           loadUsersForView(view, signal),
           api
             .getInventory({ ...requestOptions, limit: listLimits.products })
-            .catch(() => ({ products: [], summary: emptyInventorySummary })),
+            .catch(() => ({ products: [], summary: null })),
           api
             .getBillingDashboard({ ...requestOptions, limit: listLimits.invoices })
             .catch(() => ({ invoices: [], summary: null, reports: {}, references: {} })),
@@ -10551,7 +10593,7 @@ export default function App() {
             <div className="section-head">
               <h2>Product master reports</h2>
               <span>
-                {inventorySummary?.total_products ?? 0} products | {productHealthSummary.averageCompleteness}% complete
+                {getInventorySummaryMetric("total_products", Array.isArray(products) ? products.length : 0)} products | {productHealthSummary.averageCompleteness}% complete
               </span>
             </div>
             <div className="report-grid product-report-cards">
@@ -10569,7 +10611,7 @@ export default function App() {
                 onClick={() => setProductReportGapFilter("company")}
               >
                 <span>Missing company</span>
-                <strong>{inventorySummary?.missing_company_count ?? productHealthSummary.missingCompanyCount}</strong>
+                <strong>{getInventorySummaryMetric("missing_company_count", productHealthSummary.missingCompanyCount)}</strong>
               </button>
               <button
                 type="button"
@@ -10577,7 +10619,7 @@ export default function App() {
                 onClick={() => setProductReportGapFilter("size")}
               >
                 <span>Missing size</span>
-                <strong>{inventorySummary?.missing_size_count ?? productHealthSummary.missingSizeCount}</strong>
+                <strong>{getInventorySummaryMetric("missing_size_count", productHealthSummary.missingSizeCount)}</strong>
               </button>
               <button
                 type="button"
@@ -10585,7 +10627,7 @@ export default function App() {
                 onClick={() => setProductReportGapFilter("weight")}
               >
                 <span>Missing weight</span>
-                <strong>{inventorySummary?.missing_weight_count ?? productHealthSummary.missingWeightCount}</strong>
+                <strong>{getInventorySummaryMetric("missing_weight_count", productHealthSummary.missingWeightCount)}</strong>
               </button>
               <button
                 type="button"
@@ -10593,7 +10635,7 @@ export default function App() {
                 onClick={() => setProductReportGapFilter("pricing")}
               >
                 <span>Missing pricing</span>
-                <strong>{inventorySummary?.missing_pricing_count ?? productHealthSummary.missingPricingCount}</strong>
+                <strong>{getInventorySummaryMetric("missing_pricing_count", productHealthSummary.missingPricingCount)}</strong>
               </button>
               <button
                 type="button"
@@ -10601,7 +10643,7 @@ export default function App() {
                 onClick={() => setProductReportGapFilter("packaging")}
               >
                 <span>Missing packaging</span>
-                <strong>{inventorySummary?.missing_packaging_count ?? productHealthSummary.missingPackagingCount}</strong>
+                <strong>{getInventorySummaryMetric("missing_packaging_count", productHealthSummary.missingPackagingCount)}</strong>
               </button>
             </div>
             <div className="table-shell product-report-table">
@@ -12981,13 +13023,17 @@ function normalizeSummaryNumber(value, fallback = 0) {
 
 function createSafeInventorySummary(summary) {
   if (!summary || typeof summary !== "object") {
-    return { ...emptyInventorySummary };
+    return null;
   }
 
   const normalized = { ...emptyInventorySummary };
   for (const key of Object.keys(normalized)) {
+    if (key === "summary_ok") {
+      continue;
+    }
     normalized[key] = normalizeSummaryNumber(summary[key], normalized[key]);
   }
+  normalized.summary_ok = summary.summary_ok !== false;
   return normalized;
 }
 

@@ -8,6 +8,7 @@ const DEFAULT_LIST_LIMIT = 100;
 const MAX_LIST_LIMIT = 300;
 const DEFAULT_LOW_STOCK_THRESHOLD = 10;
 const EMPTY_INVENTORY_SUMMARY = {
+  summary_ok: false,
   total_products: 0,
   active_products: 0,
   fast_moving_count: 0,
@@ -18,6 +19,8 @@ const EMPTY_INVENTORY_SUMMARY = {
   total_stock_boxes: 0,
   missing_company_count: 0,
   missing_size_count: 0,
+  missing_design_count: 0,
+  missing_finish_count: 0,
   missing_weight_count: 0,
   missing_pricing_count: 0,
   missing_packaging_count: 0,
@@ -163,15 +166,20 @@ function normalizeFiniteNumber(value, fallback = 0) {
 }
 
 function normalizeInventorySummary(summary) {
-  const normalized = { ...EMPTY_INVENTORY_SUMMARY };
+  const normalized = { ...EMPTY_INVENTORY_SUMMARY, summary_ok: true };
 
   if (!summary || typeof summary !== "object") {
     return normalized;
   }
 
-  for (const key of Object.keys(normalized)) {
+  for (const key of Object.keys(EMPTY_INVENTORY_SUMMARY)) {
+    if (key === "summary_ok") {
+      continue;
+    }
     normalized[key] = normalizeFiniteNumber(summary[key], normalized[key]);
   }
+
+  normalized.summary_ok = summary.summary_ok !== false;
 
   return normalized;
 }
@@ -384,6 +392,8 @@ router.get("/", async (req, res) => {
            COALESCE(SUM(${stockBoxesExpression}), 0)::numeric AS total_stock_boxes,
            COUNT(*) FILTER (WHERE COALESCE(NULLIF(company_name, ''), ${summaryLegacyCompanyExpression}, ${summaryLegacyBrandExpression}, ${summaryLegacyManufacturerExpression}) IS NULL)::int AS missing_company_count,
            COUNT(*) FILTER (WHERE COALESCE(NULLIF(product_size, ''), NULLIF(tile_size, ''), ${hasSizeColumn ? "NULLIF(size, '')" : "NULL"}) IS NULL)::int AS missing_size_count,
+           COUNT(*) FILTER (WHERE COALESCE(NULLIF(design_code, ''), ${hasCodeColumn ? "NULLIF(code, '')" : "NULL"}, ${hasDesignColumn ? "NULLIF(design, '')" : "NULL"}, ${hasItemCodeColumn ? "NULLIF(item_code, '')" : "NULL"}) IS NULL)::int AS missing_design_count,
+           COUNT(*) FILTER (WHERE COALESCE(NULLIF(finish, ''), ${hasSurfaceColumn ? "NULLIF(surface, '')" : "NULL"}, ${hasTypeColumn ? "NULLIF(type, '')" : "NULL"}) IS NULL)::int AS missing_finish_count,
            COUNT(*) FILTER (WHERE COALESCE(weight_per_box, 0) <= 0 AND COALESCE(weight_per_unit, 0) <= 0)::int AS missing_weight_count,
            COUNT(*) FILTER (
              WHERE COALESCE(purchase_rate, 0) <= 0
@@ -398,7 +408,7 @@ router.get("/", async (req, res) => {
          FROM products`
       ).catch((summaryError) => {
         console.error("[inventory] summary query failed (non-fatal):", summaryError);
-        return { rows: [EMPTY_INVENTORY_SUMMARY] };
+        return { rows: [{ ...EMPTY_INVENTORY_SUMMARY, summary_ok: false }] };
       }),
     ]);
 
