@@ -1847,15 +1847,48 @@ function ProductSearchSelectImpl({ options, value, onSelect, placeholder, classN
   // The picker often sits inside a horizontally-scrolling row whose
   // overflow is clipped, so the dropdown is rendered with position:fixed
   // and anchored to the input's on-screen rect to escape that clipping.
-  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
+  // It is repositioned on scroll/resize so it stays glued to the input
+  // (no gap), and flips above the input when there is little room below.
+  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0, maxHeight: 280 });
   const inputRef = useRef(null);
 
-  const openDropdown = () => {
+  const reposition = useCallback(() => {
     const node = inputRef.current;
-    if (node) {
-      const rect = node.getBoundingClientRect();
-      setCoords({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    if (!node) {
+      return;
     }
+    const rect = node.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const desired = 280;
+    let top;
+    let maxHeight;
+    if (spaceBelow >= 170 || spaceBelow >= spaceAbove) {
+      top = rect.bottom + 4;
+      maxHeight = Math.max(120, Math.min(desired, spaceBelow - 12));
+    } else {
+      maxHeight = Math.max(120, Math.min(desired, spaceAbove - 12));
+      top = rect.top - 4 - maxHeight;
+    }
+    setCoords({ top, left: rect.left, width: rect.width, maxHeight });
+  }, []);
+
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+    reposition();
+    // capture:true so we also catch scrolls on the inner horizontal-scroll row.
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    return () => {
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+    };
+  }, [open, reposition]);
+
+  const openDropdown = () => {
+    reposition();
     setOpen(true);
   };
 
@@ -1908,7 +1941,7 @@ function ProductSearchSelectImpl({ options, value, onSelect, placeholder, classN
       {open ? (
         <div
           className="product-search-options"
-          style={{ position: "fixed", top: coords.top, left: coords.left, width: coords.width, right: "auto", zIndex: 1000 }}
+          style={{ position: "fixed", top: coords.top, left: coords.left, width: coords.width, maxHeight: coords.maxHeight, right: "auto", zIndex: 1000 }}
         >
           {filtered.length === 0 ? (
             <div className="product-search-empty muted">No matching products</div>
