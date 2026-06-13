@@ -1844,6 +1844,20 @@ function isAdmin(user) {
 function ProductSearchSelectImpl({ options, value, onSelect, placeholder, className, dataField }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
+  // The picker often sits inside a horizontally-scrolling row whose
+  // overflow is clipped, so the dropdown is rendered with position:fixed
+  // and anchored to the input's on-screen rect to escape that clipping.
+  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
+  const inputRef = useRef(null);
+
+  const openDropdown = () => {
+    const node = inputRef.current;
+    if (node) {
+      const rect = node.getBoundingClientRect();
+      setCoords({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    }
+    setOpen(true);
+  };
 
   const selected = useMemo(
     () => (options || []).find((option) => String(option.id) === String(value)) || null,
@@ -1870,18 +1884,21 @@ function ProductSearchSelectImpl({ options, value, onSelect, placeholder, classN
   return (
     <div className="product-search-select" style={{ position: "relative", flex: 1 }}>
       <input
+        ref={inputRef}
         type="text"
         data-field={dataField}
         className={className}
         placeholder={placeholder}
         value={open ? query : selected ? selected.name : ""}
         onFocus={() => {
-          setOpen(true);
           setQuery("");
+          openDropdown();
         }}
         onChange={(event) => {
           setQuery(event.target.value);
-          setOpen(true);
+          if (!open) {
+            openDropdown();
+          }
         }}
         onBlur={() => {
           window.setTimeout(() => setOpen(false), 150);
@@ -1889,7 +1906,10 @@ function ProductSearchSelectImpl({ options, value, onSelect, placeholder, classN
         autoComplete="off"
       />
       {open ? (
-        <div className="product-search-options">
+        <div
+          className="product-search-options"
+          style={{ position: "fixed", top: coords.top, left: coords.left, width: coords.width, right: "auto", zIndex: 1000 }}
+        >
           {filtered.length === 0 ? (
             <div className="product-search-empty muted">No matching products</div>
           ) : (
