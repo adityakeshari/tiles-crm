@@ -288,7 +288,10 @@ router.get("/options", async (_req, res) => {
 });
 
 router.get("/", async (req, res) => {
-  const limit = parseListLimit(req.query.limit);
+  // limit=all returns the full product master (no row cap) so the stock ledger
+  // and purchase-entry picker never need repeated "load more" calls.
+  const unlimited = req.query.limit === "all";
+  const limit = unlimited ? null : parseListLimit(req.query.limit);
   const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
 
   try {
@@ -335,26 +338,36 @@ router.get("/", async (req, res) => {
     const summaryLegacyCompanyExpression = hasCompanyColumn ? "NULLIF(company, '')" : "NULL";
     const summaryLegacyBrandExpression = hasBrandColumn ? "NULLIF(brand, '')" : "NULL";
     const summaryLegacyManufacturerExpression = hasManufacturerColumn ? "NULLIF(manufacturer, '')" : "NULL";
-    const searchClause = search
-      ? `WHERE (
-           name ILIKE $2
-           OR company_name ILIKE $2
-           OR product_size ILIKE $2
-           OR tile_size ILIKE $2
-           OR design_code ILIKE $2
-           OR finish ILIKE $2
-           OR COALESCE(category, '') ILIKE $2
-         )`
-      : "";
-    const productsParams = search ? [limit, `%${search}%`] : [limit];
+    // Build the search filter and limit clause with dynamic parameter indexes.
+    // The filter is applied directly on the base `products p` columns (not on a
+    // wrapping subquery), which avoids the "column reference is ambiguous" error
+    // that previously broke every inventory search.
+    const productsParams = [];
+    let searchClause = "";
+    if (search) {
+      productsParams.push(`%${search}%`);
+      const idx = productsParams.length;
+      searchClause = `WHERE (
+           p.name ILIKE $${idx}
+           OR p.company_name ILIKE $${idx}
+           OR p.product_size ILIKE $${idx}
+           OR p.tile_size ILIKE $${idx}
+           OR p.design_code ILIKE $${idx}
+           OR p.finish ILIKE $${idx}
+           OR COALESCE(p.category, '') ILIKE $${idx}
+         )`;
+    }
+    let limitClause = "";
+    if (!unlimited) {
+      productsParams.push(limit);
+      limitClause = `LIMIT $${productsParams.length}`;
+    }
 
     const [productsResult, summaryResult] = await Promise.all([
       // Product list is the critical payload; the summary references newer
       // pricing/packaging columns, so its failure is logged but non-fatal.
       query(
-        `SELECT *
-         FROM (
-           SELECT
+        `SELECT
              p.*,
              COALESCE(NULLIF(p.company_name, ''), ${legacyCompanyExpression}, ${legacyBrandExpression}, ${legacyManufacturerExpression}, 'Company missing') AS company_name,
              ${legacyCompanyExpression} AS legacy_company,
@@ -369,12 +382,11 @@ router.get("/", async (req, res) => {
              ${latestBatchSelect} AS latest_batch_no
            FROM products p
            ${latestBatchJoin}
-         ) inventory_products
-         ${searchClause}
+           ${searchClause}
          ORDER BY
-           CASE status WHEN 'fast_moving' THEN 1 WHEN 'active' THEN 2 ELSE 3 END,
-           name ASC
-         LIMIT $1`,
+           CASE p.status WHEN 'fast_moving' THEN 1 WHEN 'active' THEN 2 ELSE 3 END,
+           p.name ASC
+         ${limitClause}`,
         productsParams
       ).catch((listError) => {
         console.error("[inventory] list query failed:", listError);

@@ -6463,3 +6463,59 @@ button.sidebar-item-active .sidebar-dot {
     display: block;
   }
 }
+
+/* Searchable product picker (purchase entry) */
+.product-search-select {
+  min-width: 0;
+}
+
+.product-search-select > input {
+  width: 100%;
+}
+
+.product-search-options {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #d7dce5);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16);
+  padding: 4px;
+}
+
+.product-search-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.product-search-option:hover,
+.product-search-option:focus {
+  background: var(--surface-muted, #eef2f8);
+}
+
+.product-search-option-name {
+  font-weight: 600;
+}
+
+.product-search-option-meta {
+  font-size: 0.78rem;
+}
+
+.product-search-empty {
+  padding: 10px;
+  font-size: 0.85rem;
+}

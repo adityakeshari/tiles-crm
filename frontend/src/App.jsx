@@ -1838,6 +1838,87 @@ function isAdmin(user) {
   return hasRole(user, "admin");
 }
 
+// Searchable product picker used in purchase entry rows. Replaces the plain
+// native <select> (which had no real search) with a type-to-filter dropdown
+// over the full product list.
+function ProductSearchSelectImpl({ options, value, onSelect, placeholder, className, dataField }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const selected = useMemo(
+    () => (options || []).find((option) => String(option.id) === String(value)) || null,
+    [options, value]
+  );
+
+  const filtered = useMemo(() => {
+    const list = options || [];
+    const needle = query.trim().toLowerCase();
+    if (!needle) {
+      return list.slice(0, 200);
+    }
+    return list
+      .filter((option) =>
+        [option.name, option.company_name, option.product_size, option.tile_size, option.design_code, option.finish, option.category]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(needle)
+      )
+      .slice(0, 200);
+  }, [options, query]);
+
+  return (
+    <div className="product-search-select" style={{ position: "relative", flex: 1 }}>
+      <input
+        type="text"
+        data-field={dataField}
+        className={className}
+        placeholder={placeholder}
+        value={open ? query : selected ? selected.name : ""}
+        onFocus={() => {
+          setOpen(true);
+          setQuery("");
+        }}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          setOpen(true);
+        }}
+        onBlur={() => {
+          window.setTimeout(() => setOpen(false), 150);
+        }}
+        autoComplete="off"
+      />
+      {open ? (
+        <div className="product-search-options">
+          {filtered.length === 0 ? (
+            <div className="product-search-empty muted">No matching products</div>
+          ) : (
+            filtered.map((option) => (
+              <button
+                type="button"
+                key={option.id}
+                className="product-search-option"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  onSelect(String(option.id));
+                  setOpen(false);
+                  setQuery("");
+                }}
+              >
+                <span className="product-search-option-name">{option.name}</span>
+                <span className="muted product-search-option-meta">
+                  {[option.company_name, option.product_size, option.design_code].filter(Boolean).join(" | ")}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+const ProductSearchSelect = memo(ProductSearchSelectImpl);
+
 export default function App() {
   const [token, setToken] = useState(localStorage.getItem("tiles-crm-token"));
   const [user, setUser] = useState(() => {
@@ -3053,11 +3134,17 @@ export default function App() {
   );
   const purchaseEntryProductOptions = useMemo(
     () =>
-      safeProducts.filter((product) =>
-        purchaseForm.business_unit === "both"
-          ? true
-          : matchesBusinessUnitFilter(product.business_unit, purchaseForm.business_unit)
-      ),
+      safeProducts.filter((product) => {
+        if (purchaseForm.business_unit === "both") {
+          return true;
+        }
+        // Products with no business unit set should still be selectable in any
+        // purchase entry, otherwise legacy/uncategorised stock disappears.
+        if (!normalizeText(product.business_unit)) {
+          return true;
+        }
+        return matchesBusinessUnitFilter(product.business_unit, purchaseForm.business_unit);
+      }),
     [safeProducts, purchaseForm.business_unit]
   );
   const purchaseEntryProductMap = useMemo(
@@ -3758,15 +3845,11 @@ export default function App() {
         setMasons(schemesData.masons || []);
         setMasonActivities(schemesData.masonActivities || []);
       } else if (view === "inventory") {
-        const inventorySearch = String(inventoryLedgerSearch || "").trim();
         const [inventoryData, inventoryOptionsData] = await Promise.all([
-          api.getInventory({
-            ...requestOptions,
-            // If the operator typed a search term, ask the server for it
-            // and widen the page so products outside the first 40 surface.
-            limit: inventorySearch ? 100 : listLimits.products,
-            search: inventorySearch || undefined,
-          }),
+          // Load the full product master in one shot. Search/filtering then runs
+          // instantly on the client, so the ledger never needs "load more" and
+          // the per-keystroke server refetch (which hit the inventory bug) is gone.
+          api.getInventory({ ...requestOptions, limit: "all" }),
           api.getInventoryOptions(requestOptions).catch(() => ({ companies: [], sizes: [], finishes: [] })),
         ]);
         setProducts(inventoryData.products || []);
@@ -3816,7 +3899,9 @@ export default function App() {
               payment_status: purchasePaymentFilter === "all" ? "" : purchasePaymentFilter,
             })
             .catch(() => ({ purchases: [], summary: null })),
-          api.getInventory({ ...requestOptions, limit: listLimits.products }).catch(() => ({ products: [] })),
+          // Load the full product master so every inventory item is selectable
+          // in the purchase-entry product picker (not just the first 40).
+          api.getInventory({ ...requestOptions, limit: "all" }).catch(() => ({ products: [] })),
           api.getSuppliers({ ...requestOptions, status: "active", limit: 500 }).catch(() => []),
         ]);
         setPurchases(purchasesData.purchases || []);
@@ -3940,7 +4025,6 @@ export default function App() {
     dailyTaskFilters.due_date,
     debouncedDailyTaskSearch,
     dailyReportDate,
-    inventoryLedgerSearch,
   ]);
 
   useEffect(() => {
@@ -8704,20 +8788,14 @@ export default function App() {
                           <div className="purchase-item-line">
                             <div className="form-field purchase-item-product-field">
                               <div className="purchase-product-pickrow">
-                                <select
-                                  data-field={`items.${index}.product_id`}
-                                  className={getFieldErrorClass(purchaseFormErrors, `items.${index}.product_id`)}
+                                <ProductSearchSelect
+                                  options={purchaseEntryProductOptions}
                                   value={item.product_id}
-                                  onChange={(event) => handlePurchaseProductSelect(index, event.target.value)}
-                                  style={{ flex: 1 }}
-                                >
-                                  <option value="">Select Inventory Product *</option>
-                                  {purchaseEntryProductOptions.map((product) => (
-                                    <option key={product.id} value={product.id}>
-                                      {product.name}
-                                    </option>
-                                  ))}
-                                </select>
+                                  onSelect={(productId) => handlePurchaseProductSelect(index, productId)}
+                                  placeholder="Search & select inventory product *"
+                                  className={getFieldErrorClass(purchaseFormErrors, `items.${index}.product_id`)}
+                                  dataField={`items.${index}.product_id`}
+                                />
                               </div>
                               {selectedProduct ? (
                                 <p className="muted purchase-item-product-meta">
@@ -10507,13 +10585,9 @@ export default function App() {
                 </select>
               </div>
             </div>
-            <ListLoadControls
-              label="Products"
-              count={products.length}
-              limit={listLimits.products}
-              onLoadMore={() => increaseListLimit("products")}
-              disabled={loading}
-            />
+            <div className="list-load-actions">
+              <span className="muted">{filteredInventoryLedgerProducts.length} of {products.length} products</span>
+            </div>
             {inventoryLedgerView === "grid" ? (
             <div className="list stock-ledger-grid">
               {filteredInventoryLedgerProducts.map((product) => {
