@@ -216,20 +216,54 @@ async function resolveInventoryProduct(client, purchase) {
 async function syncPurchaseInventory(client, purchase, direction) {
   const quantity = Math.round(Number(purchase.quantity || 0));
   if (!quantity) {
-    return;
+    return null;
   }
 
   const product = await resolveInventoryProduct(client, purchase);
   if (!product) {
+    return null;
+  }
+
+  // Apply the true signed delta (no GREATEST clamp). A negative result is only
+  // possible when REVERSING a purchase (delete / edit) whose stock has already
+  // been sold or consumed; callers must detect that via
+  // assertPurchaseStockNotNegative and block the operation. Adding stock
+  // (create / re-apply) can never go negative. Everything runs inside the
+  // caller's transaction, so a blocked reversal is rolled back and nothing
+  // negative is ever committed.
+  const result = await client.query(
+    `UPDATE products
+     SET stock_sqft = COALESCE(stock_sqft, 0) + $1
+     WHERE id = $2
+     RETURNING id, stock_sqft`,
+    [direction * quantity, product.id]
+  );
+
+  return result.rows[0] || null;
+}
+
+// Guard for purchase reversals: if reversing a purchase's quantity pushed a
+// product's current stock below zero, that stock has already been sold/consumed,
+// so the delete/edit must be blocked rather than silently clamped to zero (which
+// would corrupt the stock register). Throws a typed error the routes map to 409.
+async function assertPurchaseStockNotNegative(client, productIds) {
+  const ids = [...new Set((productIds || []).filter((value) => value != null))];
+  if (!ids.length) {
     return;
   }
 
-  await client.query(
-    `UPDATE products
-     SET stock_sqft = GREATEST(COALESCE(stock_sqft, 0) + $1, 0)
-     WHERE id = $2`,
-    [direction * quantity, product.id]
+  const result = await client.query(
+    `SELECT id FROM products WHERE id = ANY($1::int[]) AND COALESCE(stock_sqft, 0) < 0`,
+    [ids]
   );
+
+  if (result.rowCount > 0) {
+    const stockError = new Error(
+      "Cannot delete/edit this purchase because stock from this purchase has already been sold or consumed."
+    );
+    stockError.code = "STOCK_REVERSAL_NEGATIVE";
+    throw stockError;
+  }
 }
 
 // Read endpoints accessible to staff who legitimately need showroom-level visibility.
@@ -808,7 +842,7 @@ router.put(
         return res.status(404).json({ message: "Purchase not found" });
       }
 
-      await syncPurchaseInventory(client, existingResult.rows[0], -1);
+      const reversedProduct = await syncPurchaseInventory(client, existingResult.rows[0], -1);
 
       const supplier = await loadSupplierForPurchase(client, purchase.supplier_id);
       const product = await loadProductForPurchase(client, purchase.product_id);
@@ -872,11 +906,18 @@ router.put(
       }
 
       await syncPurchaseItemBatch(client, result.rows[0].id, purchase.batch_no);
-      await syncPurchaseInventory(client, result.rows[0], 1);
+      const appliedProduct = await syncPurchaseInventory(client, result.rows[0], 1);
+      // Block the edit if reversing the old line pushed its product's stock
+      // negative (the original quantity has already been sold/consumed). Both
+      // the old and new product are checked to cover product-change edits.
+      await assertPurchaseStockNotNegative(client, [reversedProduct?.id, appliedProduct?.id]);
       await client.query("COMMIT");
       return res.json(result.rows[0]);
     } catch (error) {
       await client.query("ROLLBACK");
+      if (error && error.code === "STOCK_REVERSAL_NEGATIVE") {
+        return res.status(409).json({ message: error.message });
+      }
       if (error && error.code === "23505") {
         return res.status(409).json({
           message: buildPurchaseDuplicateMessage(),
@@ -906,12 +947,16 @@ router.delete("/:id", requireRole("admin"), async (req, res) => {
       await client.query("ROLLBACK");
       return res.status(404).json({ message: "Purchase not found" });
     }
-    await syncPurchaseInventory(client, existing.rows[0], -1);
+    const reversedProduct = await syncPurchaseInventory(client, existing.rows[0], -1);
+    await assertPurchaseStockNotNegative(client, [reversedProduct?.id]);
     await client.query("DELETE FROM purchases WHERE id = $1", [id]);
     await client.query("COMMIT");
     return res.status(204).send();
   } catch (error) {
     await client.query("ROLLBACK");
+    if (error && error.code === "STOCK_REVERSAL_NEGATIVE") {
+      return res.status(409).json({ message: error.message });
+    }
     return res.status(500).json({ message: "Unable to delete purchase", error: error.message });
   } finally {
     client.release();
