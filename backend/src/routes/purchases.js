@@ -41,7 +41,7 @@ function createProductMatchError(itemName, businessUnit, productIds) {
 }
 
 function buildPurchaseDuplicateMessage() {
-  return "Duplicate purchase item merged: same supplier, invoice, product, batch, rate, and GST were combined into one row.";
+  return "This purchase line was rejected as a duplicate (an entry with the same supplier, invoice, product and date already exists) and was NOT saved. To add stock to that entry, edit the existing purchase row.";
 }
 
 function buildPurchaseInvoiceGroups(rows) {

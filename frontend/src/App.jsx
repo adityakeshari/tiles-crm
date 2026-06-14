@@ -5438,9 +5438,38 @@ export default function App() {
         firstProductRow.product_id
           ? purchaseEntryProductMap.get(Number(firstProductRow.product_id)) || null
           : null;
-      try {
-        if (editingPurchaseId) {
-          const row = purchaseItems[0] || emptyPurchaseItem;
+      if (editingPurchaseId) {
+        const row = purchaseItems[0] || emptyPurchaseItem;
+        const amount = Number(row.amount || 0);
+        const gst = Number(row.gst_amount || 0);
+        const computedTotal = amount + gst;
+        const payload = {
+          ...purchaseForm,
+          supplier_id: Number(purchaseForm.supplier_id || 0),
+          product_id: Number(row.product_id || 0),
+          item_name: row.item_name,
+          category: row.category,
+          purchase_date: purchaseForm.purchase_date || new Date().toISOString().slice(0, 10),
+          truck_number: purchaseForm.truck_number || "",
+          delivery_date: purchaseForm.delivery_date || null,
+          quantity: Number(row.quantity || 0),
+          unit: row.unit || "pcs",
+          batch_no: normalizeText(row.batch_no),
+          amount,
+          gst_amount: gst,
+          total_amount: row.total_amount === "" ? computedTotal : Number(row.total_amount),
+        };
+        // Let any error propagate so runBusyAction shows it and skips the
+        // "Purchase updated." success toast.
+        await api.updatePurchase(editingPurchaseId, payload);
+      } else {
+        // Save each line independently and record a per-line result. This way a
+        // failure on one line is reported clearly instead of (a) aborting the
+        // remaining lines silently, or (b) still firing a "Purchase saved." toast.
+        const lineResults = [];
+        for (let index = 0; index < purchaseItems.length; index += 1) {
+          const row = purchaseItems[index];
+          const label = normalizeText(row.item_name) || `Item ${index + 1}`;
           const amount = Number(row.amount || 0);
           const gst = Number(row.gst_amount || 0);
           const computedTotal = amount + gst;
@@ -5460,37 +5489,29 @@ export default function App() {
             gst_amount: gst,
             total_amount: row.total_amount === "" ? computedTotal : Number(row.total_amount),
           };
-          await api.updatePurchase(editingPurchaseId, payload);
-        } else {
-          for (const row of purchaseItems) {
-            const amount = Number(row.amount || 0);
-            const gst = Number(row.gst_amount || 0);
-            const computedTotal = amount + gst;
-            const payload = {
-              ...purchaseForm,
-              supplier_id: Number(purchaseForm.supplier_id || 0),
-              product_id: Number(row.product_id || 0),
-              item_name: row.item_name,
-              category: row.category,
-              purchase_date: purchaseForm.purchase_date || new Date().toISOString().slice(0, 10),
-              truck_number: purchaseForm.truck_number || "",
-              delivery_date: purchaseForm.delivery_date || null,
-              quantity: Number(row.quantity || 0),
-              unit: row.unit || "pcs",
-              batch_no: normalizeText(row.batch_no),
-              amount,
-              gst_amount: gst,
-              total_amount: row.total_amount === "" ? computedTotal : Number(row.total_amount),
-            };
+          try {
             await api.createPurchase(payload);
+            lineResults.push({ label, ok: true });
+          } catch (err) {
+            lineResults.push({ label, ok: false, message: err?.message || "Could not be saved." });
           }
         }
-      } catch (err) {
-        if (err && err.status === 409) {
-          setError(err.message || "Duplicate purchase entry");
-          return;
+
+        const failedLines = lineResults.filter((result) => !result.ok);
+        if (failedLines.length) {
+          // Refresh so the lines that DID save are reflected in the list.
+          await loadDashboard();
+          const savedLabels = lineResults.filter((result) => result.ok).map((result) => result.label);
+          const failedText = failedLines.map((result) => `• ${result.label}: ${result.message}`).join("\n");
+          const savedText = savedLabels.length
+            ? `\n\nAlready saved (do NOT re-enter these): ${savedLabels.join(", ")}.`
+            : "";
+          // Throwing makes runBusyAction surface this as an error and skip the
+          // success toast, so a partial save can never look like a full success.
+          throw new Error(
+            `${failedLines.length} of ${lineResults.length} item(s) could not be saved:\n${failedText}${savedText}`
+          );
         }
-        throw err;
       }
 
       if (postSaveAction === "approval") {
