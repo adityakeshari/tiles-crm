@@ -972,18 +972,20 @@ router.put("/claims/:id/approval", requireRole("admin", "manager"), async (req, 
 
     const nextStatus = update.verification_status === "rejected" ? "rejected" : current.status;
     const nextRemarks = [current.remarks, update.remarks].filter(Boolean).join("\n");
+    const isApproved = update.verification_status === "approved";
+    const isRejected = update.verification_status === "rejected";
 
     await query(
       `UPDATE adhesive_token_claims
        SET verification_status = $1,
            status = $2,
            remarks = $3,
-           approved_by = CASE WHEN $1 = 'approved' THEN $4 ELSE approved_by END,
-           approved_at = CASE WHEN $1 = 'approved' THEN CURRENT_TIMESTAMP ELSE approved_at END,
-           rejected_by = CASE WHEN $1 = 'rejected' THEN $4 ELSE rejected_by END,
-           rejected_at = CASE WHEN $1 = 'rejected' THEN CURRENT_TIMESTAMP ELSE rejected_at END
-       WHERE id = $5`,
-      [update.verification_status, nextStatus, nextRemarks, req.user.id, id]
+           approved_by = CASE WHEN $4 THEN $5 ELSE approved_by END,
+           approved_at = CASE WHEN $4 THEN CURRENT_TIMESTAMP ELSE approved_at END,
+           rejected_by = CASE WHEN $6 THEN $5 ELSE rejected_by END,
+           rejected_at = CASE WHEN $6 THEN CURRENT_TIMESTAMP ELSE rejected_at END
+       WHERE id = $7`,
+      [update.verification_status, nextStatus, nextRemarks, isApproved, req.user.id, isRejected, id]
     );
 
     await logAdhesiveClaimActivity(
