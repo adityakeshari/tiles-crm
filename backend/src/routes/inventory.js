@@ -417,7 +417,7 @@ router.get("/", async (req, res) => {
              WHERE COALESCE(pieces_per_box, 0) <= 0
                OR COALESCE(sqft_per_box, 0) <= 0
            )::int AS missing_packaging_count
-         FROM products`
+         FROM products p`
       ).catch((summaryError) => {
         console.error("[inventory] summary query failed (non-fatal):", summaryError);
         return { rows: [{ ...EMPTY_INVENTORY_SUMMARY, summary_ok: false }] };
