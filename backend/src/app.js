@@ -24,6 +24,7 @@ import schemesRoutes from "./routes/schemes.js";
 import suppliersRoutes from "./routes/suppliers.js";
 import usersRoutes from "./routes/users.js";
 import { requireAuth } from "./middleware/auth.js";
+import { securityHeaders } from "./middleware/security-headers.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,28 +44,57 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
 
 app.set("trust proxy", 1);
 
+app.use(securityHeaders);
+
+// Redact sensitive query params (e.g. ?token=) so JWTs / API keys never land
+// in request logs, browser history copies, or proxy logs.
+function sanitizeUrlForLog(originalUrl) {
+  return String(originalUrl).replace(
+    /([?&](?:token|access_token|api_key|x-internal-api-key|x-task-api-key)=)[^&#]*/gi,
+    "$1[REDACTED]"
+  );
+}
+
 app.use((req, res, next) => {
   const startedAt = Date.now();
 
   res.on("finish", () => {
     const durationMs = Date.now() - startedAt;
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${durationMs}ms)`);
+    console.log(`[${new Date().toISOString()}] ${req.method} ${sanitizeUrlForLog(req.originalUrl)} -> ${res.statusCode} (${durationMs}ms)`);
   });
 
   next();
 });
 
-app.use(
-  cors({
-    origin(origin, callback) {
-      if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
+// CORS decision is made per-request so that same-origin requests (the SPA is
+// served from this same server) always work, even when ALLOWED_ORIGINS is not
+// configured. Cross-origin requests are allowed only if explicitly listed; in
+// production an unconfigured allow-list fails closed for *other* origins. A
+// disallowed origin gets `origin:false` (CORS headers simply omitted) rather
+// than an error, so the request still completes and the browser enforces the block.
+function corsOptionsDelegate(req, callback) {
+  const requestOrigin = req.headers.origin;
 
-      return callback(new Error("Origin not allowed by CORS"));
-    },
-  })
-);
+  if (!requestOrigin) {
+    // No Origin header => same-origin, server-to-server, or curl.
+    return callback(null, { origin: true });
+  }
+
+  const selfOrigin = `${req.protocol}://${req.get("host")}`;
+  if (requestOrigin === selfOrigin || allowedOrigins.includes(requestOrigin)) {
+    return callback(null, { origin: true });
+  }
+
+  if (allowedOrigins.length === 0 && process.env.NODE_ENV !== "production") {
+    // Dev convenience only: allow any origin when nothing is configured.
+    return callback(null, { origin: true });
+  }
+
+  // Cross-origin and not allowed: omit CORS headers (browser blocks reads).
+  return callback(null, { origin: false });
+}
+
+app.use(cors(corsOptionsDelegate));
 app.use(express.json({ limit: "1mb" }));
 
 app.get("/api/health", (_req, res) => {

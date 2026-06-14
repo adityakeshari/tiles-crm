@@ -3,8 +3,16 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { query } from "../db.js";
 import { validateLoginPayload, validateUserPayload } from "../utils/validation.js";
+import { createRateLimiter } from "../middleware/rate-limit.js";
 
 const router = express.Router();
+
+// Throttle login attempts per IP to slow down password brute-forcing.
+const loginRateLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: "Too many login attempts. Please wait a few minutes and try again.",
+});
 
 function getEffectiveRoles(user) {
   if (Array.isArray(user?.roles) && user.roles.length > 0) {
@@ -18,7 +26,7 @@ function getEffectiveRoles(user) {
   return [];
 }
 
-router.post("/login", async (req, res) => {
+router.post("/login", loginRateLimiter, async (req, res) => {
   const validation = validateLoginPayload(req.body);
 
   if (!validation.ok) {
